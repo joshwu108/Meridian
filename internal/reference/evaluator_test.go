@@ -390,6 +390,71 @@ func TestEvaluateContextCanceled(t *testing.T) {
 	}
 }
 
+func TestEvaluateNilContext(t *testing.T) {
+	t.Parallel()
+	eval := mustEval(t, UnknownIdentityFailClosed, nil)
+	_, err := eval.Evaluate(nil, Input{
+		SrcIdentity: 1,
+		DstIdentity: 2,
+		DstPort:     80,
+		Protocol:    6,
+		Direction:   DirectionIngress,
+	})
+	if err == nil {
+		t.Fatal("expected nil context error")
+	}
+	if !strings.Contains(err.Error(), "nil context") {
+		t.Fatalf("expected nil context error, got: %v", err)
+	}
+}
+
+func TestEvaluateUnknownIdentityPrecedenceOverRule(t *testing.T) {
+	t.Parallel()
+
+	rule := Rule{
+		SrcIdentity: 101,
+		DstIdentity: 202,
+		DstPort:     8443,
+		Protocol:    6,
+		Direction:   DirectionIngress,
+		Verdict: wire.PolicyVerdict{
+			Action: wire.PolicyActionRedirectProxy,
+			Flags:  flagMask(wire.PolicyFlagL7Required),
+		},
+	}
+
+	failOpenEval := mustEval(t, UnknownIdentityFailOpen, []Rule{rule})
+	failClosedEval := mustEval(t, UnknownIdentityFailClosed, []Rule{rule})
+
+	openVerdict, err := failOpenEval.Evaluate(context.Background(), Input{
+		SrcIdentity: wire.IdentityUnknown,
+		DstIdentity: 202,
+		DstPort:     8443,
+		Protocol:    6,
+		Direction:   DirectionIngress,
+	})
+	if err != nil {
+		t.Fatalf("fail-open evaluate failed: %v", err)
+	}
+	if openVerdict.Action != wire.PolicyActionAllow {
+		t.Fatalf("fail-open unknown identity should force allow, got %+v", openVerdict)
+	}
+
+	closedVerdict, err := failClosedEval.Evaluate(context.Background(), Input{
+		SrcIdentity: wire.IdentityUnknown,
+		DstIdentity: 202,
+		DstPort:     8443,
+		Protocol:    6,
+		Direction:   DirectionIngress,
+	})
+	if err != nil {
+		t.Fatalf("fail-closed evaluate failed: %v", err)
+	}
+	if closedVerdict.Action != wire.PolicyActionDeny {
+		t.Fatalf("fail-closed unknown identity should force deny, got %+v", closedVerdict)
+	}
+}
+
 func mustEval(t *testing.T, mode UnknownIdentityMode, rules []Rule) *MapEvaluator {
 	t.Helper()
 	eval, err := NewEvaluator(mode, rules)

@@ -17,31 +17,8 @@
 #include <bpf/bpf_helpers.h>
 
 #include "meridian_consts.h"
+#include "meridian_maps.h"
 #include "meridian_types.h"
-
-/* identity_map: pod IPv4 (network bytes, as loaded) -> identity id (host). */
-struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 65536);
-	__type(key, __u32);
-	__type(value, __u32);
-	__uint(map_flags, BPF_F_NO_PREALLOC);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
-} identity_map SEC(".maps");
-
-/*
- * runtime_config_map[0] bit flags.
- * bit 0 set => fail-open unknown identities.
- */
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, __u32);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
-} runtime_config_map SEC(".maps");
-
-#define CFG_FALLOPEN_UNKNOWN_BIT (1u << 0)
 
 static __always_inline __u32 failopen_unknown_enabled(void)
 {
@@ -51,13 +28,17 @@ static __always_inline __u32 failopen_unknown_enabled(void)
 	/* Default is fail-closed unless the operator explicitly enables fail-open. */
 	if (!cfg)
 		return 0;
-	return (*cfg & CFG_FALLOPEN_UNKNOWN_BIT) != 0;
+	return (*cfg & MERIDIAN_CFG_FALLOPEN_UNKNOWN) != 0;
 }
 
 static __always_inline __u32 parse_l4_ports(struct iphdr *ip, void *data_end,
 					    __u16 *src_port, __u16 *dst_port)
 {
 	__u32 ihl = ip->ihl;
+	/*
+	 * ip->ihl is a 4-bit field, but keep the explicit upper bound so the
+	 * 5.15 verifier can constrain the range before pointer arithmetic.
+	 */
 	if (ihl < IPV4_IHL_MIN || ihl > IPV4_IHL_MAX)
 		return 0;
 

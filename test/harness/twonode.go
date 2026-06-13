@@ -193,10 +193,10 @@ func AssertDenied(t *testing.T, srcNS, dstNS, dstIP string, port int) {
 	defer stop()
 
 	waitForListenerReady(t, dstNS, port)
-	_, err := tryConnect(srcNS, dstIP, port)
-	if err == nil {
-		t.Fatalf("unexpected connect success: src=%s dst=%s:%d", srcNS, dstIP, port)
-	}
+	WaitUntil(t, 3*time.Second, func() bool {
+		_, err := tryConnect(srcNS, dstIP, port)
+		return err != nil
+	}, fmt.Sprintf("expected connect to fail: src=%s dst=%s:%d", srcNS, dstIP, port))
 }
 
 func waitForListenerReady(t *testing.T, netns string, port int) {

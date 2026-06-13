@@ -83,6 +83,41 @@ func TestTcIngressIdentityMissFailOpen(t *testing.T) {
 	}
 }
 
+func TestTcIngressIdentityZeroFailClosed(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	pkt := synthIPv4Packet(6, []byte{10, 0, 4, 2}, []byte{10, 0, 4, 3})
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 4001)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 0)
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	if ret != tcActShot {
+		t.Fatalf("identity zero fail-closed verdict = %d, want TC_ACT_SHOT (%d)", ret, tcActShot)
+	}
+}
+
+func TestTcIngressIdentityZeroFailOpen(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	pkt := synthIPv4Packet(6, []byte{10, 0, 5, 2}, []byte{10, 0, 5, 3})
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 5001)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 0)
+	if err := objs.RuntimeConfigMap.Put(cfgSlotUnknownIdentity, cfgFailopenUnknownBit); err != nil {
+		t.Fatalf("set runtime_config_map fail-open flag: %v", err)
+	}
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	if ret != tcActOK {
+		t.Fatalf("identity zero fail-open verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+}
+
 func TestTcIngressIPv4PacketPassesWhenIdentitiesPresent(t *testing.T) {
 	objs := loadTcIngress(t)
 
@@ -97,6 +132,42 @@ func TestTcIngressIPv4PacketPassesWhenIdentitiesPresent(t *testing.T) {
 	}
 	if ret != tcActOK {
 		t.Fatalf("IPv4 UDP verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+}
+
+func TestTcIngressIPv4NonTcpUdpStillRequiresIdentities(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	// ICMP packet: parser skips L4 ports, but identity posture still applies.
+	pkt := synthIPv4Packet(1, []byte{10, 1, 9, 2}, []byte{10, 1, 9, 3})
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run (identity miss, fail-closed): %v", err)
+	}
+	if ret != tcActShot {
+		t.Fatalf("IPv4 ICMP miss verdict = %d, want TC_ACT_SHOT (%d)", ret, tcActShot)
+	}
+
+	if err := objs.RuntimeConfigMap.Put(cfgSlotUnknownIdentity, cfgFailopenUnknownBit); err != nil {
+		t.Fatalf("set runtime_config_map fail-open flag: %v", err)
+	}
+	ret, err = objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run (identity miss, fail-open): %v", err)
+	}
+	if ret != tcActOK {
+		t.Fatalf("IPv4 ICMP miss fail-open verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 3901)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 3902)
+	ret, err = objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run (identity hit): %v", err)
+	}
+	if ret != tcActOK {
+		t.Fatalf("IPv4 ICMP identity-hit verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 }
 

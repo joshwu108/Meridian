@@ -40,6 +40,8 @@ type MapEvaluator struct {
 	rules       map[ruleKey]wire.PolicyVerdict
 }
 
+var errNilContext = errors.New("nil context")
+
 type ruleKey struct {
 	srcID     wire.IdentityID
 	dstID     wire.IdentityID
@@ -80,6 +82,9 @@ func NewEvaluator(mode UnknownIdentityMode, rules []Rule) (*MapEvaluator, error)
 //   3. exact 5-tuple match (src,dst,port,proto,direction)
 //   4. default deny on miss
 func (e *MapEvaluator) Evaluate(ctx context.Context, in Input) (wire.PolicyVerdict, error) {
+	if ctx == nil {
+		return wire.PolicyVerdict{}, errNilContext
+	}
 	if err := ctx.Err(); err != nil {
 		return wire.PolicyVerdict{}, err
 	}

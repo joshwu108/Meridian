@@ -24,6 +24,8 @@ flowchart TD
 
 Notes:
 
-- `EnsureAttached` is idempotent by design (`QdiscReplace` + `FilterReplace`).
-- Restart safety is handled by unpin-or-replace when pinning program paths.
-- `Detach` is idempotent and treats missing interfaces/resources as success.
+- `EnsureAttached` is idempotent by design (`QdiscReplace` + `FilterReplace`), so repeated attach calls keep one managed ingress filter.
+- Restart safety is handled by unpin-or-replace when pinning program paths (`EEXIST` triggers remove + re-pin).
+- `ReplaceProgram` validates inputs and then reuses the same attach path for atomic program swap.
+- `Detach` is idempotent, removes only manager-owned ingress BPF filters by name, and treats missing links/resources as success.
+- `EnsureAttached`/`Detach` honor canceled contexts before netlink operations begin.
