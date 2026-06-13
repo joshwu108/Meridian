@@ -198,9 +198,10 @@ started. "Gate" flags the six Phase-1 gates.
 | **31** | **Flow aggregation + identity resolution** | **done\*** | **`754e2ee`** | **Folded unlabeled into the MER-26 commit**; `aggregate.go` + `identitytable` + tests present |
 | 32 | **O-2 GATE** — denied-flows join + metrics | planned (Gate) | — | `metrics/denied.go`, `test/integration/metrics_test.go` absent |
 | 33 | Schema version single-sourcing | in-progress | `64148cc` | `meridian_schema_version` listed in `gen.go -type` (gen layer done); **`bpfobj/loader_test.go` absent** + hand-literal-deletion unverified |
-| 34 | **EXIT GATE** — ADR-0004 freeze + doc reconciliation | planned (Gate) | — | ADR-0004 absent; blocked on the five gates above |
-| 35–41, 43 | Backlog batch 2026-06-13 | planned | — | filed this batch; not started |
-| 42 | This reconciliation | in-progress | (working tree) | ledger authored; relabeling actions below |
+| 34 | **EXIT GATE** — ADR-0004 freeze + doc reconciliation | planned (Gate) | — | Stub reserved (`0004-map-schema-freeze.md`); full ADR blocked on the five gates above |
+| 35–40, 43 | Backlog batch 2026-06-13 | planned / done† | — | see individual tickets; †MER-40 done (`96f9fdb`) |
+| **41** | **ADR index + 0004 reservation + ADR-0005 linkage** | **done** | **`96f9fdb` + MER-41 commit** | `docs/adr/README.md` registry; `0004` stub; ADR-0005 `Tracking ticket`/`Provenance` backfill |
+| 42 | Ledger reconciliation | in-progress | (working tree) | ledger authored; relabeling actions below |
 
 ### Out-of-order executions & remediation
 
@@ -266,6 +267,32 @@ Next free ID = MER-44.
   - `git notes` backfilled on `754e2ee` recording that it also implements MER-17, MER-23, MER-31 and authored ADR-0005.
   - A commit-message check (CI or hook) requires every `feat`/`fix` subject to name ≥1 `MER-<n>`, and a commit implementing multiple tickets must list all of them in the subject/body.
   - Contributing docs state the one-implementation-ticket-per-commit (or explicit multi-id) rule; the check rejects an unlabeled implementation commit.
+
+---
+
+## Batch 2026-06-13 (Backlog Manager run 3)
+
+State change since run 2: `LICENSE` + `bpf/LICENSE` landed (MER-13), ADR-0006
+original-destination recovery authored (MER-40/CC-1), `docs/adr/README.md` added
+(MER-41 partial → **closed**), and the MER-15/36/37/38/39 + gate-suite advances all landed —
+but inside the **mislabeled mega-commit `96f9fdb` "impkement phase2"** (typo'd
+subject, zero MER-ids, content is Phase-0/1 not Phase-2). No actual Phase-2
+subsystem code exists yet. All findings this run are already owned by open
+tickets (mislabel→MER-45, MER-24 skip→MER-44, ~~ADR-0004 gap→MER-41~~ **MER-41 closed**,
+uncommitted bindings→MER-35) **except** the absence of any Phase-2 plan/entry
+gate, filed below. Next free ID = MER-46.
+
+### MER-46 — Phase-2 plan, ticket decomposition, and hard entry gate
+- **ID:** MER-46
+- **TITLE:** Author PHASE2_PLAN.md + PHASE2_TICKETS.md and install Phase-2-entry gate = MER-34 green
+- **PRIORITY:** P1 / HIGH (planning/doc gap + sequencing guard; a commit already reaches for "phase2")
+- **ESTIMATE:** 3–4h
+- **BLOCKS:** any real Phase-2 implementation (gated sock_ops/sk_msg redirect, ADS-vs-stub, CP-3 conformance)
+- **DEPENDENCIES:** MER-34 (Phase-1 exit gate) — Phase-2 code may not merge until MER-34 is green; planning doc itself has no dependency
+- **ACCEPTANCE CRITERIA:**
+  - `docs/PHASE2_PLAN.md` + `docs/PHASE2_TICKETS.md` exist, derived from ROADMAP week-4 scope (gated `sock_ops`+`sk_msg` redirect with the SOCKMAP-eligibility-is-a-verdict-flag invariant; ADS server vs agent stub + conformance suite CP-3) and the relevant subsystem specs; every ticket ≤4h with testable acceptance criteria, deps, and waves — same format as PHASE1_TICKETS.md.
+  - A **Phase-2-entry gate** is recorded (in ROADMAP + the plan): no Phase-2 implementation ticket merges until MER-34 (Phase-1 exit) is green, mirroring the Phase-0→Phase-1 entry rule.
+  - The "SOCKMAP eligibility is a policy verdict flag, not a perf toggle; absent the flag, no SOCKHASH insertion" invariant (ROADMAP CC-5 / eBPF R2) is captured as an explicit Phase-2 acceptance criterion with a permanent negative test.
 
 ---
 

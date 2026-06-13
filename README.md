@@ -54,7 +54,7 @@ Generated eBPF bindings (`bpf/*_bpfel.go`/`.o`) and `vmlinux.h` are
 | `cmd/meridian-agent/` | Node agent binary (Phase 0 cut: load + attach + ring tail). `meridian-control` and the `meridian` CLI arrive in Phases 3/6. |
 | `internal/agent/` | Agent internals: `bpfobj` (sole pin opener), `telemetry` (ring consumer); `datapath`, `xds`, `svid`, … arrive per phase. |
 | `pkg/wire/` | Shared cross-boundary contracts (leaf package; stdlib only). |
-| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [subsystem specs](docs/subsystems/) · ADRs (as they land). |
+| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [subsystem specs](docs/subsystems/) · [ADRs](docs/adr/README.md). |
 | `test/` | `harness/` (netns fixtures, reaper, WaitUntil), `bpf/` (T2), `integration/` (T3), `vm/` (Lima). |
 
 ## Documentation

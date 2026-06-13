@@ -40,7 +40,11 @@ fix(bpf): close sentinel race MER-36
 
    ```bash
    git notes add -m "Also implements MER-17, MER-23, MER-31; authored ADR-0005" 754e2ee
+   git notes add -m "Mislabeled mega-commit (Phase-0/1, not Phase-2). Also implements MER-13, MER-15, MER-36, MER-37, MER-38, MER-39, MER-40, MER-41 (partial); advances gate suites MER-18/21/29" 96f9fdb
    ```
+
+   See [`docs/provenance/mislabeled-commits.md`](provenance/mislabeled-commits.md)
+   for the full backfill registry.
 
 ### Local check
 
@@ -57,3 +61,13 @@ adding a note locally, push it when collaborating:
 ```bash
 git push origin refs/notes/commits
 ```
+
+## Architecture Decision Records (MER-41)
+
+Every cross-cutting contract decision gets an ADR under `docs/adr/`. The
+authoritative registry is [`docs/adr/README.md`](adr/README.md): each ADR must
+appear there with an owning **MER-&lt;n&gt;** ticket and a status before merge.
+Reserved numbers (e.g. `0004` → MER-34) count as allocated — claim the "next free"
+number from the index and update it in the same change. ADRs committed without a
+ticket reference (as ADR-0005 was) must be backfilled with a `Tracking ticket`
+and `Provenance` header line.
