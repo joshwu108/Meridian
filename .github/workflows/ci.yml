@@ -49,6 +49,8 @@ jobs:
           else
             bash scripts/check-mer-ticket-refs.sh "${{ github.event.before }}..${{ github.sha }}"
           fi
+      - name: provenance notes backfill (MER-45)
+        run: bash scripts/verify-provenance-notes.sh
 
   # ------------------------------------------------------------------
   # Determinism gate: regenerate eBPF bindings, fail on any diff.

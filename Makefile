@@ -142,9 +142,12 @@ lint: ## Run go vet and golangci-lint (incl. depguard import rules)
 		&& $(GOLANGCILINT) run ./... \
 		|| echo "golangci-lint not found; skipping (see https://golangci-lint.run)"
 
-.PHONY: check-commits
+.PHONY: check-commits check-provenance-notes
 check-commits: ## MER-45: verify feat/fix/refactor commits cite MER-<n> tickets
 	@bash scripts/check-mer-ticket-refs.sh
+
+check-provenance-notes: ## MER-45: verify backfilled git notes on mislabeled mega-commits
+	@bash scripts/verify-provenance-notes.sh
 
 # ---------------------------------------------------------------------------
 # Environment hygiene / diagnostics

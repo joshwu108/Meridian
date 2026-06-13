@@ -201,16 +201,16 @@ started. "Gate" flags the six Phase-1 gates.
 | 34 | **EXIT GATE** — ADR-0004 freeze + doc reconciliation | planned (Gate) | — | Stub reserved (`0004-map-schema-freeze.md`); full ADR blocked on the five gates above |
 | 35–40, 43 | Backlog batch 2026-06-13 | planned / done† | — | see individual tickets; †MER-40 done (`96f9fdb`) |
 | **41** | **ADR index + 0004 reservation + ADR-0005 linkage** | **done** | **`96f9fdb` + MER-41 commit** | `docs/adr/README.md` registry; `0004` stub; ADR-0005 `Tracking ticket`/`Provenance` backfill |
-| 42 | Ledger reconciliation | in-progress | (working tree) | ledger authored; relabeling actions below |
+| 42 | Ledger reconciliation | done | ledger in `tickets.md` | MER-17/23/31 relabeled; remediation → **MER-45** |
 
 ### Out-of-order executions & remediation
 
 1. **Multi-ticket / mislabeled mega-commit `754e2ee`** ("MER-26") silently
    shipped **MER-17, MER-23, MER-31** (and authored ADR-0005). 
-   *Remediation:* this ledger is the authoritative relabel; record provenance
-   with `git notes add -m "also implements MER-17, MER-23, MER-31" 754e2ee` and
-   require one-ticket-per-commit (or an explicit `MER-x, MER-y` subject) going
-   forward. ADR-0005's missing ticket linkage is handed to **MER-41**.
+   *Remediation:* this ledger is the authoritative relabel; provenance recorded
+   via `git notes` on `754e2ee` and `96f9fdb` (**MER-45** closed). Require
+   one-ticket-per-commit (or an explicit `MER-x, MER-y` subject) going forward.
+   ADR-0005's missing ticket linkage is handed to **MER-41** (closed).
 
 2. **Gate scaffolds merged before their upstreams, then never re-armed.** The
    three Phase-1 gate tests — **MER-18** (`verdict_test.go`), **MER-21**
@@ -267,6 +267,8 @@ Next free ID = MER-44.
   - `git notes` backfilled on `754e2ee` recording that it also implements MER-17, MER-23, MER-31 and authored ADR-0005.
   - A commit-message check (CI or hook) requires every `feat`/`fix` subject to name ≥1 `MER-<n>`, and a commit implementing multiple tickets must list all of them in the subject/body.
   - Contributing docs state the one-implementation-ticket-per-commit (or explicit multi-id) rule; the check rejects an unlabeled implementation commit.
+
+**Status (2026-06-13): done** — git notes on `754e2ee` + `96f9fdb`; `scripts/check-mer-ticket-refs.sh` + `scripts/verify-provenance-notes.sh` in CI; see `docs/CONTRIBUTING.md` and `docs/provenance/mislabeled-commits.md`.
 
 ---
 
