@@ -271,3 +271,19 @@ func TestTranslateIdentityRequiresIPv4Field(t *testing.T) {
 		t.Fatalf("expected error naming identity id, got %q", err.Error())
 	}
 }
+
+func TestTranslateIdentityUsesNetworkOrderIPv4Key(t *testing.T) {
+	entry, err := translateIdentity(wire.Identity{
+		ID:      88,
+		PodIPv4: "10.0.0.42",
+	})
+	if err != nil {
+		t.Fatalf("translateIdentity error = %v", err)
+	}
+	if entry.Key != 0x0a00002a {
+		t.Fatalf("identity key = %#08x, want 0x0a00002a", entry.Key)
+	}
+	if entry.Value != 88 {
+		t.Fatalf("identity value = %d, want 88", entry.Value)
+	}
+}

@@ -202,6 +202,7 @@ enum drop_reason {
 	DROP_REASON_POLICY_MISS      = 2, /* no policy_map entry (default-deny) */
 	DROP_REASON_UNKNOWN_IDENTITY = 3, /* identity miss under default-deny posture */
 	DROP_REASON_INVALID_ACTION   = 4, /* unrecognized action: fail closed */
+	DROP_REASON_GENEVE_ENCAP_FAIL = 5, /* egress identity TLV stamp failure */
 };
 
 /*
@@ -221,7 +222,9 @@ enum metric_id {
 	METRIC_FLOWS_ALLOWED    = 3,
 	METRIC_FLOWS_DENIED     = 4,
 	METRIC_FLOWS_REDIRECTED = 5,
-	/* 6..15 reserved */
+	METRIC_GENEVE_ENCAP_FAIL = 6, /* egress identity TLV stamp failure (MER-20) */
+	METRIC_GENEVE_DECODE_FAIL = 7, /* ingress identity TLV missing/undecodable (MER-21) */
+	/* 8..15 reserved */
 
 	METRIC_ID_MAX           = 16,
 };

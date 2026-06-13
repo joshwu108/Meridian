@@ -32,3 +32,6 @@ package bpf
 // here — that would mint a parallel TcIngress* mirror set. Go code uses the
 // Counter-prefixed mirrors until a combined object lands.
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" TcIngress tc_ingress.c
+
+// Phase 1 — tc_egress Geneve identity TLV propagation (MER-20).
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" TcEgress tc_egress.c

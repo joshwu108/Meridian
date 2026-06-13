@@ -5,9 +5,7 @@ package datapath
 import (
 	"encoding/binary"
 	"fmt"
-	"net"
 	"net/netip"
-	"reflect"
 	"unsafe"
 
 	"github.com/joshuawu/meridian/pkg/wire"
@@ -62,69 +60,18 @@ func translateIdentity(identity wire.Identity) (identityMapEntry, error) {
 }
 
 func identityIPv4NetworkKey(identity wire.Identity) (uint32, error) {
-	v := reflect.ValueOf(identity)
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !isIdentityIPFieldName(f.Name) {
-			continue
-		}
-		key, ok := reflectFieldIPv4NetworkKey(v.Field(i))
-		if ok {
-			return key, nil
-		}
+	if identity.PodIPv4 == "" {
+		return 0, fmt.Errorf("translate identity id=%d: missing pod_ipv4", identity.ID)
 	}
-	return 0, fmt.Errorf("translate identity id=%d: missing IPv4 field on wire.Identity", identity.ID)
-}
-
-func isIdentityIPFieldName(name string) bool {
-	switch name {
-	case "PodIPv4", "PodIP", "IP", "IPv4":
-		return true
-	default:
-		return false
+	addr, err := netip.ParseAddr(identity.PodIPv4)
+	if err != nil {
+		return 0, fmt.Errorf("translate identity id=%d pod_ipv4=%q: parse: %w", identity.ID, identity.PodIPv4, err)
 	}
-}
-
-func reflectFieldIPv4NetworkKey(field reflect.Value) (uint32, bool) {
-	if !field.IsValid() {
-		return 0, false
+	if !addr.Is4() {
+		return 0, fmt.Errorf("translate identity id=%d pod_ipv4=%q: not IPv4", identity.ID, identity.PodIPv4)
 	}
-
-	if field.Kind() == reflect.Pointer {
-		if field.IsNil() {
-			return 0, false
-		}
-		return reflectFieldIPv4NetworkKey(field.Elem())
-	}
-
-	if field.Type() == reflect.TypeOf(netip.Addr{}) {
-		addr := field.Interface().(netip.Addr)
-		if !addr.Is4() {
-			return 0, false
-		}
-		v4 := addr.As4()
-		return binary.BigEndian.Uint32(v4[:]), true
-	}
-
-	if field.Type() == reflect.TypeOf(net.IP{}) {
-		ip := field.Interface().(net.IP).To4()
-		if ip == nil {
-			return 0, false
-		}
-		return binary.BigEndian.Uint32(ip), true
-	}
-
-	if field.Kind() == reflect.String {
-		addr, err := netip.ParseAddr(field.String())
-		if err != nil || !addr.Is4() {
-			return 0, false
-		}
-		v4 := addr.As4()
-		return binary.BigEndian.Uint32(v4[:]), true
-	}
-
-	return 0, false
+	v4 := addr.As4()
+	return binary.BigEndian.Uint32(v4[:]), nil
 }
 
 var (

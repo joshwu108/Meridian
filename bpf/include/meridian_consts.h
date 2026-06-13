@@ -37,6 +37,18 @@
 /* runtime_config_map[0] bit flags (D16). Unset bits = fail-closed defaults. */
 #define MERIDIAN_CFG_FALLOPEN_UNKNOWN (1u << 0)
 
+/* Geneve transport + Meridian identity option (ADR-0002 / ADR-0005). */
+#define MERIDIAN_GENEVE_UDP_PORT 6081
+#define MERIDIAN_GENEVE_CLASS    0x4d52 /* "MR" */
+#define MERIDIAN_OPT_IDENTITY    1
+
+/* Geneve option sizing: identity option is 8 bytes total (4-byte hdr + u32 body). */
+#define MERIDIAN_GENEVE_OPT_BYTES          8
+#define MERIDIAN_GENEVE_OPT_WORDS          2 /* 8 bytes / 4-byte Geneve units */
+#define MERIDIAN_GENEVE_IDENTITY_LEN_WORDS 1 /* body length in 4-byte units */
+#define MERIDIAN_MAX_GENEVE_OPTS           4
+#define MERIDIAN_MAX_GENEVE_OPT_WORDS      (MERIDIAN_MAX_GENEVE_OPTS * MERIDIAN_GENEVE_OPT_WORDS)
+
 /*
  * Redirect placeholder mark (MER-17): REDIRECT verdict marks skb but does not
  * perform a tc redirect action yet.
