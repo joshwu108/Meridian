@@ -19,8 +19,9 @@ yes integration ./test/integration/... TestLivePolicyIntegrationGate_MER29
 # P1.3 — MER-21 Geneve two-node (blocker MER-20 landed; suite still stub)
 no integration ./test/integration/... TestGeneveIngressIdentityPolicyGate_MER21
 
-# CP-2 — MER-24 compiler ≡ reference property harness (not yet authored)
-no '' ./internal/control/... TestCompilerConformanceProperty
+# CP-2 — MER-24 compiler ≡ reference property harness
+yes '' ./internal/control/... TestCompilerMatchesReferenceProperty
+yes '' ./internal/control/... TestConformanceRegressionCorpus
 
 # O-2 — MER-32 denied-flows metrics gate (not yet authored)
 no integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32

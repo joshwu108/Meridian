@@ -1,1 +1,313 @@
-[]
+[
+  {
+    "seed": 1,
+    "unknown_mode": 1,
+    "spec": {
+      "Policies": [
+        {
+          "Name": "matrix",
+          "Rules": [
+            {
+              "Name": "allow-ingress",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/client-a",
+                "spiffe://meridian/ns/default/sa/client-b"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/server-a"
+              ],
+              "Ports": [80],
+              "Protocols": [6, 17],
+              "Directions": [0],
+              "Verdict": {
+                "Action": 0,
+                "Flags": 0
+              }
+            },
+            {
+              "Name": "deny-egress",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/server-a"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/client-a",
+                "spiffe://meridian/ns/default/sa/client-b"
+              ],
+              "Ports": [25],
+              "Protocols": [6],
+              "Directions": [1],
+              "Verdict": {
+                "Action": 1,
+                "Flags": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "identities": [
+      {
+        "ID": 1001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-a"
+      },
+      {
+        "ID": 1002,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-b"
+      },
+      {
+        "ID": 2001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/server-a"
+      },
+      {
+        "ID": 2002,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/server-b"
+      }
+    ],
+    "flows": [
+      {
+        "SrcIdentity": 1001,
+        "DstIdentity": 2001,
+        "DstPort": 80,
+        "Protocol": 6,
+        "Direction": 0
+      },
+      {
+        "SrcIdentity": 2001,
+        "DstIdentity": 1002,
+        "DstPort": 25,
+        "Protocol": 6,
+        "Direction": 1
+      },
+      {
+        "SrcIdentity": 1001,
+        "DstIdentity": 2001,
+        "DstPort": 443,
+        "Protocol": 6,
+        "Direction": 0
+      },
+      {
+        "SrcIdentity": 0,
+        "DstIdentity": 2001,
+        "DstPort": 80,
+        "Protocol": 6,
+        "Direction": 0
+      }
+    ]
+  },
+  {
+    "seed": 2,
+    "unknown_mode": 0,
+    "spec": {
+      "Policies": [
+        {
+          "Name": "matrix",
+          "Rules": [
+            {
+              "Name": "allow-ingress",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/client-a"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/server-a"
+              ],
+              "Ports": [80],
+              "Protocols": [6],
+              "Directions": [0],
+              "Verdict": {
+                "Action": 0,
+                "Flags": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "identities": [
+      {
+        "ID": 1001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-a"
+      },
+      {
+        "ID": 2001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/server-a"
+      }
+    ],
+    "flows": [
+      {
+        "SrcIdentity": 0,
+        "DstIdentity": 2001,
+        "DstPort": 80,
+        "Protocol": 6,
+        "Direction": 0
+      }
+    ]
+  },
+  {
+    "seed": 3,
+    "unknown_mode": 1,
+    "spec": {
+      "Policies": [
+        {
+          "Name": "proxy-path",
+          "Rules": [
+            {
+              "Name": "redirect-to-proxy",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/client-a"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/server-b"
+              ],
+              "Ports": [443, 8443],
+              "Protocols": [6],
+              "Directions": [0, 1],
+              "Verdict": {
+                "Action": 2,
+                "Flags": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "identities": [
+      {
+        "ID": 1001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-a"
+      },
+      {
+        "ID": 2002,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/server-b"
+      }
+    ],
+    "flows": [
+      {
+        "SrcIdentity": 1001,
+        "DstIdentity": 2002,
+        "DstPort": 443,
+        "Protocol": 6,
+        "Direction": 0
+      },
+      {
+        "SrcIdentity": 1001,
+        "DstIdentity": 2002,
+        "DstPort": 8443,
+        "Protocol": 6,
+        "Direction": 1
+      }
+    ]
+  },
+  {
+    "seed": 4,
+    "unknown_mode": 1,
+    "spec": {
+      "Policies": [
+        {
+          "Name": "sockmap",
+          "Rules": [
+            {
+              "Name": "eligible-fast-path",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/client-a",
+                "spiffe://meridian/ns/default/sa/client-b"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/proxy"
+              ],
+              "Ports": [15001],
+              "Protocols": [6],
+              "Directions": [0],
+              "Verdict": {
+                "Action": 0,
+                "Flags": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "identities": [
+      {
+        "ID": 1001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-a"
+      },
+      {
+        "ID": 1002,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/client-b"
+      },
+      {
+        "ID": 3001,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/proxy"
+      }
+    ],
+    "flows": [
+      {
+        "SrcIdentity": 1002,
+        "DstIdentity": 3001,
+        "DstPort": 15001,
+        "Protocol": 6,
+        "Direction": 0
+      }
+    ]
+  },
+  {
+    "seed": 4611686018427387904,
+    "unknown_mode": 1,
+    "spec": {
+      "Policies": [
+        {
+          "Name": "random-policy",
+          "Rules": [
+            {
+              "Name": "rule-0",
+              "Sources": [
+                "spiffe://meridian/ns/default/sa/workload-2345"
+              ],
+              "Destinations": [
+                "spiffe://meridian/ns/default/sa/workload-5678",
+                "spiffe://meridian/ns/default/sa/workload-2345"
+              ],
+              "Ports": [8080],
+              "Protocols": [17],
+              "Directions": [1],
+              "Verdict": {
+                "Action": 2,
+                "Flags": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "identities": [
+      {
+        "ID": 2345,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/workload-2345"
+      },
+      {
+        "ID": 5678,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/workload-5678"
+      },
+      {
+        "ID": 8901,
+        "SpiffeID": "spiffe://meridian/ns/default/sa/workload-8901"
+      }
+    ],
+    "flows": [
+      {
+        "SrcIdentity": 2345,
+        "DstIdentity": 5678,
+        "DstPort": 8080,
+        "Protocol": 17,
+        "Direction": 1
+      },
+      {
+        "SrcIdentity": 8901,
+        "DstIdentity": 5678,
+        "DstPort": 8080,
+        "Protocol": 17,
+        "Direction": 1
+      }
+    ]
+  }
+]

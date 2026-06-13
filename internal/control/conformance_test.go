@@ -21,13 +21,16 @@ const (
 	flowsPerSpec                 = 16
 )
 
-func conformanceIterations() int {
+func conformanceIterations(short bool) int {
 	if v := os.Getenv("MERIDIAN_CONFORMANCE_ITERATIONS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
 			panic(fmt.Sprintf("invalid MERIDIAN_CONFORMANCE_ITERATIONS=%q", v))
 		}
 		return n
+	}
+	if short {
+		return shortConformanceIterations
 	}
 	return defaultConformanceIterations
 }
@@ -38,11 +41,7 @@ func conformanceIterations() int {
 // spec oracle. PR CI runs 1e4 iterations (default); nightly runs 1e6 via
 // MERIDIAN_CONFORMANCE_ITERATIONS.
 func TestCompilerMatchesReferenceProperty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping MER-24 property harness in -short mode")
-	}
-
-	iterations := conformanceIterations()
+	iterations := conformanceIterations(testing.Short())
 	ctx := context.Background()
 
 	for i := 0; i < iterations; i++ {
@@ -86,7 +85,7 @@ func TestConformanceRegressionCorpus(t *testing.T) {
 		t.Fatalf("load regression corpus: %v", err)
 	}
 	if len(cases) == 0 {
-		t.Skip("no conformance regression cases committed yet")
+		t.Fatal("regression corpus is empty; commit cases under testdata/conformance/regression.json")
 	}
 
 	ctx := context.Background()
