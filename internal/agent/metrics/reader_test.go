@@ -66,12 +66,14 @@ func TestLookup(t *testing.T) {
 func TestCollectorWithFakeReader(t *testing.T) {
 	reg := NewRegistry(fakeReader{
 		values: map[MetricID]uint64{
-			MetricPacketsTotal:    11,
-			MetricRingbufDropped:  2,
-			MetricBytesTotal:      4096,
-			MetricFlowsAllowed:    7,
-			MetricFlowsDenied:     3,
-			MetricFlowsRedirected: 1,
+			MetricPacketsTotal:     11,
+			MetricRingbufDropped:   2,
+			MetricBytesTotal:       4096,
+			MetricFlowsAllowed:     7,
+			MetricFlowsDenied:      3,
+			MetricFlowsRedirected:  1,
+			MetricGeneveEncapFail:  5,
+			MetricGeneveDecodeFail: 8,
 		},
 	})
 
@@ -94,6 +96,12 @@ meridian_flows_denied_total 3
 # HELP meridian_flows_redirected_total Total flow decisions with REDIRECT verdict.
 # TYPE meridian_flows_redirected_total counter
 meridian_flows_redirected_total 1
+# HELP meridian_geneve_encap_fail_total Total Geneve egress identity option stamp failures.
+# TYPE meridian_geneve_encap_fail_total counter
+meridian_geneve_encap_fail_total 5
+# HELP meridian_geneve_decode_fail_total Total Geneve ingress flows whose identity option was missing or undecodable.
+# TYPE meridian_geneve_decode_fail_total counter
+meridian_geneve_decode_fail_total 8
 `
 
 	if err := testutil.GatherAndCompare(
@@ -105,6 +113,8 @@ meridian_flows_redirected_total 1
 		"meridian_flows_allowed_total",
 		"meridian_flows_denied_total",
 		"meridian_flows_redirected_total",
+		"meridian_geneve_encap_fail_total",
+		"meridian_geneve_decode_fail_total",
 	); err != nil {
 		t.Fatalf("gather and compare: %v", err)
 	}

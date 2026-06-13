@@ -4,12 +4,14 @@ package metrics
 type MetricID uint32
 
 const (
-	MetricPacketsTotal    MetricID = 0
-	MetricRingbufDropped  MetricID = 1
-	MetricBytesTotal      MetricID = 2
-	MetricFlowsAllowed    MetricID = 3
-	MetricFlowsDenied     MetricID = 4
-	MetricFlowsRedirected MetricID = 5
+	MetricPacketsTotal     MetricID = 0
+	MetricRingbufDropped   MetricID = 1
+	MetricBytesTotal       MetricID = 2
+	MetricFlowsAllowed     MetricID = 3
+	MetricFlowsDenied      MetricID = 4
+	MetricFlowsRedirected  MetricID = 5
+	MetricGeneveEncapFail  MetricID = 6
+	MetricGeneveDecodeFail MetricID = 7
 
 	MetricIDMax MetricID = 16
 )
@@ -51,6 +53,16 @@ var exportedMetrics = []Definition{
 		ID:             MetricFlowsRedirected,
 		PrometheusName: "meridian_flows_redirected_total",
 		Help:           "Total flow decisions with REDIRECT verdict.",
+	},
+	{
+		ID:             MetricGeneveEncapFail,
+		PrometheusName: "meridian_geneve_encap_fail_total",
+		Help:           "Total Geneve egress identity option stamp failures.",
+	},
+	{
+		ID:             MetricGeneveDecodeFail,
+		PrometheusName: "meridian_geneve_decode_fail_total",
+		Help:           "Total Geneve ingress flows whose identity option was missing or undecodable.",
 	},
 }
 
