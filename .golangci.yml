@@ -1,0 +1,60 @@
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+
+linters-settings:
+  depguard:
+    rules:
+      # pkg/wire is a leaf: stdlib only. It is the shared vocabulary between
+      # control plane, agent, and proxy; anything heavier creates coupling.
+      wire-is-leaf:
+        files:
+          - "**/pkg/wire/**"
+        deny:
+          - pkg: github.com/joshuawu/meridian/internal
+            desc: "pkg/wire is a leaf; it must not import internal/."
+          - pkg: github.com/joshuawu/meridian/bpf
+            desc: "pkg/wire is a leaf; it must not import bpf/."
+          - pkg: github.com/cilium/ebpf
+            desc: "pkg/wire must stay stdlib-only."
+
+      # The control plane never touches kernel maps or agent internals; it
+      # produces wire contracts the agent consumes.
+      control-no-dataplane:
+        files:
+          - "**/internal/control/**"
+        deny:
+          - pkg: github.com/joshuawu/meridian/bpf
+            desc: "control plane must not touch kernel maps; produce pkg/wire contracts instead."
+          - pkg: github.com/joshuawu/meridian/internal/agent
+            desc: "control plane must not import agent internals."
+
+      # The node proxy consumes orig-dst and L7 rules via injected interfaces,
+      # never by reaching into the agent or the kernel bindings.
+      proxy-no-dataplane:
+        files:
+          - "**/internal/proxy/**"
+        deny:
+          - pkg: github.com/joshuawu/meridian/bpf
+            desc: "node proxy consumes orig-dst via an injected interface, not bpf/."
+          - pkg: github.com/joshuawu/meridian/internal/agent
+            desc: "node proxy must not import agent internals."
+
+      # The reference policy evaluator must stay an obviously-correct,
+      # dependency-free oracle (compiler correctness gate CP-2).
+      reference-is-pure:
+        files:
+          - "**/internal/reference/**"
+        deny:
+          - pkg: github.com/joshuawu/meridian/bpf
+            desc: "the reference evaluator must stay a dependency-free oracle."
+          - pkg: github.com/cilium/ebpf
+            desc: "the reference evaluator must stay pure Go."
+
+run:
+  timeout: 5m

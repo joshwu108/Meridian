@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.22"
+  CLANG_VERSION: "17" # pinned for deterministic bpf2go output
+
+jobs:
+  # ------------------------------------------------------------------
+  # Tier 1: portable. No privileges, no eBPF toolchain.
+  # ------------------------------------------------------------------
+  lint-unit:
+    name: lint + unit (T1)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+      - name: unit tests (T1)
+        run: make test-unit
+
+  # ------------------------------------------------------------------
+  # Determinism gate: regenerate eBPF bindings, fail on any diff.
+  # ------------------------------------------------------------------
+  generate-check:
+    name: verify-gen (deterministic codegen)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install pinned clang + bpftool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-${CLANG_VERSION} llvm-${CLANG_VERSION} \
+            linux-tools-common linux-tools-generic
+          sudo ln -sf /usr/bin/clang-${CLANG_VERSION} /usr/local/bin/clang
+          sudo ln -sf /usr/bin/llvm-strip-${CLANG_VERSION} /usr/local/bin/llvm-strip
+      # vmlinux.h is kernel-version-specific: regenerate from the runner
+      # kernel for the build, then restore the committed copy before the
+      # bindings diff (CO-RE means the bindings don't depend on which 5.15.x
+      # produced the header).
+      - name: Regenerate vmlinux.h from runner kernel
+        run: make vmlinux
+      - name: verify-gen
+        run: |
+          make ebpf
+          git checkout -- bpf/include/vmlinux.h
+          git diff --exit-code -- 'bpf/*_bpfel.go' 'bpf/*_bpfel.o' \
+            || { echo "ERROR: generated bindings are stale. Run 'make ebpf' and commit."; exit 1; }
+
+  # ------------------------------------------------------------------
+  # Tier 2 + 3: privileged. bpf_prog_test_run + netns integration.
+  # ubuntu-22.04 runners ship a 5.15-family kernel with root via sudo.
+  # ------------------------------------------------------------------
+  bpf-integration:
+    name: bpf + integration (T2/T3)
+    runs-on: ubuntu-22.04
+    needs: [generate-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-${CLANG_VERSION} llvm-${CLANG_VERSION} \
+            linux-tools-common linux-tools-$(uname -r) \
+            libbpf-dev iproute2 iputils-ping
+          sudo ln -sf /usr/bin/clang-${CLANG_VERSION} /usr/local/bin/clang
+          sudo ln -sf /usr/bin/llvm-strip-${CLANG_VERSION} /usr/local/bin/llvm-strip
+      - name: Kernel / feature check
+        run: make doctor
+      - name: bpf_prog_test_run tests (T2)
+        run: make test-bpf
+      - name: netns integration tests (T3)
+        run: make test-integration
+      - name: Reap test leftovers
+        if: always()
+        run: make test-clean

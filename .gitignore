@@ -1,0 +1,52 @@
+# ───────────────────────── Go ─────────────────────────
+# Test binaries and coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Build output
+/bin/
+/dist/
+
+# Go workspace (local override; never committed)
+go.work
+go.work.sum
+
+# Vendor (we use modules, not vendoring)
+/vendor/
+
+# ──────────────────── eBPF artifacts ──────────────────
+# IMPORTANT: bpf2go-generated bindings and objects under bpf/ are COMMITTED
+# (determinism gate `make verify-gen` depends on them), and vmlinux.h is
+# COMMITTED. Do NOT add a blanket *.o / *_bpf*.go ignore.
+#
+# Ignore only stray/scratch eBPF build artifacts:
+*.ll
+*.bc
+/bpf/**/*.tmp.o
+
+# Defensive re-includes for the committed generated artifacts:
+!/bpf/*_bpfel.go
+!/bpf/*_bpfel.o
+!/bpf/include/vmlinux.h
+
+# ─────────────────────── Lima / VM ────────────────────
+/test/vm/.lima/
+/test/vm/*.sock
+/test/vm/cidata.iso
+
+# ──────────────────────── Editor ──────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ───────────────────── Secrets / local ────────────────
+# Bootstrap certs and CA keys are operator-provisioned out of band — never commit.
+*.key
+*.pem
+!**/testdata/**/*.pem
+*.local.yaml

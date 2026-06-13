@@ -1,0 +1,37 @@
+# Lima VM for Meridian eBPF development on macOS.
+#
+#   limactl start --name=meridian test/vm/meridian.yaml
+#   limactl shell meridian
+#   cd /Users/<you>/Meridian && make vmlinux && make ebpf && make test-bpf
+#
+# Ubuntu 22.04 LTS ships kernel 5.15 — the pinned Meridian target (PRD §6.1).
+# The macOS home directory mounts at the same path inside the guest, so the
+# repo is available at its host path.
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+cpus: 4
+memory: "8GiB"
+disk: "30GiB"
+
+mounts:
+  - location: "~"
+    writable: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eu
+      # Find the mounted repo (the home mount keeps host paths) and provision.
+      for d in /Users/*/Meridian /home/*/Meridian; do
+        if [ -f "$d/test/vm/provision.sh" ]; then
+          REPO_ROOT="$d" bash "$d/test/vm/provision.sh"
+          exit 0
+        fi
+      done
+      echo "Meridian repo not found under the home mount; run provision.sh manually." >&2
