@@ -60,7 +60,7 @@ Generated eBPF bindings (`bpf/*_bpfel.go`/`.o`) and `vmlinux.h` are
 ## Documentation
 
 - **Specification:** [PRD_Meridian_eBPF_Service_Mesh.md](PRD_Meridian_eBPF_Service_Mesh.md)
-- **Plan:** [ROADMAP.md](ROADMAP.md) · **Phase 0:** [PHASE0_CHECKLIST.md](PHASE0_CHECKLIST.md)
+- **Plan:** [ROADMAP.md](ROADMAP.md) · **Phase 0:** [PHASE0_CHECKLIST.md](PHASE0_CHECKLIST.md) · **Phase 1:** [PHASE1_PLAN.md](docs/PHASE1_PLAN.md) · **Phase 2:** [PHASE2_PLAN.md](docs/PHASE2_PLAN.md) ([tickets](docs/PHASE2_TICKETS.md) · [gates](docs/PHASE2_GATES.md))
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Netns debug scripts:** [docs/NETNS_SCRIPTS.md](docs/NETNS_SCRIPTS.md)
 - **Contributing / commit traceability:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)

@@ -50,7 +50,7 @@ Three properties of this graph drive the schedule:
 |---|---|---|---|---|
 | 1 | 0 | eBPF toolchain spine; packet counter + ring readback (O-1) | Control-plane storage, identity registry, REST (CP-1) | `make ebpf` deterministic; program loads verifier-clean |
 | 2–3 | 1 | Full TC parser + policy verdicts (`bpf_prog_test_run` first, then live netns); agent stub (A-1); flow metrics (O-2) | Reference evaluator + policy compiler + fuzz harness (CP-2) | Verdicts ≡ reference evaluator; **map schemas frozen (ADR)** |
-| 4 | 2 | Gated `sock_ops` + `sk_msg` redirect; integrity + benchmark | ADS server vs agent stub, conformance suite (CP-3) | Denied flow never SOCKMAP-redirected; policy-change-to-stub < 500 ms |
+| 4 | 2 | Gated `sock_ops` + `sk_msg` redirect; integrity + benchmark | ADS server vs agent stub, conformance suite (CP-3) | **Phase-2 entry = MER-34 green** (no P2 code until Phase-1 exit); exit: denied flow never SOCKMAP-redirected; policy-change-to-stub < 500 ms |
 | 5–6 | 3 | Agent netlink lifecycle (A-2); ADS client + translation (A-3) | CA primitives + node bootstrap (PKI-1/2) | REST → kernel map < 500 ms measured end-to-end |
 | 7–8 | 4 | TPROXY plumbing (A-5); proxy redirect/echo prototype (P4.1) | SVID issuance + rotation + Workload API (PKI-3/4); mTLS on ADS (CP-4); proxy mTLS in/out (P4.2–4.4) | Full A→proxy→proxy→B mTLS; unauthorized C rejected; **CC-1 resolved before this phase starts** |
 | 9 | 5 | — | L7 policy + circuit breaker (P5.1–5.2); OTLP + flow/http watch streams (O-3/4, P5.3) | Success criteria 5–6 (live flow + HTTP telemetry) |
@@ -59,6 +59,21 @@ Three properties of this graph drive the schedule:
 | 13 | 8 | Fuzzing, chaos suite (agent kill, control-plane partition, cert expiry), benchmarks, `meridian doctor` (A-6, O-5) | | All §11 success criteria measured and documented |
 
 **Critical path:** eBPF Phase 1 → schema freeze → agent translation (A-3) → CC-1/TPROXY → proxy mTLS (P4.x) → L7 (P5.x). The control plane and PKI run off-path against fakes; their only on-path obligations are the schema/metadata contract (week 3) and a two-cert CA (week 7).
+
+## Phase entry gates
+
+Hard sequencing rules — implementation tickets in a phase may not merge until
+the prior phase's exit gate is green:
+
+| Transition | Entry requirement | Exit gate | Plan |
+|---|---|---|---|
+| Phase 0 → 1 | Phase-0 exit (MER-7/8/10) + MER-11/12/13 | MER-35 sign-off | [PHASE0_TICKETS.md](docs/PHASE0_TICKETS.md) |
+| Phase 1 → 2 | **MER-34 green** (all five Phase-1 gates + ADR-0004) | MER-59 | [PHASE2_PLAN.md](docs/PHASE2_PLAN.md) · [PHASE2_TICKETS.md](docs/PHASE2_TICKETS.md) · [PHASE2_GATES.md](docs/PHASE2_GATES.md) |
+| Phase 2 → 3 | MER-59 green (P2.1-N, P2.2, CP-3) | A-2/A-3 gates (Phase 3) | [PHASE2_GATES.md](docs/PHASE2_GATES.md) |
+| Phase 3 → 4 | CC-1 echo prototype (ADR-0006) | P4.1 no-TLS redirect proof | [ADR-0006](docs/adr/0006-original-destination-recovery.md) |
+
+Phase-2 **planning** (MER-46) has no dependency and may land while Phase-1
+gates are still open; **implementation** (MER-47+) stays gated on MER-34.
 
 ## Cross-cutting decisions (resolve early; each warrants an ADR)
 

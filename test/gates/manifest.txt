@@ -25,3 +25,14 @@ yes '' ./internal/control/... TestConformanceRegressionCorpus
 
 # O-2 — MER-32 denied-flows metrics gate (not yet authored)
 no integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
+
+# --- Phase 2 gates (MER-46 plan; implementation gated on MER-34) ---
+
+# P2.1-N — MER-49 SOCKMAP permanent negative (CC-5 / eBPF R2)
+no bpf ./test/bpf/... TestSockmapNegativeGate_MER49
+
+# P2.2 — MER-51 byte integrity + denied never redirected
+no integration ./test/integration/... TestSockmapIntegrityGate_MER51
+
+# CP-3 — MER-56 ADS conformance + <500 ms propagation
+no '' ./internal/control/ads/... TestADSConformanceGate_MER56
