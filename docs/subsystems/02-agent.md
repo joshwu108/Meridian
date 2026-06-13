@@ -40,6 +40,27 @@ The agent is the **integration hub** — every other subsystem terminates at it.
 - **Artifacts:** bpf2go-generated bindings from the eBPF subsystem (build-time dependency); frozen map schemas; the xDS metadata contract (CC-2); node bootstrap credential (CC-4).
 - **Minimal forms by phase:** Phase 1 needs only the **agent stub** (static file → map writes, manual TC attach). Phase 3 adds netlink watcher + ADS client against the control plane. Phase 4 adds the SVID lifecycle + Workload API socket.
 
+## MER-27 Startup Flow
+
+The startup runner applies the Phase 1 stub in a strict order to avoid
+enforcement gaps:
+
+1. **Open pinned datapath resources** (`bpfobj.LoadCounter`) and validate
+   `identity_map` + `policy_map` handles are present.
+2. **Seed desired policy state** by loading static YAML into
+   `wire.PolicySnapshot`, then building a minimal `wire.CommitPlan` diff.
+3. **Initialize `datapath.Writer`** using the opened map handles and apply the
+   commit plan (identities/policies converged before traffic enforcement).
+4. **Attach TC programs** through `attach.Manager.EnsureAttached`.
+
+Failure handling is fail-closed and restart-safe:
+
+- Any failure in phases 2-4 triggers **partial startup cleanup** (best-effort
+  detach + close opened handles).
+- Re-opening existing pins preserves kernel state across process restarts.
+- Startup is **idempotent**: repeated `Startup()` calls on the same runner
+  return the existing runtime without redoing map opens, writes, or attaches.
+
 ## Risks (ranked)
 
 | # | Risk | L / I | Mitigation |

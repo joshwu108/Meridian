@@ -19,47 +19,58 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/cilium/ebpf/rlimit"
 
-	"github.com/joshuawu/meridian/internal/agent/attach"
-	"github.com/joshuawu/meridian/internal/agent/bpfobj"
 	"github.com/joshuawu/meridian/internal/agent/metrics"
+	"github.com/joshuawu/meridian/internal/agent/supervisor"
 	"github.com/joshuawu/meridian/internal/agent/telemetry"
 )
 
 func main() {
 	pinDir := flag.String("pin-dir", "/sys/fs/bpf/meridian", "bpffs directory for map pins")
 	iface := flag.String("iface", "", "interface to attach tc ingress program")
+	policyFile := flag.String("policy-file", "", "optional static YAML policy snapshot to seed at startup")
 	flag.Parse()
 
-	if err := run(*pinDir, *iface); err != nil {
+	if err := run(*pinDir, *iface, *policyFile); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface string) error {
+func run(pinDir, iface, policyFile string) error {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock rlimit: %w", err)
-	}
-
-	objs, err := bpfobj.LoadCounter(pinDir)
-	if err != nil {
-		return err
-	}
-	defer objs.Close()
-
-	consumer, err := telemetry.New(objs.FlowEvents)
-	if err != nil {
-		return err
 	}
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
+
+	startupRunner := supervisor.NewDefaultStartupRunner(supervisor.StartupOptions{
+		PinDir:     pinDir,
+		Interface:  iface,
+		PolicyFile: policyFile,
+	})
+	startupRuntime, err := startupRunner.Startup(ctx)
+	if err != nil {
+		return fmt.Errorf("startup runner: %w", err)
+	}
+	defer func() {
+		_ = startupRuntime.Close(context.Background())
+	}()
+
+	objs, err := startupRuntime.CounterObjects()
+	if err != nil {
+		return fmt.Errorf("startup runner objects: %w", err)
+	}
+
+	consumer, err := telemetry.New(objs.FlowEvents)
+	if err != nil {
+		return err
+	}
 
 	metricsServer := metrics.NewServer(":9901", metrics.NewRegistry(metrics.NewMapReader(objs.MetricsMap)))
 	metricsErr := make(chan error, 1)
@@ -72,14 +83,6 @@ func run(pinDir, iface string) error {
 	log.Printf("serving metrics endpoint on %s/metrics", metricsServer.Addr)
 
 	if iface != "" {
-		mgr := attach.NewManager(objs.MeridianCounter, filepath.Join(pinDir, "counter_prog"))
-		if err := mgr.EnsureAttached(ctx, iface); err != nil {
-			return fmt.Errorf("attach on %s: %w", iface, err)
-		}
-		defer func() {
-			// Cleanup is best effort so SIGINT/SIGTERM path never blocks shutdown.
-			_ = mgr.Detach(context.Background(), iface)
-		}()
 		log.Printf("attached tc ingress program on iface=%s", iface)
 	}
 

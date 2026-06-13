@@ -22,6 +22,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 // Pinned targets for later phases (PRD §13) — added by the phase that first
