@@ -30,7 +30,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pinned for reproducible lint, same determinism posture as the
+          # CLANG_VERSION pin and `verify-gen`: an unchanged tree must produce
+          # an identical lint result across runs. `latest` floats the linter
+          # version and can flag/clear issues without a code change.
+          # v1.64.8 is the final golangci-lint v1 release (what action @v6's
+          # `latest` already resolved to); bump deliberately, never to `latest`.
+          version: v1.64.8
       - name: unit tests (T1)
         run: make test-unit
 

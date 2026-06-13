@@ -5,6 +5,9 @@
  *
  * Scope:
  *   - Verifier-safe Ethernet / IPv4 / TCP / UDP parsing with explicit bounds checks.
+ *   - Geneve pre-decap parse on underlay ingress (MER-21 / ADR-0002): recover
+ *     remote src_identity from the Meridian identity TLV when the inner src IP
+ *     is absent from the local identity_map.
  *   - src/dst identity lookups from identity_map (key = IPv4 BE bytes as loaded).
  *   - Unknown-identity posture toggle:
  *       * fail-closed (default) -> TC_ACT_SHOT
@@ -66,6 +69,117 @@ static __always_inline __u32 parse_l4_ports(struct iphdr *ip, void *data_end,
 		*src_port = ports[0];
 		*dst_port = ports[1];
 	}
+	return 1;
+}
+
+static __always_inline __u32 looks_like_ipv4(void *ptr, void *data_end)
+{
+	struct iphdr *ip = ptr;
+
+	if ((void *)(ip + 1) > data_end)
+		return 0;
+	return ip->version == 4 && ip->ihl >= IPV4_IHL_MIN && ip->ihl <= IPV4_IHL_MAX;
+}
+
+static __always_inline __u32 parse_geneve_identity(void *opts, void *data_end,
+						   __u32 opt_bytes,
+						   __u32 *src_id_out)
+{
+	__u32 offset = 0;
+
+	*src_id_out = 0;
+
+#pragma unroll
+	for (int i = 0; i < MERIDIAN_MAX_GENEVE_OPTS; i++) {
+		__u8 *opt;
+		__u32 opt_len_words;
+		__u32 opt_size;
+		__u16 class_be;
+
+		if (offset >= opt_bytes)
+			break;
+		if (offset > opt_bytes)
+			return 0;
+
+		opt = opts + offset;
+		if (opt + 4 > (__u8 *)data_end)
+			return 0;
+
+		opt_len_words = opt[3] & 0x1f;
+		opt_size = 4 + (opt_len_words * 4);
+		if (opt_size < 4 || offset + opt_size > opt_bytes)
+			return 0;
+
+		class_be = *(__u16 *)&opt[0];
+		if (class_be == bpf_htons(MERIDIAN_GENEVE_CLASS) &&
+		    opt[2] == MERIDIAN_OPT_IDENTITY &&
+		    opt_len_words == MERIDIAN_GENEVE_IDENTITY_LEN_WORDS) {
+			__u32 src_id_be;
+
+			if (opt + MERIDIAN_GENEVE_OPT_BYTES > (__u8 *)data_end)
+				return 0;
+			__builtin_memcpy(&src_id_be, &opt[4], sizeof(src_id_be));
+			*src_id_out = bpf_ntohl(src_id_be);
+			return 1;
+		}
+		offset += opt_size;
+	}
+
+	return 0;
+}
+
+/*
+ * try_parse_geneve_inner attempts to peel a kernel-Geneve frame on underlay
+ * ingress. On success it returns the inner IPv4 header and whether the Meridian
+ * identity TLV was present. Missing TLV on a valid Geneve frame is surfaced via
+ * geneve_tlv_found = 0 (MER-21 / ADR-0002).
+ */
+static __always_inline __u32 try_parse_geneve_inner(struct iphdr *outer_ip,
+						    void *data_end,
+						    struct iphdr **inner_ip_out,
+						    __u32 *geneve_src_id_out,
+						    __u32 *geneve_tlv_found_out)
+{
+	struct udphdr *udp;
+	__u8 *geneve;
+	__u32 opt_words;
+	__u32 opt_bytes;
+	__u8 *opts;
+	__u8 *inner_base;
+	struct iphdr *inner_ip;
+
+	if (outer_ip->protocol != IPPROTO_UDP)
+		return 0;
+
+	udp = (void *)outer_ip + outer_ip->ihl * IPV4_WORD_BYTES;
+	if ((void *)(udp + 1) > data_end)
+		return 0;
+	if (udp->dest != bpf_htons(MERIDIAN_GENEVE_UDP_PORT))
+		return 0;
+
+	geneve = (void *)(udp + 1);
+	if (geneve + 8 > (__u8 *)data_end)
+		return 0;
+	if ((geneve[0] >> 6) != 0)
+		return 0;
+
+	opt_words = geneve[0] & 0x3f;
+	opt_bytes = opt_words * 4;
+	if (opt_words > MERIDIAN_MAX_GENEVE_OPT_WORDS)
+		return 0;
+
+	opts = geneve + 8;
+	if (opts + opt_bytes > (__u8 *)data_end)
+		return 0;
+
+	inner_base = opts + opt_bytes;
+	if (!looks_like_ipv4(inner_base, data_end))
+		return 0;
+
+	inner_ip = (void *)inner_base;
+	*inner_ip_out = inner_ip;
+	*geneve_tlv_found_out = parse_geneve_identity(opts, data_end, opt_bytes,
+						      geneve_src_id_out);
 	return 1;
 }
 
@@ -157,6 +271,84 @@ static __always_inline __u32 udp_first_sight(struct flow_key *key)
 	return 1;
 }
 
+static __always_inline int enforce_flow(struct __sk_buff *skb, struct iphdr *ip,
+					void *data_end, __u32 packet_bytes,
+					__u64 now_ns, __u16 src_port,
+					__u16 dst_port, __u32 src_id,
+					__u32 dst_id)
+{
+	struct flow_key flow_key = {
+		.src_ip = ip->saddr,
+		.dst_ip = ip->daddr,
+		.src_port = src_port,
+		.dst_port = dst_port,
+		.proto = ip->protocol,
+		._pad = {0, 0, 0},
+	};
+
+	if (src_id == 0 || dst_id == 0) {
+		if (failopen_unknown_enabled())
+			return TC_ACT_OK;
+		denied_flow_upsert(&flow_key, DROP_REASON_UNKNOWN_IDENTITY, now_ns);
+		metric_add(METRIC_FLOWS_DENIED, 1);
+		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+				ip->protocol, FLOW_VERDICT_DENY, src_id, dst_id,
+				packet_bytes);
+		return TC_ACT_SHOT;
+	}
+
+	struct policy_key policy_key = {
+		.src_id = src_id,
+		.dst_id = dst_id,
+		.dst_port = bpf_ntohs(dst_port),
+		.proto = ip->protocol,
+		.direction = POLICY_DIR_INGRESS,
+	};
+	struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
+
+	if (!verdict) {
+		denied_flow_upsert(&flow_key, DROP_REASON_POLICY_MISS, now_ns);
+		metric_add(METRIC_FLOWS_DENIED, 1);
+		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+				ip->protocol, FLOW_VERDICT_DENY, src_id, dst_id,
+				packet_bytes);
+		return TC_ACT_SHOT;
+	}
+
+	switch (verdict->action) {
+	case FLOW_VERDICT_ALLOW:
+		if ((ip->protocol == IPPROTO_TCP && is_tcp_connection_open(ip, data_end)) ||
+		    (ip->protocol == IPPROTO_UDP && udp_first_sight(&flow_key))) {
+			metric_add(METRIC_FLOWS_ALLOWED, 1);
+			emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+					ip->protocol, FLOW_VERDICT_ALLOW, src_id, dst_id,
+					packet_bytes);
+		}
+		return TC_ACT_OK;
+	case FLOW_VERDICT_DENY:
+		denied_flow_upsert(&flow_key, DROP_REASON_POLICY_DENY, now_ns);
+		metric_add(METRIC_FLOWS_DENIED, 1);
+		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+				ip->protocol, FLOW_VERDICT_DENY, src_id, dst_id,
+				packet_bytes);
+		return TC_ACT_SHOT;
+	case FLOW_VERDICT_REDIRECT:
+		skb->mark |= MERIDIAN_MARK_REDIRECT_PLACEHOLDER;
+		metric_add(METRIC_FLOWS_REDIRECTED, 1);
+		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+				ip->protocol, FLOW_VERDICT_REDIRECT, src_id, dst_id,
+				packet_bytes);
+		return TC_ACT_OK;
+	default:
+		denied_flow_upsert(&flow_key, DROP_REASON_INVALID_ACTION, now_ns);
+		metric_add(METRIC_FLOWS_DENIED, 1);
+		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
+				ip->protocol, FLOW_VERDICT_DENY, src_id, dst_id,
+				packet_bytes);
+		return TC_ACT_SHOT;
+	}
+}
+
 SEC("tc")
 int meridian_tc_ingress(struct __sk_buff *skb)
 {
@@ -164,29 +356,37 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	void *data_end = (void *)(long)skb->data_end;
 	__u32 packet_bytes = skb->len;
 	__u64 now_ns = bpf_ktime_get_ns();
+	struct iphdr *ip;
+	struct iphdr *inner_ip = 0;
+	__u16 src_port = 0;
+	__u16 dst_port = 0;
+	__u32 geneve_src_id = 0;
+	__u32 geneve_tlv_found = 0;
+	__u32 is_geneve = 0;
+	__u32 src_id = 0;
+	__u32 dst_id = 0;
+	__u32 *mapped_src;
+	__u32 *mapped_dst;
 
-	/* Byte counter is packet-based and increments on every packet. */
 	metric_add(METRIC_BYTES_TOTAL, packet_bytes);
 
-	/* Ethernet parse + bounds check. */
 	struct ethhdr *eth = data;
 	if ((void *)(eth + 1) > data_end)
 		return TC_ACT_OK;
 
-	/* Non-IPv4 always passes through in MER-16. */
 	if (eth->h_proto != bpf_htons(ETH_P_IP))
 		return TC_ACT_OK;
 
-	/* IPv4 fixed header parse + bounds check. */
-	struct iphdr *ip = (void *)(eth + 1);
+	ip = (void *)(eth + 1);
 	if ((void *)(ip + 1) > data_end)
 		return TC_ACT_OK;
 
-	/* L4 parse (TCP/UDP only) with verifier-safe bounds checks. */
-	__u16 src_port = 0;
-	__u16 dst_port = 0;
+	is_geneve = try_parse_geneve_inner(ip, data_end, &inner_ip, &geneve_src_id,
+					   &geneve_tlv_found);
+	if (is_geneve)
+		ip = inner_ip;
+
 	if (!parse_l4_ports(ip, data_end, &src_port, &dst_port)) {
-		/* Parse failure is treated as unknown identity posture, not implicit allow. */
 		if (failopen_unknown_enabled())
 			return TC_ACT_OK;
 		struct flow_key deny_key = {
@@ -205,91 +405,21 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 		return TC_ACT_SHOT;
 	}
 
-	/*
-	 * Identity lookups. Keys are network-order packet bytes copied verbatim
-	 * from the wire into ip->saddr/ip->daddr.
-	 */
-	__u32 src_key = ip->saddr;
-	__u32 dst_key = ip->daddr;
+	mapped_src = bpf_map_lookup_elem(&identity_map, &ip->saddr);
+	mapped_dst = bpf_map_lookup_elem(&identity_map, &ip->daddr);
 
-	__u32 *src_identity = bpf_map_lookup_elem(&identity_map, &src_key);
-	__u32 *dst_identity = bpf_map_lookup_elem(&identity_map, &dst_key);
+	if (mapped_src && *mapped_src != 0)
+		src_id = *mapped_src;
+	else if (is_geneve && geneve_tlv_found)
+		src_id = geneve_src_id;
+	else if (is_geneve && !geneve_tlv_found)
+		metric_add(METRIC_GENEVE_DECODE_FAIL, 1);
 
-	struct flow_key flow_key = {
-		.src_ip = ip->saddr,
-		.dst_ip = ip->daddr,
-		.src_port = src_port,
-		.dst_port = dst_port,
-		.proto = ip->protocol,
-		._pad = {0, 0, 0},
-	};
+	if (mapped_dst && *mapped_dst != 0)
+		dst_id = *mapped_dst;
 
-	if (!src_identity || !dst_identity || *src_identity == 0 || *dst_identity == 0) {
-		if (failopen_unknown_enabled())
-			return TC_ACT_OK;
-		denied_flow_upsert(&flow_key, DROP_REASON_UNKNOWN_IDENTITY, now_ns);
-		metric_add(METRIC_FLOWS_DENIED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-				ip->protocol, FLOW_VERDICT_DENY, 0, 0, packet_bytes);
-		return TC_ACT_SHOT;
-	}
-
-	struct policy_key policy_key = {
-		.src_id = *src_identity,
-		.dst_id = *dst_identity,
-		.dst_port = bpf_ntohs(dst_port), /* host order for policy_map key */
-		.proto = ip->protocol,
-		.direction = POLICY_DIR_INGRESS,
-	};
-	struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
-
-	if (!verdict) {
-		denied_flow_upsert(&flow_key, DROP_REASON_POLICY_MISS, now_ns);
-		metric_add(METRIC_FLOWS_DENIED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-				ip->protocol, FLOW_VERDICT_DENY, *src_identity,
-				*dst_identity, packet_bytes);
-		return TC_ACT_SHOT;
-	}
-
-	switch (verdict->action) {
-	case FLOW_VERDICT_ALLOW:
-		/*
-		 * Decision-point ALLOW telemetry:
-		 *   - TCP: emit once per connection on SYN&&!ACK
-		 *   - UDP: emit only on first-sight via bounded LRU seen-set
-		 */
-		if ((ip->protocol == IPPROTO_TCP && is_tcp_connection_open(ip, data_end)) ||
-		    (ip->protocol == IPPROTO_UDP && udp_first_sight(&flow_key))) {
-			metric_add(METRIC_FLOWS_ALLOWED, 1);
-			emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-					ip->protocol, FLOW_VERDICT_ALLOW, *src_identity,
-					*dst_identity, packet_bytes);
-		}
-		return TC_ACT_OK;
-	case FLOW_VERDICT_DENY:
-		denied_flow_upsert(&flow_key, DROP_REASON_POLICY_DENY, now_ns);
-		metric_add(METRIC_FLOWS_DENIED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-				ip->protocol, FLOW_VERDICT_DENY, *src_identity,
-				*dst_identity, packet_bytes);
-		return TC_ACT_SHOT;
-	case FLOW_VERDICT_REDIRECT:
-		/* MER-17 placeholder: decision + telemetry only, no data-path redirect yet. */
-		skb->mark |= MERIDIAN_MARK_REDIRECT_PLACEHOLDER;
-		metric_add(METRIC_FLOWS_REDIRECTED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-				ip->protocol, FLOW_VERDICT_REDIRECT, *src_identity,
-				*dst_identity, packet_bytes);
-		return TC_ACT_OK;
-	default:
-		denied_flow_upsert(&flow_key, DROP_REASON_INVALID_ACTION, now_ns);
-		metric_add(METRIC_FLOWS_DENIED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
-				ip->protocol, FLOW_VERDICT_DENY, *src_identity,
-				*dst_identity, packet_bytes);
-		return TC_ACT_SHOT;
-	}
+	return enforce_flow(skb, ip, data_end, packet_bytes, now_ns, src_port, dst_port,
+			    src_id, dst_id);
 }
 
 char _license[] SEC("license") = "GPL";

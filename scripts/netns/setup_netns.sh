@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+#
+# DEBUG-ONLY. The Go test harness (test/harness/netns.go) is the AUTHORITATIVE
+# netns fixture used by CI and the integration suite. This script exists only so
+# a developer can reproduce that topology by hand while debugging; it is not on
+# the CI fixture path (asserted by test/harness/netns_scripts_test.go). Keep its
+# command sequence in sync with the harness — see docs/NETNS_SCRIPTS.md (C-4/D-4).
+#
 set -euo pipefail
 
 usage() {

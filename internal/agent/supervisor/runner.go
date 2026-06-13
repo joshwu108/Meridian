@@ -22,8 +22,12 @@ type startupResources struct {
 	IdentityMap   any
 	PolicyMap     any
 	AttachProgram attach.ProgramRef
-	Close         func() error
-	Opaque        any
+	// Telemetry is the flow-event consumer the supervisor constructs but does
+	// not start (held as any so the cross-platform runner stays free of the
+	// linux-only telemetry.Consumer type). Its fd is released by Close.
+	Telemetry any
+	Close     func() error
+	Opaque    any
 }
 
 type startupDeps struct {

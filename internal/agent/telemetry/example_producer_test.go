@@ -12,7 +12,7 @@ func TestExampleProducerEventFor(t *testing.T) {
 	p := NewExampleProducer(100 * time.Millisecond)
 	fixed := time.Unix(1700000000, 123456789)
 	p.now = func() time.Time { return fixed }
-	p.baseMono = 1_000_000
+	p.baseMono = 1_000_000_000
 
 	ev := p.eventFor(7)
 

@@ -12,24 +12,22 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// MER-18: verdict matrix against the reference evaluator.
-//
-// NOTE: redirect and policy-map-driven deny/redirect require MER-17's policy
-// lookup path in tc_ingress; those matrix rows are intentionally opened as
-// subtests and marked skipped until that dependency lands.
+// MER-18 (P1.1 gate): verdict matrix against the reference evaluator.
+// Every row seeds the kernel maps the datapath would populate, runs
+// prog_test_run, and asserts the TC action equals the reference verdict
+// for the same tuple — no hand-written expected TC values.
 func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 	tuples := []struct {
-		name             string
-		packet           []byte
-		input            reference.Input
-		unknownMode      reference.UnknownIdentityMode
-		seedSrcIdentity  *uint32
-		seedDstIdentity  *uint32
-		rules            []reference.Rule
-		blockedByMissing string
+		name            string
+		packet          []byte
+		input           reference.Input
+		unknownMode     reference.UnknownIdentityMode
+		seedSrcIdentity *uint32
+		seedDstIdentity *uint32
+		rules           []reference.Rule
 	}{
 		{
-			name:        "allow identity hit",
+			name:        "allow policy hit",
 			packet:      synthIPv4Packet(6, []byte{10, 42, 0, 2}, []byte{10, 42, 0, 3}),
 			unknownMode: reference.UnknownIdentityFailClosed,
 			input: reference.Input{
@@ -53,6 +51,46 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name:        "deny policy explicit",
+			packet:      synthIPv4Packet(6, []byte{10, 42, 0, 4}, []byte{10, 42, 0, 5}),
+			unknownMode: reference.UnknownIdentityFailClosed,
+			input: reference.Input{
+				SrcIdentity: 1002,
+				DstIdentity: 2002,
+				DstPort:     8080,
+				Protocol:    6,
+				Direction:   reference.DirectionIngress,
+			},
+			seedSrcIdentity: ptrUint32(1002),
+			seedDstIdentity: ptrUint32(2002),
+			rules: []reference.Rule{
+				{
+					SrcIdentity: 1002,
+					DstIdentity: 2002,
+					DstPort:     8080,
+					Protocol:    6,
+					Direction:   reference.DirectionIngress,
+					Verdict: wire.PolicyVerdict{
+						Action: wire.PolicyActionDeny,
+					},
+				},
+			},
+		},
+		{
+			name:        "deny policy miss default-deny",
+			packet:      synthIPv4Packet(6, []byte{10, 42, 0, 6}, []byte{10, 42, 0, 7}),
+			unknownMode: reference.UnknownIdentityFailClosed,
+			input: reference.Input{
+				SrcIdentity: 1004,
+				DstIdentity: 2004,
+				DstPort:     8080,
+				Protocol:    6,
+				Direction:   reference.DirectionIngress,
+			},
+			seedSrcIdentity: ptrUint32(1004),
+			seedDstIdentity: ptrUint32(2004),
 		},
 		{
 			name:        "deny unknown identity fail-closed",
@@ -105,7 +143,7 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			},
 		},
 		{
-			name:        "redirect verdict (pending MER-17 policy path)",
+			name:        "redirect verdict mark-only placeholder",
 			packet:      synthIPv4Packet(6, []byte{10, 42, 3, 2}, []byte{10, 42, 3, 3}),
 			unknownMode: reference.UnknownIdentityFailClosed,
 			input: reference.Input{
@@ -129,17 +167,12 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 					},
 				},
 			},
-			blockedByMissing: "MER-17 policy lookup / redirect action in tc_ingress",
 		},
 	}
 
 	for _, tc := range tuples {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.blockedByMissing != "" {
-				t.Skipf("ticket opened; blocked by dependency: %s", tc.blockedByMissing)
-			}
-
 			eval, err := reference.NewEvaluator(tc.unknownMode, tc.rules)
 			if err != nil {
 				t.Fatalf("new evaluator: %v", err)
@@ -156,6 +189,9 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			if tc.seedDstIdentity != nil {
 				seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(tc.packet[30:34]), *tc.seedDstIdentity)
 			}
+			for _, rule := range tc.rules {
+				seedPolicy(t, objs.PolicyMap, rule)
+			}
 			setUnknownMode(t, objs.RuntimeConfigMap, tc.unknownMode)
 
 			got, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: tc.packet})
@@ -171,6 +207,40 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 				t.Fatalf("verdict mismatch: kernel=%d expected(tc)=%d expected(action)=%d", got, wantTCAct, want.Action)
 			}
 		})
+	}
+}
+
+// policyMapKey and policyMapVerdict mirror the frozen v2 bpf layouts
+// (see internal/agent/datapath/translate.go) for prog_test_run seeding.
+type policyMapKey struct {
+	SrcID     uint32
+	DstID     uint32
+	DstPort   uint16
+	Proto     uint8
+	Direction uint8
+}
+
+type policyMapVerdict struct {
+	Action uint8
+	Flags  uint8
+	Pad    uint16
+}
+
+func seedPolicy(t *testing.T, m *ebpf.Map, rule reference.Rule) {
+	t.Helper()
+	key := policyMapKey{
+		SrcID:     uint32(rule.SrcIdentity),
+		DstID:     uint32(rule.DstIdentity),
+		DstPort:   rule.DstPort,
+		Proto:     rule.Protocol,
+		Direction: rule.Direction,
+	}
+	verdict := policyMapVerdict{
+		Action: uint8(rule.Verdict.Action),
+		Flags:  uint8(rule.Verdict.Flags),
+	}
+	if err := m.Put(key, verdict); err != nil {
+		t.Fatalf("seed policy_map %+v -> %+v: %v", key, verdict, err)
 	}
 }
 
@@ -191,6 +261,9 @@ func actionToTCAct(action wire.PolicyAction) (int, bool) {
 		return tcActOK, true
 	case wire.PolicyActionDeny:
 		return tcActShot, true
+	case wire.PolicyActionRedirectProxy:
+		// MER-17 mark-only placeholder: data path still passes the packet.
+		return tcActOK, true
 	default:
 		return 0, false
 	}

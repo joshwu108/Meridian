@@ -75,7 +75,10 @@ func (v *VethPair) setup() {
 	v.run("ip", "netns", "exec", v.Netns, "ip", "addr", "add", v.PeerIP+"/30", "dev", v.PeerVeth)
 	v.run("ip", "netns", "exec", v.Netns, "ip", "link", "set", v.PeerVeth, "up")
 	v.run("ip", "netns", "exec", v.Netns, "ip", "link", "set", "lo", "up")
-	v.run("tc", "qdisc", "add", "dev", v.HostVeth, "clsact")
+	// `replace` (not `add`) is idempotent: a leaked clsact from a crashed run
+	// is overwritten rather than failing bring-up. This matches the debug
+	// mirror in scripts/netns/create_veth_pair.sh (single-sourced per C-4/D-4).
+	v.run("tc", "qdisc", "replace", "dev", v.HostVeth, "clsact")
 }
 
 // ExecInNS runs a one-shot command inside the namespace via `ip netns exec`

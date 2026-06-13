@@ -64,7 +64,7 @@ Three properties of this graph drive the schedule:
 
 These emerged from subsystem analysis and are *not* explicit in the PRD:
 
-- **CC-1 — Original-destination recovery (blocking, highest leverage).** `bpf_redirect()`/`bpf_redirect_neigh()` to the proxy port does **not** preserve the original destination for a normal `accept()`; the PRD glosses over this. Decide before Phase 4: **TPROXY + `IP_TRANSPARENT`** (recommended — matches Istio ztunnel; proxy recovers dst via `getsockname()`) vs eBPF DNAT-to-loopback + a pinned `orig_dst_map`. Forces work on the agent (rule installation), proxy (transparent listeners), and possibly the eBPF schema (new map).
+- **CC-1 — Original-destination recovery (blocking, highest leverage).** `bpf_redirect()`/`bpf_redirect_neigh()` to the proxy port does **not** preserve the original destination for a normal `accept()`; the PRD glosses over this. **Resolved in [ADR-0006](docs/adr/0006-original-destination-recovery.md): TPROXY + `IP_TRANSPARENT`** (matches Istio ztunnel; proxy recovers dst via `getsockname()`), **no orig-dst map in v1**; eBPF DNAT-to-loopback + a pinned `orig_dst_map` is the rejected alternative kept reachable behind the proxy's `originalDestination()` seam. Forces work on the agent (rule installation), proxy (transparent listeners). **This is a Phase-4 *entry gate*:** Phase 4 may not start until the no-TLS echo prototype (node-proxy P4.1) proves a redirected connection reaches the proxy with the correct original destination (de-risks Top-risk #1 / eBPF R3 / proxy R1 before any TLS).
 - **CC-2 — Compiled-policy wire contract.** The byte layout of `policy_key_t`/`policy_verdict_t` and the xDS metadata schema carrying verdicts, `l7_required`, identity IDs, and L7 rules is *the* contract between control plane, agent, and kernel. Freeze before Phase 3 completes.
 - **CC-3 — Numeric identity allocation.** The control plane is the **sole allocator** of the cluster-global uint32 identity space (Geneve carries it across nodes). Monotonic, never reused within a control-plane lifetime; ID 0 reserved for unknown. Resolve the PRD's value-size inconsistency (8 B in §4.3 vs `__u32` in §6.3) to `__u32`.
 - **CC-4 — Single node bootstrap credential.** One node identity authenticates both the ADS stream and SVID issuance; standalone mode uses an operator-provisioned cert, K8s mode uses ServiceAccount projected tokens + TokenReview to break the bootstrap circularity.
@@ -83,6 +83,6 @@ Each subsystem file carries its full ranked list; the five that can sink the pro
 
 ## First three concrete actions
 
-1. Write the two gating ADRs: *original-destination mechanism (CC-1)* and *compiled-policy + identity-ID wire contract (CC-2/CC-3)*.
+1. Write the two gating ADRs: *original-destination mechanism (CC-1)* — **done, [ADR-0006](docs/adr/0006-original-destination-recovery.md)** — and *compiled-policy + identity-ID wire contract (CC-2/CC-3)*.
 2. Stand up the eBPF toolchain spine (Phase 0.1): repo scaffolding, `make ebpf`, no-op TC program loading verifier-clean on a 5.15 VM, CI job running `bpf_prog_test_run`.
 3. Start the reference policy evaluator + property-test harness — it is pure Go, has no dependencies, and everything correctness-critical is measured against it.

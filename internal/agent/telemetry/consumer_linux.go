@@ -5,6 +5,7 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -27,6 +28,9 @@ type Consumer struct {
 	reader *ringbuf.Reader
 	bootNs int64 // CLOCK_REALTIME - CLOCK_MONOTONIC, computed once at startup
 
+	closeOnce sync.Once // guards exactly-once close of the reader fd
+	closeErr  error     // result of the single reader.Close, shared by callers
+
 	decoded   atomic.Uint64 // successfully decoded records
 	decodeErr atomic.Uint64 // short/garbled records (counted, skipped)
 }
@@ -45,6 +49,28 @@ func New(flowEvents *ebpf.Map) (*Consumer, error) {
 		reader: reader,
 		bootNs: computeBootOffsetNs(),
 	}, nil
+}
+
+// closeReader closes the underlying ringbuf reader exactly once, regardless of
+// how many paths race to shut the Consumer down: an explicit Close, Run's
+// ctx-cancel watcher, and Run's deferred cleanup all funnel through here.
+// ringbuf.Reader.Close is the only call that releases the reader fd and the
+// only way to unblock an in-flight ReadInto (it makes pending reads return
+// ringbuf.ErrClosed).
+func (c *Consumer) closeReader() error {
+	c.closeOnce.Do(func() {
+		c.closeErr = c.reader.Close()
+	})
+	return c.closeErr
+}
+
+// Close releases the ringbuf reader fd. It exists for the lifecycle path where
+// New succeeds but Run is never called: without it the reader fd would leak
+// until process exit (review A-4 / D-8, MER-39). Close is idempotent and safe
+// to call after — or concurrently with — Run, whose own shutdown also closes
+// the reader; the redundant close is a no-op.
+func (c *Consumer) Close() error {
+	return c.closeReader()
 }
 
 // computeBootOffsetNs returns (CLOCK_REALTIME - CLOCK_MONOTONIC) in ns.
@@ -70,11 +96,15 @@ func (c *Consumer) Run(ctx context.Context, handler Handler) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = c.reader.Close() // unblocks ReadInto with ErrClosed
+			_ = c.closeReader() // unblocks ReadInto with ErrClosed
 		case <-closed:
 		}
 	}()
 	defer close(closed)
+	// Backstop: release the reader fd on every Run exit, including the fatal
+	// read-error path, where the watcher above returns via <-closed without
+	// closing the reader. Idempotent with the watcher and any explicit Close.
+	defer c.closeReader()
 
 	var rec ringbuf.Record
 	for {

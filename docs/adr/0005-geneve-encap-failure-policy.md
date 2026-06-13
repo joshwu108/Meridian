@@ -9,6 +9,13 @@
   (D-A attachment point, D-B passenger/TLV ownership), ARCHITECTURE D8/CC-3
   (identity TLV), D16 (`runtime_config_map`). Consumed by MER-20 (`tc_egress`
   option push), MER-21 (ingress decode), MER-28/MER-29 (two-node + live tests).
+- **Tracking ticket:** MER-41 (numbering/index reconciliation).
+- **Provenance:** authored ad hoc and committed inside the MER-26 commit
+  (`754e2ee`, "feat(datapath): implement MER-26 writer and translation layer")
+  with no tracking ticket of its own. MER-41 backfills the linkage and records
+  it in [`docs/adr/README.md`](README.md); the *decision* belongs to the Geneve
+  identity-propagation work (ADR-0002 line, MER-12/MER-28) and is consumed by
+  the tickets listed above.
 
 ## Context
 

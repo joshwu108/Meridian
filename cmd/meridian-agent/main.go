@@ -67,9 +67,11 @@ func run(pinDir, iface, policyFile string) error {
 		return fmt.Errorf("startup runner objects: %w", err)
 	}
 
-	consumer, err := telemetry.New(objs.FlowEvents)
+	// The supervisor constructs and owns the consumer (its fd is released by
+	// startupRuntime.Close above); we only drive Run here.
+	consumer, err := startupRuntime.Consumer()
 	if err != nil {
-		return err
+		return fmt.Errorf("startup runner consumer: %w", err)
 	}
 
 	metricsServer := metrics.NewServer(":9901", metrics.NewRegistry(metrics.NewMapReader(objs.MetricsMap)))
