@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -142,7 +143,7 @@ func assertTCPConnectFromPeer(t *testing.T, v *harness.VethPair, port int, wantO
 	t.Helper()
 	stop := startTCPListenerOnHost(t, port)
 	defer stop()
-	waitForHostListener(t, port)
+	waitForHostListener(t, port, v.HostAddr)
 
 	harness.WaitUntil(t, 3*time.Second, func() bool {
 		_, err := v.TryExecInNS("nc", "-z", "-w", "1", v.HostAddr, strconv.Itoa(port))
@@ -155,26 +156,26 @@ func assertTCPConnectFromPeer(t *testing.T, v *harness.VethPair, port int, wantO
 
 func startTCPListenerOnHost(t *testing.T, port int) func() {
 	t.Helper()
-	cmd := exec.Command("sh", "-c",
-		fmt.Sprintf("while true; do nc -l -p %d >/dev/null 2>&1 || true; done", port))
+	cmd := exec.Command("nc", "-l", "-k", "-p", strconv.Itoa(port))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start host listener on port %d: %v", port, err)
 	}
 	return func() {
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			_, _ = cmd.Process.Wait()
 		}
 	}
 }
 
-func waitForHostListener(t *testing.T, port int) {
+func waitForHostListener(t *testing.T, port int, hostAddr string) {
 	t.Helper()
 	harness.WaitUntil(t, 2*time.Second, func() bool {
-		out, err := exec.Command("nc", "-z", "-w", "1", "127.0.0.1", strconv.Itoa(port)).CombinedOutput()
+		out, err := exec.Command("nc", "-z", "-w", "1", hostAddr, strconv.Itoa(port)).CombinedOutput()
 		_ = out
 		return err == nil
-	}, fmt.Sprintf("host listener never ready on port %d", port))
+	}, fmt.Sprintf("host listener never ready on %s:%d", hostAddr, port))
 }
 
 type flowMapKey struct {

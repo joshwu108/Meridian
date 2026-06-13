@@ -23,8 +23,8 @@ no integration ./test/integration/... TestGeneveIngressIdentityPolicyGate_MER21
 yes '' ./internal/control/... TestCompilerMatchesReferenceProperty
 yes '' ./internal/control/... TestConformanceRegressionCorpus
 
-# O-2 — MER-32 denied-flows metrics gate (not yet authored)
-no integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
+# O-2 — MER-32 denied-flows metrics gate
+yes integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
 
 # --- Phase 2 gates (MER-46 plan; implementation gated on MER-34) ---
 
