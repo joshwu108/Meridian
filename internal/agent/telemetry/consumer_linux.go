@@ -3,8 +3,8 @@
 package telemetry
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"sync/atomic"
 	"unsafe"
 

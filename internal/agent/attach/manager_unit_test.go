@@ -127,4 +127,3 @@ func TestReplacePinnedProgramReturnsInitialPinFailure(t *testing.T) {
 		t.Fatalf("expected wrapped pin failure, got %v", err)
 	}
 }
-

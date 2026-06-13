@@ -238,4 +238,3 @@ func keyFromIPv4Wire(ipv4 []byte) uint32 {
 	// Matches how BPF loads ip->saddr/ip->daddr from packet memory on little-endian hosts.
 	return binary.LittleEndian.Uint32(ipv4)
 }
-

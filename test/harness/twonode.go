@@ -74,14 +74,14 @@ func NewTwoNode(t *testing.T, name string, baseOctet byte) *TwoNode {
 		HostVethA: "mha-" + sfx,
 		HostVethB: "mhb-" + sfx,
 		NodeA: Node{
-			Namespace: fmt.Sprintf("%s%s-%s-a", NetnsPrefix, RunID(), name),
-			Veth:      "nva-" + sfx,
+			Namespace:  fmt.Sprintf("%s%s-%s-a", NetnsPrefix, RunID(), name),
+			Veth:       "nva-" + sfx,
 			UnderlayIP: fmt.Sprintf("172.31.%d.2", baseOctet),
 			OverlayIP:  fmt.Sprintf("10.200.%d.1", baseOctet),
 		},
 		NodeB: Node{
-			Namespace: fmt.Sprintf("%s%s-%s-b", NetnsPrefix, RunID(), name),
-			Veth:      "nvb-" + sfx,
+			Namespace:  fmt.Sprintf("%s%s-%s-b", NetnsPrefix, RunID(), name),
+			Veth:       "nvb-" + sfx,
 			UnderlayIP: fmt.Sprintf("172.31.%d.2", baseOctet+1),
 			OverlayIP:  fmt.Sprintf("10.200.%d.2", baseOctet),
 		},

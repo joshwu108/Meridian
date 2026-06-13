@@ -105,4 +105,3 @@ func TestCounterCountsAndEmitsEvents(t *testing.T) {
 		}
 	}, "no plausible flow event decoded from the ring buffer")
 }
-

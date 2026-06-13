@@ -62,4 +62,3 @@ func TestProgRunCountsSyntheticPacket(t *testing.T) {
 		t.Fatalf("counter = %d after one packet, want 1", sum)
 	}
 }
-
