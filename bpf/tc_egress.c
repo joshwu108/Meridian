@@ -18,6 +18,7 @@
 
 #include "meridian_consts.h"
 #include "meridian_maps.h"
+#include "meridian_parse.h"
 #include "meridian_types.h"
 
 static __always_inline __u32 failopen_unknown_enabled(void)
@@ -108,15 +109,6 @@ static __always_inline __u32 parse_l4_ports(struct iphdr *ip, void *data_end,
 	return 1;
 }
 
-static __always_inline __u32 looks_like_ipv4(void *ptr, void *data_end)
-{
-	struct iphdr *ip = ptr;
-
-	if ((void *)(ip + 1) > data_end)
-		return 0;
-	return ip->version == 4 && ip->ihl >= IPV4_IHL_MIN && ip->ihl <= IPV4_IHL_MAX;
-}
-
 static __always_inline __u32 parse_geneve_option_count(void *opts, void *data_end,
 							__u32 opt_bytes, __u32 *count_out)
 {
@@ -166,15 +158,11 @@ int meridian_tc_egress(struct __sk_buff *skb)
 	__u32 event_src_id = 0;
 	__u32 event_dst_id = 0;
 
-	/* Parse outer Ethernet + IPv4 + UDP Geneve. */
+	/* Parse outer Ethernet (+ optional 802.1Q) + IPv4 + UDP Geneve. */
 	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return TC_ACT_OK;
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
-		return TC_ACT_OK;
+	struct iphdr *outer_ip;
 
-	struct iphdr *outer_ip = (void *)(eth + 1);
-	if ((void *)(outer_ip + 1) > data_end)
+	if (!parse_ipv4_after_eth(eth, data_end, &outer_ip))
 		return TC_ACT_OK;
 	if (outer_ip->version != 4 || outer_ip->ihl < IPV4_IHL_MIN ||
 	    outer_ip->ihl > IPV4_IHL_MAX)

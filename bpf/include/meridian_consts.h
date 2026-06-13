@@ -18,8 +18,12 @@
 #define TC_ACT_REDIRECT   7
 
 /* Ethertypes (compared against eth->h_proto in network order via bpf_htons). */
-#define ETH_P_IP   0x0800   /* IPv4 */
-#define ETH_P_IPV6 0x86DD   /* IPv6 (Phase 0: passthrough, not parsed) */
+#define ETH_P_IP     0x0800   /* IPv4 */
+#define ETH_P_8021Q  0x8100   /* 802.1Q VLAN (MER-43: unwrap inner L3) */
+#define ETH_P_IPV6   0x86DD   /* IPv6 (Phase 0: passthrough, not parsed) */
+
+/* 802.1Q tag after ethhdr: TCI (2) + inner ethertype (2). TPID is eth->h_proto. */
+#define VLAN_INNER_HDR_BYTES 4
 
 /* L4 protocol numbers (ip->protocol). */
 #define IPPROTO_TCP 6

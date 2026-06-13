@@ -31,21 +31,29 @@ type denyInfo struct {
 	Reason uint32
 }
 
+func runTcEgress(t *testing.T, prog *ebpf.Program, pkt []byte) (uint32, []byte) {
+	t.Helper()
+	out := make([]byte, len(pkt))
+	copy(out, pkt)
+	ret, err := prog.Run(&ebpf.RunOptions{Data: pkt, DataOut: out})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	return ret, out
+}
+
 func TestTcEgressSuccessfulEncapsulation(t *testing.T) {
 	objs := loadTcEgress(t)
 
 	pkt := synthGeneveIPv4Packet(6, []byte{10, 60, 1, 2}, []byte{10, 60, 1, 3}, true)
 	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 60, 1, 2}), 7001)
 
-	ret, err := objs.MeridianTcEgress.Run(&ebpf.RunOptions{Data: pkt})
-	if err != nil {
-		t.Fatalf("prog test run: %v", err)
-	}
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
 	if ret != tcActOK {
 		t.Fatalf("egress verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 
-	geneve := pkt[14+20+8:]
+	geneve := out[14+20+8:]
 	if got := geneve[0] & 0x3f; got != 2 {
 		t.Fatalf("geneve opt_len words=%d, want 2", got)
 	}
@@ -58,15 +66,12 @@ func TestTcEgressIdentityPropagation(t *testing.T) {
 	pkt := synthGeneveIPv4Packet(17, []byte{10, 61, 1, 2}, []byte{10, 61, 1, 3}, true)
 	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 61, 1, 2}), srcIdentity)
 
-	ret, err := objs.MeridianTcEgress.Run(&ebpf.RunOptions{Data: pkt})
-	if err != nil {
-		t.Fatalf("prog test run: %v", err)
-	}
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
 	if ret != tcActOK {
 		t.Fatalf("identity propagation verdict=%d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 
-	opt := pkt[14+20+8+8 : 14+20+8+8+8]
+	opt := out[14+20+8+8 : 14+20+8+8+8]
 	if got := binary.BigEndian.Uint16(opt[0:2]); got != 0x4d52 {
 		t.Fatalf("option class=0x%x, want 0x4d52", got)
 	}
@@ -166,6 +171,27 @@ func TestTcEgressMalformedPacket(t *testing.T) {
 	}
 	if after != before+1 {
 		t.Fatalf("encap fail metric=%d, want %d", after, before+1)
+	}
+}
+
+func TestTcEgressVlanTaggedIdentityPropagation(t *testing.T) {
+	objs := loadTcEgress(t)
+
+	const srcIdentity = uint32(8124)
+	innerSrc := []byte{10, 61, 2, 2}
+	innerDst := []byte{10, 61, 2, 3}
+	pkt := synthVLANTaggedGeneveIPv4Packet(17, innerSrc, innerDst, true)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerSrc), srcIdentity)
+
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
+	if ret != tcActOK {
+		t.Fatalf("vlan-tagged egress verdict=%d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+
+	// Outer layout: eth(14) + vlan(4) + ip(20) + udp(8) + geneve(8) + opt(8)
+	opt := out[14+4+20+8+8 : 14+4+20+8+8+8]
+	if got := binary.BigEndian.Uint32(opt[4:8]); got != srcIdentity {
+		t.Fatalf("identity body=%d, want %d", got, srcIdentity)
 	}
 }
 

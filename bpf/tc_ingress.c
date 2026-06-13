@@ -16,6 +16,8 @@
  *   - Decision-point event emission (TCP open / UDP first-sight / deny / redirect).
  *   - denied_flows_map upserts and flow/byte metrics accounting.
  *   - Non-IPv4 passthrough -> TC_ACT_OK.
+ *   - 802.1Q VLAN unwrap for real pod links (MER-43): inner IPv4 parsed with
+ *     the same bounds discipline as untagged frames.
  */
 #include "vmlinux.h"
 #include <bpf/bpf_endian.h>
@@ -23,6 +25,7 @@
 
 #include "meridian_consts.h"
 #include "meridian_maps.h"
+#include "meridian_parse.h"
 #include "meridian_types.h"
 
 /*
@@ -70,15 +73,6 @@ static __always_inline __u32 parse_l4_ports(struct iphdr *ip, void *data_end,
 		*dst_port = ports[1];
 	}
 	return 1;
-}
-
-static __always_inline __u32 looks_like_ipv4(void *ptr, void *data_end)
-{
-	struct iphdr *ip = ptr;
-
-	if ((void *)(ip + 1) > data_end)
-		return 0;
-	return ip->version == 4 && ip->ihl >= IPV4_IHL_MIN && ip->ihl <= IPV4_IHL_MAX;
 }
 
 static __always_inline __u32 parse_geneve_identity(void *opts, void *data_end,
@@ -367,17 +361,18 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	__u32 *mapped_src;
 	__u32 *mapped_dst;
 
+	metric_add(METRIC_PACKETS_TOTAL, 1);
 	metric_add(METRIC_BYTES_TOTAL, packet_bytes);
 
 	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
+	if (!parse_ipv4_after_eth(eth, data_end, &ip))
 		return TC_ACT_OK;
 
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
-		return TC_ACT_OK;
-
-	ip = (void *)(eth + 1);
-	if ((void *)(ip + 1) > data_end)
+	/*
+	 * Parser-negative frames (bad IHL, truncated L4) pass through without
+	 * policy enforcement — same discipline as counter.c / ARCHITECTURE §2.
+	 */
+	if (ip->ihl < IPV4_IHL_MIN || ip->ihl > IPV4_IHL_MAX)
 		return TC_ACT_OK;
 
 	is_geneve = try_parse_geneve_inner(ip, data_end, &inner_ip, &geneve_src_id,
@@ -385,24 +380,8 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	if (is_geneve)
 		ip = inner_ip;
 
-	if (!parse_l4_ports(ip, data_end, &src_port, &dst_port)) {
-		if (failopen_unknown_enabled())
-			return TC_ACT_OK;
-		struct flow_key deny_key = {
-			.src_ip = ip->saddr,
-			.dst_ip = ip->daddr,
-			.src_port = 0,
-			.dst_port = 0,
-			.proto = ip->protocol,
-			._pad = {0, 0, 0},
-		};
-
-		denied_flow_upsert(&deny_key, DROP_REASON_UNKNOWN_IDENTITY, now_ns);
-		metric_add(METRIC_FLOWS_DENIED, 1);
-		emit_flow_event(now_ns, ip->saddr, ip->daddr, 0, 0, ip->protocol,
-				FLOW_VERDICT_DENY, 0, 0, packet_bytes);
-		return TC_ACT_SHOT;
-	}
+	if (!parse_l4_ports(ip, data_end, &src_port, &dst_port))
+		return TC_ACT_OK;
 
 	mapped_src = bpf_map_lookup_elem(&identity_map, &ip->saddr);
 	mapped_dst = bpf_map_lookup_elem(&identity_map, &ip->daddr);

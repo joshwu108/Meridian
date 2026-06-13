@@ -41,7 +41,60 @@ func synthTCPPacket() []byte {
 	return pkt
 }
 
+// synthVLANTaggedIPv4Packet wraps synthIPv4Packet with a single 802.1Q tag.
+func synthVLANTaggedIPv4Packet(proto uint8, srcIP, dstIP []byte) []byte {
+	inner := synthIPv4PacketFrom(proto, srcIP, dstIP)
+	pkt := make([]byte, 4+len(inner))
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100) // VLAN-tagged
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064) // VLAN ID 100
+	binary.BigEndian.PutUint16(pkt[16:18], 0x0800) // inner IPv4
+	copy(pkt[18:], inner[14:])                     // skip inner Ethernet header
+	return pkt
+}
+
+// synthTruncatedVLANTaggedPacket has 802.1Q ethertype but no complete VLAN tag.
+func synthTruncatedVLANTaggedPacket() []byte {
+	pkt := make([]byte, 16)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	return pkt
+}
+
+// synthVLANTaggedNonIPv4Packet carries VLAN with a non-IPv4 inner ethertype.
+func synthVLANTaggedNonIPv4Packet(innerEthertype uint16) []byte {
+	pkt := make([]byte, 18+32)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	binary.BigEndian.PutUint16(pkt[16:18], innerEthertype)
+	return pkt
+}
+
+// synthVLANTaggedGeneveIPv4Packet wraps synthGeneveIPv4Packet with 802.1Q.
+func synthVLANTaggedGeneveIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte, reserveTLVHeadroom bool) []byte {
+	inner := synthGeneveIPv4Packet(innerProto, innerSrcIP, innerDstIP, reserveTLVHeadroom)
+	pkt := make([]byte, 4+len(inner))
+
+	copy(pkt[0:6], inner[0:6])
+	copy(pkt[6:12], inner[6:12])
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	binary.BigEndian.PutUint16(pkt[16:18], 0x0800)
+	copy(pkt[18:], inner[14:])
+	return pkt
+}
+
 func synthIPv4Packet(proto uint8, srcIP, dstIP []byte) []byte {
+	return synthIPv4PacketFrom(proto, srcIP, dstIP)
+}
+
+func synthIPv4PacketFrom(proto uint8, srcIP, dstIP []byte) []byte {
 	const (
 		ethHdrLen = 14
 		ipHdrLen  = 20
@@ -72,6 +125,50 @@ func synthNonIPv4Packet(ethertype uint16) []byte {
 	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
 	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
 	binary.BigEndian.PutUint16(pkt[12:14], ethertype)
+	return pkt
+}
+
+// synthTruncatedEthPacket is a minimum-size Ethernet header (14 bytes). Pair with
+// runTcIngressWithDataEnd(..., dataEnd < 14) to exercise the truncated-L2 path
+// under bpf_prog_test_run's 14-byte minimum Data length.
+func synthTruncatedEthPacket() []byte {
+	pkt := make([]byte, 14)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+	return pkt
+}
+
+// synthTruncatedIPv4Packet has a valid Ethernet header but fewer than 20 IPv4 bytes.
+func synthTruncatedIPv4Packet() []byte {
+	const ethHdrLen = 14
+	pkt := make([]byte, ethHdrLen+10)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	return pkt
+}
+
+// synthMalformedIPv4IHLOptionsTruncated claims IHL=15 (60-byte header) in a short frame.
+func synthMalformedIPv4IHLOptionsTruncated() []byte {
+	const (
+		ethHdrLen = 14
+		ipHdrLen  = 20
+	)
+	pkt := make([]byte, ethHdrLen+ipHdrLen)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x4f // version 4, IHL 15
+	binary.BigEndian.PutUint16(ip[2:4], ipHdrLen)
+	ip[8] = 64
+	ip[9] = 6
+	copy(ip[12:16], []byte{10, 9, 1, 1})
+	copy(ip[16:20], []byte{10, 9, 1, 2})
 	return pkt
 }
 

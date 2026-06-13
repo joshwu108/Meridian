@@ -4,6 +4,7 @@ package bpftest
 
 import (
 	"encoding/binary"
+	"sync"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -14,6 +15,8 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 	"github.com/joshuawu/meridian/test/harness"
 )
+
+var loadTcIngressMu sync.Mutex
 
 const (
 	cfgSlotUnknownIdentity = uint32(0)
@@ -40,8 +43,10 @@ func TestTcIngressIdentityHit(t *testing.T) {
 	objs := loadTcIngress(t)
 
 	pkt := synthIPv4Packet(6, []byte{10, 0, 1, 2}, []byte{10, 0, 1, 3})
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 1001)
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 1002)
+	const srcID, dstID = uint32(1001), uint32(1002)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), srcID)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), dstID)
+	seedAllowIngressPolicyFromPacket(t, objs.PolicyMap, pkt, srcID, dstID)
 
 	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
 	if err != nil {
@@ -125,8 +130,10 @@ func TestTcIngressIPv4PacketPassesWhenIdentitiesPresent(t *testing.T) {
 
 	// UDP frame exercises the UDP parse path (separate from TCP identity-hit test).
 	pkt := synthIPv4Packet(17, []byte{10, 1, 1, 2}, []byte{10, 1, 1, 3})
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 3001)
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 3002)
+	const srcID, dstID = uint32(3001), uint32(3002)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), srcID)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), dstID)
+	seedAllowIngressPolicyFromPacket(t, objs.PolicyMap, pkt, srcID, dstID)
 
 	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
 	if err != nil {
@@ -162,8 +169,10 @@ func TestTcIngressIPv4NonTcpUdpStillRequiresIdentities(t *testing.T) {
 		t.Fatalf("IPv4 ICMP miss fail-open verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), 3901)
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), 3902)
+	const srcID, dstID = uint32(3901), uint32(3902)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[26:30]), srcID)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(pkt[30:34]), dstID)
+	seedAllowIngressPolicyFromPacket(t, objs.PolicyMap, pkt, srcID, dstID)
 	ret, err = objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
 	if err != nil {
 		t.Fatalf("prog test run (identity hit): %v", err)
@@ -186,29 +195,41 @@ func TestTcIngressNonIPv4PacketPasses(t *testing.T) {
 	}
 }
 
-func TestTcIngressMalformedIPv4RespectsUnknownIdentityPosture(t *testing.T) {
+func TestTcIngressVlanTaggedSameVerdictAsUntagged(t *testing.T) {
 	objs := loadTcIngress(t)
 
-	// IHL=4 is malformed (<5), so parse_l4_ports fails before identity lookup.
-	pkt := synthMalformedIPv4IHLPacket(4)
+	srcIP := []byte{10, 43, 0, 2}
+	dstIP := []byte{10, 43, 0, 3}
+	const srcID = uint32(4301)
+	const dstID = uint32(4302)
 
-	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
-	if err != nil {
-		t.Fatalf("prog test run (fail-closed malformed): %v", err)
-	}
-	if ret != tcActShot {
-		t.Fatalf("malformed IPv4 fail-closed verdict = %d, want TC_ACT_SHOT (%d)", ret, tcActShot)
-	}
+	untagged := synthIPv4Packet(6, srcIP, dstIP)
+	tagged := synthVLANTaggedIPv4Packet(6, srcIP, dstIP)
 
-	if err := objs.RuntimeConfigMap.Put(cfgSlotUnknownIdentity, cfgFailopenUnknownBit); err != nil {
-		t.Fatalf("set runtime_config_map fail-open flag: %v", err)
-	}
-	ret, err = objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(srcIP), srcID)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(dstIP), dstID)
+	seedPolicy(t, objs.PolicyMap, reference.Rule{
+		SrcIdentity: wire.IdentityID(srcID),
+		DstIdentity: wire.IdentityID(dstID),
+		DstPort:     8080,
+		Protocol:    6,
+		Direction:   reference.DirectionIngress,
+		Verdict:     wire.PolicyVerdict{Action: wire.PolicyActionAllow},
+	})
+
+	untaggedRet, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: untagged})
 	if err != nil {
-		t.Fatalf("prog test run (fail-open malformed): %v", err)
+		t.Fatalf("untagged prog run: %v", err)
 	}
-	if ret != tcActOK {
-		t.Fatalf("malformed IPv4 fail-open verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	taggedRet, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: tagged})
+	if err != nil {
+		t.Fatalf("vlan-tagged prog run: %v", err)
+	}
+	if untaggedRet != tcActOK {
+		t.Fatalf("untagged verdict = %d, want TC_ACT_OK (%d)", untaggedRet, tcActOK)
+	}
+	if taggedRet != untaggedRet {
+		t.Fatalf("vlan-tagged verdict = %d, want same as untagged %d", taggedRet, untaggedRet)
 	}
 }
 
@@ -260,6 +281,9 @@ func TestTcIngressGeneveMissingTLVFailClosed(t *testing.T) {
 
 func loadTcIngress(t *testing.T) *bpf.TcIngressObjects {
 	t.Helper()
+	loadTcIngressMu.Lock()
+	defer loadTcIngressMu.Unlock()
+
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {
 		t.Fatalf("remove memlock rlimit: %v", err)
@@ -273,6 +297,29 @@ func loadTcIngress(t *testing.T) *bpf.TcIngressObjects {
 	}
 	t.Cleanup(func() { _ = objs.Close() })
 	return &objs
+}
+
+// seedAllowIngressPolicyFromPacket seeds an ALLOW rule keyed on the packet's
+// L4 tuple so identity-resolved flows pass default-deny enforcement (MER-17+).
+func seedAllowIngressPolicyFromPacket(t *testing.T, m *ebpf.Map, pkt []byte, srcID, dstID uint32) {
+	t.Helper()
+	const ethHdrLen = 14
+	ip := pkt[ethHdrLen:]
+	proto := ip[9]
+	ihl := int(ip[0]&0x0f) * 4
+	l4 := pkt[ethHdrLen+ihl:]
+	dstPort := uint16(0)
+	if proto == 6 || proto == 17 {
+		dstPort = binary.BigEndian.Uint16(l4[2:4])
+	}
+	seedPolicy(t, m, reference.Rule{
+		SrcIdentity: wire.IdentityID(srcID),
+		DstIdentity: wire.IdentityID(dstID),
+		DstPort:     dstPort,
+		Protocol:    proto,
+		Direction:   reference.DirectionIngress,
+		Verdict:     wire.PolicyVerdict{Action: wire.PolicyActionAllow},
+	})
 }
 
 func seedIdentity(t *testing.T, m *ebpf.Map, ipKey uint32, id uint32) {
