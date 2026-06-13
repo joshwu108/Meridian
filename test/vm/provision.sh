@@ -8,7 +8,10 @@
 
 set -euo pipefail
 
-CLANG_VERSION="${CLANG_VERSION:-17}"   # >= 15 required; 17 pins bpf2go output
+CLANG_MIN_MAJOR=15
+# CLANG_VERSION=auto (default) picks the highest clang-N/llvm-N pair available in
+# apt (17 on 24.04, usually 15 on 22.04 jammy). Override to pin, e.g. CLANG_VERSION=15.
+CLANG_VERSION="${CLANG_VERSION:-auto}"
 GO_VERSION="${GO_VERSION:-1.22.4}"
 GO_MIN_MINOR=22
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -19,10 +22,39 @@ fail() { printf '\033[31m[provision] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(uname -s)" = "Linux" ] || fail "Must run on Linux (inside the Lima VM)."
 
+apt_has_clang() {
+	local v="$1"
+	# apt-cache show can succeed for metadata on unavailable ports; simulate
+	# install to confirm the pair is actually installable on this arch/release.
+	apt-get install -s -y --no-install-recommends "clang-${v}" "llvm-${v}" >/dev/null 2>&1
+}
+
+resolve_clang_version() {
+	if [ "${CLANG_VERSION}" != "auto" ]; then
+		apt_has_clang "${CLANG_VERSION}" || fail "clang-${CLANG_VERSION} / llvm-${CLANG_VERSION} not in apt"
+		echo "${CLANG_VERSION}"
+		return
+	fi
+	local v
+	for v in 17 16 15 14; do
+		if apt_has_clang "${v}" && [ "${v}" -ge "${CLANG_MIN_MAJOR}" ]; then
+			echo "${v}"
+			return
+		fi
+	done
+	fail "no clang/llvm >= ${CLANG_MIN_MAJOR} in apt (need universe/main packages on Ubuntu 22.04+)"
+}
+
 # --- APT packages ----------------------------------------------------------
-log "Installing eBPF toolchain packages (clang-${CLANG_VERSION}, bpftool, libbpf)..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
+# clang-15+ often lives in universe on jammy cloud images.
+apt-get install -y --no-install-recommends software-properties-common
+add-apt-repository -y universe >/dev/null 2>&1 || true
+apt-get update
+
+CLANG_VERSION="$(resolve_clang_version)"
+log "Installing eBPF toolchain packages (clang-${CLANG_VERSION}, bpftool, libbpf)..."
 apt-get install -y --no-install-recommends \
   ca-certificates curl git make \
   "clang-${CLANG_VERSION}" "llvm-${CLANG_VERSION}" \

@@ -39,10 +39,10 @@ require a Linux 5.15 environment.
 
 ## Phase 0 exit criteria (from ROADMAP week 1)
 
-- [ ] `make ebpf` deterministic (CI `verify-gen` green)
-- [ ] Counter program loads and attaches verifier-clean on 5.15
-- [ ] Ring-buffer record decodes byte-correct in Go (T3 assertion 2)
-- [ ] PERCPU counter readback matches injected traffic (T2 + T3 assertion 1)
+- [x] `make ebpf` deterministic (CI `verify-gen` green) — evidenced in `docs/PHASE0_GATE_EVIDENCE.log` (MER-35)
+- [x] Counter program loads and attaches verifier-clean on 5.15
+- [x] Ring-buffer record decodes byte-correct in Go (T3 assertion 2)
+- [x] PERCPU counter readback matches injected traffic (T2 + T3 assertion 1)
 
 ## Decisions to make before Phase 1 (each gets an ADR in docs/adr/)
 

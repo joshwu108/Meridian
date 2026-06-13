@@ -203,7 +203,7 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			if !ok {
 				t.Fatalf("unsupported expected action in current matrix: %d", want.Action)
 			}
-			if got != wantTCAct {
+			if got != uint32(wantTCAct) {
 				t.Fatalf("verdict mismatch: kernel=%d expected(tc)=%d expected(action)=%d", got, wantTCAct, want.Action)
 			}
 		})

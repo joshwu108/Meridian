@@ -123,8 +123,7 @@ static __always_inline __u32 parse_geneve_option_count(void *opts, void *data_en
 	__u32 offset = 0;
 	__u32 count = 0;
 
-#pragma unroll
-	for (int i = 0; i < MERIDIAN_MAX_GENEVE_OPTS; i++) {
+	for (int i = 0; i < 4; i++) {
 		__u8 *opt;
 		__u32 opt_len_words;
 		__u32 opt_size;

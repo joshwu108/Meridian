@@ -70,6 +70,8 @@ ebpf: ## Compile bpf/*.c and regenerate committed bpf2go Go bindings (Linux-only
 	@test -f $(BPF_DIR)/counter_bpfel.o || { echo "ERROR: expected generated file bpf/counter_bpfel.o was not created."; exit 1; }
 	@test -f $(BPF_DIR)/tcingress_bpfel.go || { echo "ERROR: expected generated file bpf/tcingress_bpfel.go was not created."; exit 1; }
 	@test -f $(BPF_DIR)/tcingress_bpfel.o || { echo "ERROR: expected generated file bpf/tcingress_bpfel.o was not created."; exit 1; }
+	@test -f $(BPF_DIR)/tcegress_bpfel.go || { echo "ERROR: expected generated file bpf/tcegress_bpfel.go was not created."; exit 1; }
+	@test -f $(BPF_DIR)/tcegress_bpfel.o || { echo "ERROR: expected generated file bpf/tcegress_bpfel.o was not created."; exit 1; }
 
 .PHONY: vmlinux
 vmlinux: ## Regenerate bpf/include/vmlinux.h from the running kernel's BTF (Linux-only)

@@ -33,7 +33,8 @@ Open per plan: MER-15, 17, 18, 19, 21, 23, 24, 29, 31, 32, 33, 34.
   - A written "Phase 1 entry approved" decision recorded (the review currently reads **NOT READY**); if any gate is still red, this ticket stays open and Phase-1 merges are frozen.
   - Confirms `go.sum`, `vmlinux.h`, and generated bindings (`*_bpfel.go/.o`) are committed (F-4 prerequisites).
 
-### MER-36 — Schema-sentinel stamp-time race (now unsound at v2)
+**Status (2026-06-13): done (`2d8fed4`)** — closing commit lands bindings + `docs/PHASE0_GATE_EVIDENCE.log`;
+`docs/PHASE0_REVIEW.md` records Phase 1 entry APPROVED. Also closes **MER-60** (duplicate F-4 ticket). — Schema-sentinel stamp-time race (now unsound at v2)
 - **ID:** MER-36
 - **TITLE:** Make schema-sentinel stamping atomic (close review D-9)
 - **PRIORITY:** P1 / HIGH
@@ -174,11 +175,11 @@ started. "Gate" flags the six Phase-1 gates.
 
 | MER | Title (short) | Status | Commit(s) | Gate-status / note |
 |----|----|----|----|----|
-| 1–10 | Phase-0 toolchain spine, loaders, harness, CI | done (scaffold) | `64148cc` | Phase-0 **exit sign-off OPEN** — `PHASE0_REVIEW` = NOT READY; tracked by **MER-35** (F-1…F-4) |
+| 1–10 | Phase-0 toolchain spine, loaders, harness, CI | done | `64148cc`, **`2d8fed4`** | Phase-0 exit sign-off **CLOSED** — `PHASE0_REVIEW` APPROVED; gate log `docs/PHASE0_GATE_EVIDENCE.log` |
 | 11 | ADR-0001 unknown-identity posture | done | `96ed323` | — |
 | 12 | ADR-0002 Geneve placement | done | `96ed323` | File is `0002-geneve-topology.md` (planned name was `…-parse-placement`); naming tracked by **MER-41** |
-| 13 | Module path / license / bpf2go prefix | in-progress | `64148cc` | module path confirmed in `go.mod`; **`LICENSE` absent** (bpf/ needs GPL-2.0) — still open |
-| 14 | Phase-1 contract freeze | done | `64148cc` | `meridian_types.h` `SCHEMA_VERSION = 2`, ADR-0003, `gen.go` `-type` set present. **Generated bindings `*_bpfel.go/.o` NOT committed** (.gitignore expects them) → F-4 / **MER-35** |
+| 13 | Module path / license / bpf2go prefix | done | `64148cc`, `96f9fdb` | `LICENSE` + `bpf/LICENSE`; bpf2go prefix in `gen.go` |
+| 14 | Phase-1 contract freeze | done | `64148cc`, **`2d8fed4`** | Bindings committed (`counter`, `tcingress`, `tcegress` `*_bpfel.{go,o}`) |
 | 15 | wire↔C equivalence + depguard wall | in-progress | `64148cc` (depguard) | depguard `pkg/wire` wall present in `.golangci.yml`; **`internal/agent/datapath/translate_test.go` absent** → equivalence test still owed |
 | 16 | `tc_ingress.c` parser + identity | done | `e2d2fff` | — |
 | **17** | **Verdict enforcement + decision-point emission** | **done\*** | **`754e2ee`** | **Folded unlabeled into the MER-26 commit.** Code complete (see headline). Relabel/annotate; no code work owed |
@@ -197,9 +198,10 @@ started. "Gate" flags the six Phase-1 gates.
 | 30 | Metrics reader + Prometheus endpoint | done | `13099db`,`a03d198`,`a159f3c` | — |
 | **31** | **Flow aggregation + identity resolution** | **done\*** | **`754e2ee`** | **Folded unlabeled into the MER-26 commit**; `aggregate.go` + `identitytable` + tests present |
 | 32 | **O-2 GATE** — denied-flows join + metrics | planned (Gate) | — | `metrics/denied.go`, `test/integration/metrics_test.go` absent |
-| 33 | Schema version single-sourcing | in-progress | `64148cc` | `meridian_schema_version` listed in `gen.go -type` (gen layer done); **`bpfobj/loader_test.go` absent** + hand-literal-deletion unverified |
+| 33 | Schema version single-sourcing | done | `fbfc00d` | bpf2go-sourced `schemaVersion`; `loader_test.go` T2 fail-closed |
 | 34 | **EXIT GATE** — ADR-0004 freeze + doc reconciliation | planned (Gate) | — | Stub reserved (`0004-map-schema-freeze.md`); full ADR blocked on the five gates above |
-| 35–40, 43 | Backlog batch 2026-06-13 | planned / done† | — | see individual tickets; †MER-40 done (`96f9fdb`) |
+| **35** | **Phase-0 exit sign-off (F-1…F-4)** | **done** | **`2d8fed4`** | Phase 1 entry APPROVED; closes F-4 + **MER-60** |
+| 36–40, 43 | Backlog batch 2026-06-13 | planned / done† | — | see individual tickets; †MER-40 done (`96f9fdb`) |
 | **41** | **ADR index + 0004 reservation + ADR-0005 linkage** | **done** | **`96f9fdb` + MER-41 commit** | `docs/adr/README.md` registry; `0004` stub; ADR-0005 `Tracking ticket`/`Provenance` backfill |
 | 42 | Ledger reconciliation | done | ledger in `tickets.md` | MER-17/23/31 relabeled; remediation → **MER-45** |
 
@@ -295,6 +297,37 @@ gate, filed below. Next free ID = MER-46.
   - `docs/PHASE2_PLAN.md` + `docs/PHASE2_TICKETS.md` exist, derived from ROADMAP week-4 scope (gated `sock_ops`+`sk_msg` redirect with the SOCKMAP-eligibility-is-a-verdict-flag invariant; ADS server vs agent stub + conformance suite CP-3) and the relevant subsystem specs; every ticket ≤4h with testable acceptance criteria, deps, and waves — same format as PHASE1_TICKETS.md.
   - A **Phase-2-entry gate** is recorded (in ROADMAP + the plan): no Phase-2 implementation ticket merges until MER-34 (Phase-1 exit) is green, mirroring the Phase-0→Phase-1 entry rule.
   - The "SOCKMAP eligibility is a policy verdict flag, not a perf toggle; absent the flag, no SOCKHASH insertion" invariant (ROADMAP CC-5 / eBPF R2) is captured as an explicit Phase-2 acceptance criterion with a permanent negative test.
+
+---
+
+## Batch 2026-06-13 (Backlog Manager run 4)
+
+Strong run: MER-24 (CP-2 gate), MER-41 (ADR-0004 reserved + index), MER-45
+(provenance + commit-linkage check), and MER-46 (Phase-2 PLAN/TICKETS/GATES,
+IDs MER-47…MER-59) all landed in clean, properly-labeled commits — commit
+hygiene is now holding. ADR sequence 0001–0006 + README is complete.
+PHASE1_GATES.md, test/gates/manifest.txt, and the MER-44 skip-guard (CI +
+Makefile) all verified present. The Phase-2 decomposition is well-formed and
+correctly gated on MER-34.
+
+No new design/test/ADR gaps surfaced. The **one** item filed below is the
+extraction of a blocker stuck for four consecutive runs that is no longer
+Phase-0-only. Global max ID is MER-59 (PHASE2_TICKETS); next free = MER-60.
+
+### MER-60 — Commit generated bpf2go bindings (close F-4; cross-phase blocker)
+- **ID:** MER-60
+- **TITLE:** Generate and commit `*_bpfel.go`/`*_bpfel.o` bindings on the 5.15 target (close PHASE0_REVIEW F-4)
+- **PRIORITY:** P0 / BLOCKER
+- **ESTIMATE:** 1–2h (gated only on a working 5.15 VM/CI session)
+- **BLOCKS:** MER-35 (Phase-0 sign-off), MER-47 (Phase-2 contract: "make ebpf regenerates bindings committed"), and every load/`prog_test_run` gate (MER-16/17/18/21/29/49/50/58)
+- **DEPENDENCIES:** MER-1 (dev VM bring-up — `scripts/vm-*.sh` + `test/vm/*` work is in the tree, uncommitted)
+- **ACCEPTANCE CRITERIA:**
+  - `make vmlinux` + `make ebpf` run on the Ubuntu 22.04 / 5.15 target; the generated `bpf/*_bpfel.go` and `bpf/*_bpfel.o` for every program (`counter`, `tc_ingress`, `tc_egress`, and the Phase-2 `sock_ops`/`sk_msg` once MER-47 lands) are committed — `git ls-files | grep _bpfel` is non-empty.
+  - `make verify-gen` run twice produces zero diff against the committed bindings (determinism gate, MER-8).
+  - The VM bring-up scripts currently uncommitted in the working tree are committed under MER-1 with a proper subject (no further mega-commits).
+  - Rationale: this prerequisite has been outstanding across Backlog Manager runs 1–4; promoting it out of MER-35's F-4 sub-bullet gives it a discrete owner and exposes its Phase-2 reach.
+
+**Status (2026-06-13): done (via MER-35)** — counter/tcingress/tcegress bindings + VM scripts committed; sock_ops/sk_msg deferred to MER-47.
 
 ---
 

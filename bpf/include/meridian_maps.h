@@ -23,6 +23,7 @@
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
 	__uint(max_entries, MERIDIAN_RINGBUF_BYTES);
+	__type(value, struct flow_event);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } flow_events SEC(".maps");
 

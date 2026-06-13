@@ -1,0 +1,43 @@
+=== Meridian Phase-0 exit gates (MER-35) ===
+date: 2026-06-13T18:52:45Z
+kernel: 5.15.0-179-generic
+clang: Ubuntu clang version 15.0.7
+go: go version go1.22.4 linux/arm64
+
+--- make verify-gen ---
+make ebpf
+make[1]: Entering directory '/Users/joshuawu/Meridian'
+CLANG=clang STRIP=llvm-strip BPF_TARGET=bpfel BPF_CFLAGS="-O2 -g -Wall -Werror -target bpfel -mcpu=v3 -Iinclude -fdebug-prefix-map=/Users/joshuawu/Meridian=." \
+	go generate ./bpf/...
+Compiled /Users/joshuawu/Meridian/bpf/counter_bpfel.o
+Stripped /Users/joshuawu/Meridian/bpf/counter_bpfel.o
+Wrote /Users/joshuawu/Meridian/bpf/counter_bpfel.go
+Compiled /Users/joshuawu/Meridian/bpf/tcingress_bpfel.o
+Stripped /Users/joshuawu/Meridian/bpf/tcingress_bpfel.o
+Wrote /Users/joshuawu/Meridian/bpf/tcingress_bpfel.go
+Compiled /Users/joshuawu/Meridian/bpf/tcegress_bpfel.o
+Stripped /Users/joshuawu/Meridian/bpf/tcegress_bpfel.o
+Wrote /Users/joshuawu/Meridian/bpf/tcegress_bpfel.go
+make[1]: Leaving directory '/Users/joshuawu/Meridian'
+Checking generated eBPF bindings are up to date...
+
+--- T2: TestProgRunCountsSyntheticPacket ---
+=== RUN   TestProgRunCountsSyntheticPacket
+--- PASS: TestProgRunCountsSyntheticPacket (0.05s)
+PASS
+ok  	github.com/joshuawu/meridian/test/bpf	0.058s
+
+--- T3: TestCounterCountsAndEmitsEvents ---
+=== RUN   TestCounterCountsAndEmitsEvents
+--- PASS: TestCounterCountsAndEmitsEvents (0.95s)
+PASS
+ok  	github.com/joshuawu/meridian/test/integration	0.956s
+
+--- committed artifacts ---
+-rw-r--r-- 1 joshuawu joshuawu    4978 Jun 13 13:52 bpf/counter_bpfel.go
+-rw-r--r-- 1 joshuawu joshuawu    9648 Jun 13 13:52 bpf/counter_bpfel.o
+-rw-r--r-- 1 joshuawu joshuawu 3441797 Jun 13 13:39 bpf/include/vmlinux.h
+-rw-r--r-- 1 joshuawu joshuawu    5042 Jun 13 13:52 bpf/tcegress_bpfel.go
+-rw-r--r-- 1 joshuawu joshuawu   19560 Jun 13 13:52 bpf/tcegress_bpfel.o
+-rw-r--r-- 1 joshuawu joshuawu    5243 Jun 13 13:52 bpf/tcingress_bpfel.go
+-rw-r--r-- 1 joshuawu joshuawu   30128 Jun 13 13:52 bpf/tcingress_bpfel.o

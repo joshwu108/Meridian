@@ -89,8 +89,7 @@ static __always_inline __u32 parse_geneve_identity(void *opts, void *data_end,
 
 	*src_id_out = 0;
 
-#pragma unroll
-	for (int i = 0; i < MERIDIAN_MAX_GENEVE_OPTS; i++) {
+	for (int i = 0; i < 4; i++) {
 		__u8 *opt;
 		__u32 opt_len_words;
 		__u32 opt_size;
@@ -252,7 +251,7 @@ static __always_inline __u32 is_tcp_connection_open(struct iphdr *ip, void *data
 
 	l4 = (void *)ip + ihl * IPV4_WORD_BYTES;
 	/* Need flags byte at TCP offset 13. */
-	if (l4 + 14 > data_end)
+	if ((void *)(l4 + 14) > data_end)
 		return 0;
 
 	flags = l4[13];
