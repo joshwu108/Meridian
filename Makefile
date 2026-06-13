@@ -58,6 +58,8 @@ help: ## Print this help (targets with ## comments)
 # ---------------------------------------------------------------------------
 # eBPF codegen
 # ---------------------------------------------------------------------------
+# NOTE: counter.c is retained as a toolchain/verifier smoke artifact only; the
+# production datapath verdict logic lives in tc_ingress.c (MER-17+).
 .PHONY: ebpf
 ebpf: ## Compile bpf/*.c and regenerate committed bpf2go Go bindings (Linux-only)
 	$(require_linux)

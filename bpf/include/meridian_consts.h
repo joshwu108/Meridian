@@ -32,9 +32,16 @@
 #define MERIDIAN_IDENTITY_MAP_ENTRIES 65536
 #define MERIDIAN_POLICY_MAP_ENTRIES   16384
 #define MERIDIAN_DENIED_FLOWS_ENTRIES 4096
+#define MERIDIAN_UDP_SEEN_FLOWS_ENTRIES 4096
 
 /* runtime_config_map[0] bit flags (D16). Unset bits = fail-closed defaults. */
 #define MERIDIAN_CFG_FALLOPEN_UNKNOWN (1u << 0)
+
+/*
+ * Redirect placeholder mark (MER-17): REDIRECT verdict marks skb but does not
+ * perform a tc redirect action yet.
+ */
+#define MERIDIAN_MARK_REDIRECT_PLACEHOLDER (1u << 0)
 
 /*
  * BPF_F_NO_PREALLOC (uapi/linux/bpf.h, ABI-stable). vmlinux.h usually carries

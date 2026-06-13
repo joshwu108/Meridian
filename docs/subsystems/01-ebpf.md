@@ -40,9 +40,9 @@ BPF_MAP_TYPE_HASH      max_entries=65536
 
 // policy_map — exact-match compiled L4 rules. Agent writes, BPF reads.
 BPF_MAP_TYPE_HASH      max_entries=16384
-  key:   struct policy_key { __u32 src_id; __u32 dst_id; __u16 dst_port; __u8 proto; __u8 pad; }
+  key:   struct policy_key { __u32 src_id; __u32 dst_id; __u16 dst_port; __u8 proto; __u8 direction; }
   value: struct policy_verdict { __u8 action; __u8 flags; }  // 0=allow,1=deny,2=redirect_l7
-// pad MUST be zeroed by the agent — HASH compares full key bytes.
+// direction MUST be a valid enum policy_direction value — HASH compares full key bytes.
 
 // sockmap — intra-node redirect targets. sock_ops writes, sk_msg reads.
 BPF_MAP_TYPE_SOCKHASH  max_entries=65536
@@ -114,3 +114,5 @@ Contract either way: the proxy must be able to answer "what was the original `ds
 7. **P2.2 — `sk_msg` redirect + integrity + benchmark.** **Gate:** byte-for-byte integrity vs plain TCP; measured intra-node latency win; denied flow never redirected.
 
 Buildable in isolation before any live network: P0.1, P0.2, P1.1, and the policy reference-evaluator fuzz harness.
+
+`bpf/counter.c` is intentionally kept as a standalone verifier/toolchain smoke artifact and is not the production policy datapath (`bpf/tc_ingress.c` owns verdict enforcement).

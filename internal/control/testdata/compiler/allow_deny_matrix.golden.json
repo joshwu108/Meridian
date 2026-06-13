@@ -1,0 +1,80 @@
+[
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2001,
+      "DstPort": 80,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 0
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2001,
+      "DstPort": 80,
+      "Protocol": 17,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 0
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1002,
+      "DstIdentity": 2001,
+      "DstPort": 80,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 0
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1002,
+      "DstIdentity": 2001,
+      "DstPort": 80,
+      "Protocol": 17,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 0
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 2001,
+      "DstIdentity": 1001,
+      "DstPort": 25,
+      "Protocol": 6,
+      "Direction": 1
+    },
+    "Verdict": {
+      "Action": 1,
+      "Flags": 0
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 2001,
+      "DstIdentity": 1002,
+      "DstPort": 25,
+      "Protocol": 6,
+      "Direction": 1
+    },
+    "Verdict": {
+      "Action": 1,
+      "Flags": 0
+    }
+  }
+]

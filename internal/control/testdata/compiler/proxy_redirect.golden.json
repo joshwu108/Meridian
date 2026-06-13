@@ -1,0 +1,54 @@
+[
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2002,
+      "DstPort": 443,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 2,
+      "Flags": 4
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2002,
+      "DstPort": 443,
+      "Protocol": 6,
+      "Direction": 1
+    },
+    "Verdict": {
+      "Action": 2,
+      "Flags": 4
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2002,
+      "DstPort": 8443,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 2,
+      "Flags": 4
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 2002,
+      "DstPort": 8443,
+      "Protocol": 6,
+      "Direction": 1
+    },
+    "Verdict": {
+      "Action": 2,
+      "Flags": 4
+    }
+  }
+]

@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * counter.c — Phase 0 TC ingress program.
+ * counter.c — toolchain/verifier smoke artifact (not in the production datapath).
  *
  * Purpose: validate the end-to-end telemetry pipeline (TC hook -> PERCPU
  * counter -> ring buffer -> Go consumer) on the 5.15 target. It parses
  * Ethernet + IPv4 (+ TCP/UDP ports when present), bumps METRIC_PACKETS_TOTAL,
  * and emits ONE flow_event PER PACKET, then always returns TC_ACT_OK.
  *
- * PHASE 0 ONLY: per-packet emission is deliberate here — traffic is low and
- * we want to exercise the ring path on every packet. It is NOT the production
- * policy.
- * TODO(phase1): switch to decision-point emission (deny / redirect /
- * connection-open only) per eBPF subsystem R6 / observability R2; aggregate
- * byte/packet counts in metrics_map instead of a record per packet.
+ * This program remains intentionally simple and per-packet so CI can quickly
+ * detect toolchain/verifier regressions independent of MER-17 policy logic.
  *
  * Verifier discipline (must stay clean on 5.15): every packet dereference is
  * bounds-checked against data_end before use; the IHL-derived L4 offset is

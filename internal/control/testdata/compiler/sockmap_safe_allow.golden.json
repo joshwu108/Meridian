@@ -1,0 +1,28 @@
+[
+  {
+    "Key": {
+      "SrcIdentity": 1001,
+      "DstIdentity": 3001,
+      "DstPort": 15001,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 2
+    }
+  },
+  {
+    "Key": {
+      "SrcIdentity": 1002,
+      "DstIdentity": 3001,
+      "DstPort": 15001,
+      "Protocol": 6,
+      "Direction": 0
+    },
+    "Verdict": {
+      "Action": 0,
+      "Flags": 2
+    }
+  }
+]
