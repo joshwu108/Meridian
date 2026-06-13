@@ -25,18 +25,8 @@ const (
 )
 
 func TestTcIngressLoad(t *testing.T) {
-	harness.RequireRoot(t)
-	if err := rlimit.RemoveMemlock(); err != nil {
-		t.Fatalf("remove memlock rlimit: %v", err)
-	}
-
-	var objs bpf.TcIngressObjects
-	if err := bpf.LoadTcIngressObjects(&objs, &ebpf.CollectionOptions{
-		Maps: ebpf.MapOptions{PinPath: harness.PinDir(t)},
-	}); err != nil {
-		t.Fatalf("load tc_ingress objects: %v", err)
-	}
-	t.Cleanup(func() { _ = objs.Close() })
+	objs := loadTcIngress(t)
+	_ = objs // load-only smoke; loadTcIngress registers Close cleanup
 }
 
 func TestTcIngressIdentityHit(t *testing.T) {

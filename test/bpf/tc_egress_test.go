@@ -4,6 +4,7 @@ package bpftest
 
 import (
 	"encoding/binary"
+	"sync"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -15,6 +16,8 @@ import (
 )
 
 const dropReasonGeneveEncapFail = uint32(5)
+
+var loadTcEgressMu sync.Mutex
 
 type flowKey struct {
 	SrcIP   uint32
@@ -91,7 +94,7 @@ func TestTcEgressEncapsulationFailure(t *testing.T) {
 	reader := metrics.NewMapReader(objs.MetricsMap)
 
 	pkt := synthGeneveIPv4Packet(6, []byte{10, 62, 1, 2}, []byte{10, 62, 1, 3}, false)
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 62, 1, 2}), 9001)
+	// No identity_map entry: egress cannot stamp the TLV.
 
 	before, err := reader.Read(metrics.MetricGeneveEncapFail)
 	if err != nil {
@@ -224,6 +227,9 @@ func TestTcEgressNonTunnelPassthroughNoEncapFailMetric(t *testing.T) {
 
 func loadTcEgress(t *testing.T) *bpf.TcEgressObjects {
 	t.Helper()
+	loadTcEgressMu.Lock()
+	defer loadTcEgressMu.Unlock()
+
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {
 		t.Fatalf("remove memlock rlimit: %v", err)
