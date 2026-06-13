@@ -52,10 +52,35 @@ func preparePinDir(pinDir string) (preExisting bool, err error) {
 	return pinDirPopulated(pinDir)
 }
 
+// CounterObjects is the bpf2go-generated counter collection. Re-exported so
+// callers reach through bpfobj (the sole opener) without importing bpf/ directly.
+type CounterObjects = bpf.CounterObjects
+
+// TcIngressObjects is the bpf2go-generated tc_ingress collection.
+type TcIngressObjects = bpf.TcIngressObjects
+
+// AsCounterObjects unwraps an opaque startup handle into the counter collection.
+func AsCounterObjects(opaque any) (*CounterObjects, error) {
+	objs, ok := opaque.(*CounterObjects)
+	if !ok || objs == nil {
+		return nil, fmt.Errorf("bpfobj: opaque is %T, want *CounterObjects", opaque)
+	}
+	return objs, nil
+}
+
+// AsTcIngressObjects unwraps an opaque startup handle into the tc_ingress collection.
+func AsTcIngressObjects(opaque any) (*TcIngressObjects, error) {
+	objs, ok := opaque.(*TcIngressObjects)
+	if !ok || objs == nil {
+		return nil, fmt.Errorf("bpfobj: opaque is %T, want *TcIngressObjects", opaque)
+	}
+	return objs, nil
+}
+
 // LoadCounter loads the Phase 0 counter objects, pinning all maps by name
 // under pinDir (which must be on a bpffs mount). Maps that are already pinned
 // there are RE-OPENED, not re-created — this is the restart-survival contract.
-func LoadCounter(pinDir string) (*bpf.CounterObjects, error) {
+func LoadCounter(pinDir string) (*CounterObjects, error) {
 	preExisting, err := preparePinDir(pinDir)
 	if err != nil {
 		return nil, err
@@ -79,7 +104,7 @@ func LoadCounter(pinDir string) (*bpf.CounterObjects, error) {
 // LoadTcIngress loads the Phase 1 tc_ingress objects, pinning all shared maps
 // by name under pinDir. Re-open semantics match LoadCounter — the production
 // policy datapath and MER-29 restart assertions depend on pinned map survival.
-func LoadTcIngress(pinDir string) (*bpf.TcIngressObjects, error) {
+func LoadTcIngress(pinDir string) (*TcIngressObjects, error) {
 	preExisting, err := preparePinDir(pinDir)
 	if err != nil {
 		return nil, err

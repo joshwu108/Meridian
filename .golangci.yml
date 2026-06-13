@@ -56,5 +56,20 @@ linters-settings:
           - pkg: github.com/cilium/ebpf
             desc: "the reference evaluator must stay pure Go."
 
+      # datapath is the sole wire→bpf translator (MER-15 / D17). Production
+      # code that needs bpf2go mirrors must go through bpfobj (load/attach) or
+      # datapath (policy translation); tests are exempt so T2/T3 harnesses can
+      # seed maps and assert kernel behaviour directly.
+      wire-bpf-bridge:
+        files:
+          - "**/*.go"
+          - "!**/internal/agent/datapath/**"
+          - "!**/internal/agent/bpfobj/**"
+          - "!**/internal/agent/telemetry/**"
+          - "!**/test/**"
+        deny:
+          - pkg: github.com/joshuawu/meridian/bpf
+            desc: "only datapath (wire→bpf translation), bpfobj, and telemetry may import bpf/; use bpfobj for collections and datapath for policy translation (MER-15/D17)"
+
 run:
   timeout: 5m
