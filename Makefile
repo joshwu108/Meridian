@@ -107,14 +107,19 @@ test-unit: ## T1: pure-Go unit tests; runs anywhere incl. macOS host
 	$(GO) test -race -count=1 ./...
 
 .PHONY: test-bpf
-test-bpf: ## T2: bpf_prog_test_run tests (tag 'bpf'); needs root/CAP_BPF, Linux
+test-bpf: ## T2: bpf_prog_test_run + bpfobj loader tests (tag 'bpf'); needs root/CAP_BPF, Linux
 	$(require_linux)
-	$(GO) test -tags=bpf -exec sudo -count=1 ./test/bpf/...
+	$(GO) test -tags=bpf -exec sudo -count=1 ./test/bpf/... ./internal/agent/bpfobj/...
 
 .PHONY: test-integration
 test-integration: ## T3: netns integration tests (tag 'integration'); needs root, Linux
 	$(require_linux)
 	$(GO) test -tags=integration -exec sudo -count=1 -timeout=10m ./test/integration/...
+
+.PHONY: check-gate-skips
+check-gate-skips: ## MER-44: fail if any armed Phase-1 gate test reports skips
+	$(require_linux)
+	$(GO) run ./test/tools/checkgateskips -manifest test/gates/manifest.txt
 
 .PHONY: bench
 bench: ## Run Go benchmarks (bpf-tagged benches need root + Linux)
@@ -136,6 +141,10 @@ lint: ## Run go vet and golangci-lint (incl. depguard import rules)
 	@command -v $(GOLANGCILINT) >/dev/null 2>&1 \
 		&& $(GOLANGCILINT) run ./... \
 		|| echo "golangci-lint not found; skipping (see https://golangci-lint.run)"
+
+.PHONY: check-commits
+check-commits: ## MER-45: verify feat/fix/refactor commits cite MER-<n> tickets
+	@bash scripts/check-mer-ticket-refs.sh
 
 # ---------------------------------------------------------------------------
 # Environment hygiene / diagnostics

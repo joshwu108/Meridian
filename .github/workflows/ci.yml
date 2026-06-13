@@ -39,6 +39,16 @@ jobs:
           version: v1.64.8
       - name: unit tests (T1)
         run: make test-unit
+      - name: commit ticket traceability (MER-45)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            bash scripts/check-mer-ticket-refs.sh "origin/${{ github.base_ref }}..HEAD"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            bash scripts/check-mer-ticket-refs.sh HEAD
+          else
+            bash scripts/check-mer-ticket-refs.sh "${{ github.event.before }}..${{ github.sha }}"
+          fi
 
   # ------------------------------------------------------------------
   # Determinism gate: regenerate eBPF bindings, fail on any diff.
@@ -102,6 +112,8 @@ jobs:
         run: make test-bpf
       - name: netns integration tests (T3)
         run: make test-integration
+      - name: gate skip-integrity (MER-44)
+        run: make check-gate-skips
       - name: Reap test leftovers
         if: always()
         run: make test-clean

@@ -10,6 +10,8 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 
 	"github.com/joshuawu/meridian/bpf"
+	"github.com/joshuawu/meridian/internal/reference"
+	"github.com/joshuawu/meridian/pkg/wire"
 	"github.com/joshuawu/meridian/test/harness"
 )
 
@@ -207,6 +209,52 @@ func TestTcIngressMalformedIPv4RespectsUnknownIdentityPosture(t *testing.T) {
 	}
 	if ret != tcActOK {
 		t.Fatalf("malformed IPv4 fail-open verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+}
+
+func TestTcIngressGeneveCarriedIdentityAllows(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	const remoteIdentity = uint32(9001)
+	const localIdentity = uint32(9002)
+	innerSrc := []byte{10, 200, 80, 1}
+	innerDst := []byte{10, 200, 80, 2}
+
+	pkt := synthGeneveIPv4PacketWithIdentity(6, innerSrc, innerDst, remoteIdentity)
+	// Remote src is NOT in identity_map; only local dst is seeded.
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerDst), localIdentity)
+	seedPolicy(t, objs.PolicyMap, reference.Rule{
+		SrcIdentity: wire.IdentityID(remoteIdentity),
+		DstIdentity: wire.IdentityID(localIdentity),
+		DstPort:     8080,
+		Protocol:    6,
+		Direction:   reference.DirectionIngress,
+		Verdict:     wire.PolicyVerdict{Action: wire.PolicyActionAllow},
+	})
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	if ret != tcActOK {
+		t.Fatalf("geneve carried identity verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+}
+
+func TestTcIngressGeneveMissingTLVFailClosed(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	innerSrc := []byte{10, 200, 81, 1}
+	innerDst := []byte{10, 200, 81, 2}
+	pkt := synthGeneveIPv4Packet(6, innerSrc, innerDst, false)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerDst), 9102)
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	if ret != tcActShot {
+		t.Fatalf("missing TLV verdict = %d, want TC_ACT_SHOT (%d)", ret, tcActShot)
 	}
 }
 

@@ -12,17 +12,14 @@ import (
 	"github.com/joshuawu/meridian/bpf"
 )
 
-// schemaVersion mirrors MERIDIAN_SCHEMA_VERSION in bpf/include/meridian_types.h.
-// The loader writes it into schema_sentinel_map exactly once — on a verified
-// fresh pin set — and verifies it on every re-open; a mismatch means the
-// pinned maps were created by an incompatible build, and we fail closed rather
-// than misinterpret layouts. v2 = Phase 1 contract freeze (MER-14); v1 pins
-// are refused (D15) — wipe the pin dir to upgrade.
-//
-// TODO(MER-33): replace this literal with the bpf2go-generated
-// MERIDIAN_SCHEMA_VERSION constant once the regenerated bindings land, then
-// delete the hand-mirrored value.
-const schemaVersion uint32 = 2
+// schemaVersion is bpf2go-sourced from enum meridian_schema_version in
+// bpf/include/meridian_types.h (MER-33 / review D-1). The loader writes it into
+// schema_sentinel_map exactly once — on a verified fresh pin set — and verifies
+// it on every re-open; a mismatch means the pinned maps were created by an
+// incompatible build, and we fail closed rather than misinterpret layouts.
+// v2 = Phase 1 contract freeze (MER-14); v1 pins are refused (D15) — wipe the
+// pin dir to upgrade. Never hand-mirror this number (CC-6).
+const schemaVersion = uint32(bpf.CounterMeridianSchemaVersionMERIDIAN_SCHEMA_VERSION)
 
 // ErrPartialPinSet is returned when LoadCounter re-opens a pin directory that
 // already holds Meridian pinned state but whose schema sentinel is still

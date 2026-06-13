@@ -26,8 +26,8 @@ import (
 const (
 	mer29ClientID = wire.IdentityID(1001)
 	mer29ServerID = wire.IdentityID(2001)
-	mer29TestPort   = 18080
-	mer29FlipPort   = 18081
+	mer29TestPort = 18080
+	mer29FlipPort = 18081
 
 	dropReasonPolicyDeny = 1
 )
@@ -84,7 +84,7 @@ func TestLivePolicyIntegrationGate_MER29(t *testing.T) {
 	peerIPKey := ipv4NetworkKey(t, v.PeerIP)
 	hostIPKey := ipv4NetworkKey(t, v.HostAddr)
 	harness.WaitUntil(t, 3*time.Second, func() bool {
-		info, ok := lookupDeniedFlow(objs.DeniedFlowsMap, peerIPKey, hostIPKey, mer29FlipPort, 6)
+		info, ok := lookupDeniedFlow(objs.DeniedFlowsMap, peerIPKey, hostIPKey, hostPortToFlowKey(mer29FlipPort), 6)
 		return ok && info.Reason == dropReasonPolicyDeny && info.Count >= 1
 	}, "denied_flows_map missing DROP_REASON_POLICY_DENY entry")
 
@@ -193,18 +193,17 @@ type denyInfo struct {
 	Reason uint32
 }
 
-func lookupDeniedFlow(m *ebpf.Map, srcIP, dstIP uint32, dstPort uint16, proto uint8) (denyInfo, bool) {
+func lookupDeniedFlow(m *ebpf.Map, srcIP, dstIP uint32, dstPortNet uint16, proto uint8) (denyInfo, bool) {
 	if m == nil {
 		return denyInfo{}, false
 	}
-	wantPort := htons(dstPort)
 	var (
 		key   flowMapKey
 		value denyInfo
 	)
 	iter := m.Iterate()
 	for iter.Next(&key, &value) {
-		if key.SrcIP == srcIP && key.DstIP == dstIP && key.DstPort == wantPort && key.Proto == proto {
+		if key.SrcIP == srcIP && key.DstIP == dstIP && key.DstPort == dstPortNet && key.Proto == proto {
 			return value, true
 		}
 	}
@@ -224,8 +223,8 @@ func ipv4NetworkKey(t *testing.T, addr string) uint32 {
 	return binary.BigEndian.Uint32(v4[:])
 }
 
-func htons(v uint16) uint16 {
+func hostPortToFlowKey(port uint16) uint16 {
 	var buf [2]byte
-	binary.BigEndian.PutUint16(buf[:], v)
+	binary.BigEndian.PutUint16(buf[:], port)
 	return binary.LittleEndian.Uint16(buf[:])
 }

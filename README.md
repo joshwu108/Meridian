@@ -63,6 +63,7 @@ Generated eBPF bindings (`bpf/*_bpfel.go`/`.o`) and `vmlinux.h` are
 - **Plan:** [ROADMAP.md](ROADMAP.md) · **Phase 0:** [PHASE0_CHECKLIST.md](PHASE0_CHECKLIST.md)
 - **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Netns debug scripts:** [docs/NETNS_SCRIPTS.md](docs/NETNS_SCRIPTS.md)
+- **Contributing / commit traceability:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 - **Subsystems:** [eBPF](docs/subsystems/01-ebpf.md) · [Agent](docs/subsystems/02-agent.md) ·
   [Control plane](docs/subsystems/03-control-plane.md) · [SPIFFE PKI](docs/subsystems/04-spiffe.md) ·
   [Node proxy](docs/subsystems/05-node-proxy.md) · [Observability](docs/subsystems/06-observability.md)

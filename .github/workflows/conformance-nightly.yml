@@ -1,0 +1,27 @@
+name: conformance-nightly
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.22"
+
+jobs:
+  conformance:
+    name: compiler ≡ reference (1e6)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: CP-2 property harness (MER-24 nightly)
+        env:
+          MERIDIAN_CONFORMANCE_ITERATIONS: "1000000"
+        run: go test -count=1 -timeout=30m ./internal/control/ -run TestCompilerMatchesReferenceProperty

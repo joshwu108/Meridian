@@ -1,0 +1,26 @@
+# MER-44 gate skip-integrity manifest.
+#
+# Format (whitespace-separated columns):
+#   armed  build_tags  package_import_path  test_name_regex
+#
+# armed=yes  → CI fails if go test -json reports any Action=skip for that test.
+# armed=no   → tracked for visibility; skips are allowed until blockers land.
+#
+# Flip armed to yes only when the gate's upstream tickets are merged and the
+# suite is green on the 5.15 target. A gate may be declared green only with
+# armed=yes and zero skips (see docs/PHASE1_GATES.md).
+
+# P1.1 — MER-18 verdict matrix ≡ reference evaluator
+yes bpf ./test/bpf/... TestVerdictMatrixMatchesReferenceEvaluator
+
+# P1.2 — MER-29 live policy integration (agent stub product path)
+yes integration ./test/integration/... TestLivePolicyIntegrationGate_MER29
+
+# P1.3 — MER-21 Geneve two-node (blocker MER-20 landed; suite still stub)
+no integration ./test/integration/... TestGeneveIngressIdentityPolicyGate_MER21
+
+# CP-2 — MER-24 compiler ≡ reference property harness (not yet authored)
+no '' ./internal/control/... TestCompilerConformanceProperty
+
+# O-2 — MER-32 denied-flows metrics gate (not yet authored)
+no integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
