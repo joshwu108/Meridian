@@ -25,8 +25,9 @@ These are **not** duplicated here; see the phase ticket files:
 
 | IDs | Where | Status (summary) |
 |-----|-------|----------------|
-| MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | Phase-1 ticket set landed: MER-15 `f70dbb5`, MER-18 `9caa828`, MER-19 `bddc72c`, MER-21 `80de7c8` (P1.3 integrity now tracked by MER-66), MER-24 `4ae654e`, MER-29 `fbfc00d`, MER-32 `36c0c5a`, MER-34 `a4b369d`/`31409c5` |
-| MER-47 … MER-59 | `docs/PHASE2_TICKETS.md` | Blocked on MER-66: `make check-gate-skips` still reports P1.3 `TestGeneveIngressIdentityPolicyGate_MER21` red |
+| MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | **Phase-1 COMPLETE & committed.** MER-15 `f70dbb5`, MER-18 `9caa828`, MER-19 `bddc72c`, MER-21 `80de7c8`, MER-24 `4ae654e`, MER-29 `fbfc00d`, MER-32 `36c0c5a`, MER-34 `a4b369d`/`31409c5`. P1.3 live-path fix (MER-66) landed `630f616` — all five gates green at HEAD, 0 skips. |
+| MER-66 | this file | **CLOSED `630f616`** — P1.3 green on live two-node TCP connect; `make ebpf`/`test-bpf`/`test-integration`/`check-gate-skips`/`check-commits` verified on Lima 5.15. |
+| MER-47 … MER-59 | `docs/PHASE2_TICKETS.md` | **UNBLOCKED** — Phase-2 entry gate (MER-34 green) satisfied at `630f616`. Wave-0 ticket **MER-47** is active (`activeticket.md`); not yet started. |
 
 ---
 
@@ -160,3 +161,21 @@ preferred. The denied case is consumed before emission on the source Geneve
 egress path and times out. Validation on Lima 5.15:
 `make test-bpf`, `make test-integration`, `make check-gate-skips`, and
 `make check-commits` all pass.
+
+## Batch 2026-06-13d — TPM/Auditor run (HEAD 630f616)
+
+Findings: **MER-66 landed at `630f616`** — P1.3 (`TestGeneveIngressIdentityPolicyGate_MER21`)
+is green on the live two-node TCP connect path; working tree clean. All five
+Phase-1 gates pass with 0 skips on Lima 5.15 and ADR-0004 is Accepted, so
+**MER-34 (Phase-1 EXIT) is genuinely green at HEAD** and the **Phase-2 entry gate
+is satisfied**. No open P0/P1 integrity violations remain. The prior batch's
+stale claims (P1.3 red, Phase-2 blocked, MER-66 uncommitted) were corrected in
+the "Open work tracked elsewhere" table this cycle.
+
+No new tickets generated: Phase-2 work (MER-47 … MER-59) already exists in
+`docs/PHASE2_TICKETS.md`; CC-2 (compiled-policy wire-contract ADR) is not due
+until Phase-3 completion. `Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-47 — Phase 2 contract land** (Wave-0 serialization
+point; blocks the entire eBPF + Agent lanes). `activeticket.md` rewritten to
+MER-47.
