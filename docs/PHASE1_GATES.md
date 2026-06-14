@@ -13,8 +13,29 @@ status is a merge blocker. A gate is **not** green when its tests are skipped:
 | P1.2 | MER-29 | Live policy integration (agent stub) | `test/integration/policy_test.go` |
 | P1.3 | MER-21 | Geneve two-node identity + policy | `test/integration/geneve_test.go` |
 | CP-2 | MER-24 | Compiler ≡ reference property | `internal/control/conformance_test.go` |
-| O-2 | MER-32 | Denied-flows + metrics assertion | `test/integration/metrics_test.go` (planned) |
-| EXIT | MER-34 | ADR-0004 freeze + doc reconciliation | references all gates above |
+| O-2 | MER-32 | Denied-flows + metrics assertion | `test/integration/metrics_test.go` |
+| EXIT | MER-34 | ADR-0004 freeze + doc reconciliation | [ADR-0004](adr/0004-map-schema-freeze.md); [PHASE1_GATE_EVIDENCE.log](PHASE1_GATE_EVIDENCE.log) |
+
+## Gate status (MER-34 exit)
+
+All five upstream gates are **armed** in `test/gates/manifest.txt` with zero
+skips required on 5.15. MER-66 refreshed the P1.3 evidence on the live
+two-node TCP connect path after the earlier synthetic-only Geneve result proved
+insufficient. Evidence log and CI:
+
+| Gate | Ticket | Evidence |
+|------|--------|----------|
+| P1.1 | MER-18 | `docs/PHASE1_GATE_EVIDENCE.log` · CI [`ci.yml`](../.github/workflows/ci.yml) job `bpf + integration (T2/T3)` |
+| P1.2 | MER-29 | same |
+| P1.3 | MER-21 | same |
+| CP-2 | MER-24 | same · job `lint + unit (T1)` |
+| O-2 | MER-32 | same |
+| EXIT | MER-34 | ADR-0004 Accepted · this reconciliation |
+
+P1.3 is green only when the live test proves both outcomes: the allowed TCP
+connect succeeds, the denied TCP connect times out, and node B decodes the
+remote source identity from the carried Geneve TLV rather than from a local
+`identity_map` fallback.
 
 ## Skip-integrity rule (MER-44)
 

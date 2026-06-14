@@ -1,5 +1,8 @@
 # Phase 1 Work Breakdown — TC Policy Engine
 
+**Status: complete (MER-34 exit gate, 2026-06-13).** Map schemas frozen in
+[ADR-0004](adr/0004-map-schema-freeze.md). Phase 2 entry: [PHASE2_GATES.md](PHASE2_GATES.md).
+
 Scope (ROADMAP weeks 2–3): full TC parser + policy verdicts (eBPF P1.1–P1.3),
 agent stub (A-1), flow metrics (O-2), reference evaluator + policy compiler +
 fuzz harness (CP-2). Exit: **verdicts ≡ reference evaluator; map schemas frozen
@@ -112,7 +115,7 @@ Wave 4  ──  eBPF+Platform: MER-18 (P1.1 ✓)    eBPF: MER-21 (P1.3 ✓)
             Agent: MER-29 (P1.2 ✓)                                     [day 4–6]
 
 Wave 5  ──  Obs: MER-32 (O-2 ✓)                                        [day 6]
-Wave 6  ──  All: MER-34 (schema freeze ✓ → Phase 2 entry)              [day 6–7]
+Wave 6  ──  All: MER-34 (schema freeze ✓ → Phase 2 entry)              [day 6–7]  **DONE**
 ```
 
 **Critical path** (≈ 21–24h): MER-14 → MER-16 → MER-17 → MER-29 → MER-32 → MER-34.

@@ -18,6 +18,7 @@
 
 #include "meridian_consts.h"
 #include "meridian_maps.h"
+#include "meridian_parse.h"
 #include "meridian_types.h"
 
 static __always_inline __u32 failopen_unknown_enabled(void)
@@ -108,23 +109,13 @@ static __always_inline __u32 parse_l4_ports(struct iphdr *ip, void *data_end,
 	return 1;
 }
 
-static __always_inline __u32 looks_like_ipv4(void *ptr, void *data_end)
-{
-	struct iphdr *ip = ptr;
-
-	if ((void *)(ip + 1) > data_end)
-		return 0;
-	return ip->version == 4 && ip->ihl >= IPV4_IHL_MIN && ip->ihl <= IPV4_IHL_MAX;
-}
-
 static __always_inline __u32 parse_geneve_option_count(void *opts, void *data_end,
 							__u32 opt_bytes, __u32 *count_out)
 {
 	__u32 offset = 0;
 	__u32 count = 0;
 
-#pragma unroll
-	for (int i = 0; i < MERIDIAN_MAX_GENEVE_OPTS; i++) {
+	for (int i = 0; i < 4; i++) {
 		__u8 *opt;
 		__u32 opt_len_words;
 		__u32 opt_size;
@@ -154,6 +145,108 @@ static __always_inline __u32 parse_geneve_option_count(void *opts, void *data_en
 	return 1;
 }
 
+#define MERIDIAN_MAX_INNER_SHIFT_BYTES 128
+
+static __always_inline int insert_inner_tlv_room(struct __sk_buff *skb, __u32 room_off,
+						 __u32 inner_ip_off, __u32 udp_off,
+						 __u32 opt_bytes)
+{
+	__u32 paylen;
+	__u32 i;
+	__u8 b;
+
+	(void)inner_ip_off;
+	(void)udp_off;
+	(void)opt_bytes;
+
+	if (bpf_skb_pull_data(skb, skb->len))
+		return 1;
+	if (room_off >= skb->len)
+		return 1;
+
+	paylen = skb->len - room_off;
+	if (paylen == 0 || paylen > MERIDIAN_MAX_INNER_SHIFT_BYTES)
+		return 1;
+	if (bpf_skb_change_tail(skb, skb->len + MERIDIAN_GENEVE_OPT_BYTES, 0))
+		return 1;
+	if (bpf_skb_pull_data(skb, skb->len))
+		return 1;
+
+#pragma unroll
+	for (i = 0; i < 128; i++) {
+		if (i < paylen) {
+			__u32 src_off = room_off + paylen - 1 - i;
+			__u32 dst_off = room_off + MERIDIAN_GENEVE_OPT_BYTES + paylen - 1 - i;
+
+			if (bpf_skb_load_bytes(skb, src_off, &b, 1))
+				return 1;
+			if (bpf_skb_store_bytes(skb, dst_off, &b, 1, 0))
+				return 1;
+		}
+	}
+	return 0;
+}
+
+static __always_inline int bump_udp_geneve_lengths(struct __sk_buff *skb,
+						   __u32 outer_ip_off, __u32 udp_off)
+{
+	__u16 old_ip_len_be, new_ip_len_be;
+	__u16 old_udp_len_be, new_udp_len_be;
+	__u16 udp_check_be;
+
+	if (bpf_skb_pull_data(skb, skb->len))
+		return 1;
+
+	/* Derive lengths from the post-growth skb so wire headers match tail. */
+	new_ip_len_be = bpf_htons(skb->len - outer_ip_off);
+	if (bpf_skb_load_bytes(skb, outer_ip_off + 2, &old_ip_len_be, 2))
+		return 1;
+	if (bpf_skb_store_bytes(skb, outer_ip_off + 2, &new_ip_len_be, 2,
+				BPF_F_RECOMPUTE_CSUM))
+		return 1;
+
+	new_udp_len_be = bpf_htons(skb->len - udp_off);
+	if (bpf_skb_load_bytes(skb, udp_off + 4, &old_udp_len_be, 2))
+		return 1;
+	if (bpf_skb_store_bytes(skb, udp_off + 4, &new_udp_len_be, 2, 0))
+		return 1;
+
+	/* Kernel Geneve often emits UDP csum=0 (offload). Skip l4 replace then. */
+	if (bpf_skb_load_bytes(skb, udp_off + 6, &udp_check_be, 2))
+		return 1;
+	if (udp_check_be != 0 &&
+	    bpf_l4_csum_replace(skb, udp_off, old_udp_len_be, new_udp_len_be, 2))
+		return 1;
+
+	return 0;
+}
+
+static __always_inline int stamp_identity_tlv(struct __sk_buff *skb,
+					      __u32 stamp_off, __u32 geneve_off,
+					      __u32 opt_words, __u32 src_id)
+{
+	__u8 tlv[MERIDIAN_GENEVE_OPT_BYTES];
+	__u16 class_be = bpf_htons(MERIDIAN_GENEVE_CLASS);
+	__u32 src_id_be = bpf_htonl(src_id);
+	__u8 geneve0;
+
+	__builtin_memcpy(&tlv[0], &class_be, sizeof(class_be));
+	tlv[2] = MERIDIAN_OPT_IDENTITY;
+	tlv[3] = MERIDIAN_GENEVE_IDENTITY_LEN_WORDS;
+	__builtin_memcpy(&tlv[4], &src_id_be, sizeof(src_id_be));
+
+	if (bpf_skb_store_bytes(skb, stamp_off, tlv, MERIDIAN_GENEVE_OPT_BYTES, 0))
+		return 1;
+
+	if (bpf_skb_load_bytes(skb, geneve_off, &geneve0, 1))
+		return 1;
+	geneve0 = (geneve0 & 0xc0) | (opt_words + MERIDIAN_GENEVE_OPT_WORDS);
+	if (bpf_skb_store_bytes(skb, geneve_off, &geneve0, 1, 0))
+		return 1;
+
+	return 0;
+}
+
 SEC("tc")
 int meridian_tc_egress(struct __sk_buff *skb)
 {
@@ -167,27 +260,67 @@ int meridian_tc_egress(struct __sk_buff *skb)
 	__u32 event_src_id = 0;
 	__u32 event_dst_id = 0;
 
-	/* Parse outer Ethernet + IPv4 + UDP Geneve. */
-	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
+	if (bpf_skb_pull_data(skb, skb->len))
 		return TC_ACT_OK;
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
-		return TC_ACT_OK;
+	data = (void *)(long)skb->data;
+	data_end = (void *)(long)skb->data_end;
 
-	struct iphdr *outer_ip = (void *)(eth + 1);
-	if ((void *)(outer_ip + 1) > data_end)
+	/* Parse outer Ethernet (+ optional 802.1Q) + IPv4 + UDP Geneve. */
+	struct ethhdr *eth = data;
+	struct iphdr *outer_ip;
+
+	if (!parse_ipv4_after_eth(eth, data_end, &outer_ip))
 		return TC_ACT_OK;
 	if (outer_ip->version != 4 || outer_ip->ihl < IPV4_IHL_MIN ||
 	    outer_ip->ihl > IPV4_IHL_MAX)
 		return TC_ACT_OK;
-	if (outer_ip->protocol != IPPROTO_UDP)
-		return TC_ACT_OK;
-
 	struct udphdr *udp = (void *)outer_ip + outer_ip->ihl * IPV4_WORD_BYTES;
-	if ((void *)(udp + 1) > data_end)
+	if (outer_ip->protocol != IPPROTO_UDP || (void *)(udp + 1) > data_end ||
+	    udp->dest != bpf_htons(MERIDIAN_GENEVE_UDP_PORT)) {
+		__u16 src_port = 0;
+		__u16 dst_port = 0;
+		__u32 src_key = outer_ip->saddr;
+		__u32 dst_key = outer_ip->daddr;
+		__u32 *src_identity = bpf_map_lookup_elem(&identity_map, &src_key);
+		__u32 *dst_identity = bpf_map_lookup_elem(&identity_map, &dst_key);
+
+		if (parse_l4_ports(outer_ip, data_end, &src_port, &dst_port)) {
+			flow.src_ip = outer_ip->saddr;
+			flow.dst_ip = outer_ip->daddr;
+			flow.src_port = src_port;
+			flow.dst_port = dst_port;
+			flow.proto = outer_ip->protocol;
+			flow._pad[0] = 0;
+			flow._pad[1] = 0;
+			flow._pad[2] = 0;
+			has_flow = 1;
+		}
+		if (dst_identity)
+			event_dst_id = *dst_identity;
+		if (!src_identity || *src_identity == 0)
+			return TC_ACT_OK;
+		event_src_id = *src_identity;
+		if (dst_identity && *dst_identity != 0) {
+			struct policy_key policy_key = {
+				.src_id = event_src_id,
+				.dst_id = *dst_identity,
+				.dst_port = bpf_ntohs(dst_port),
+				.proto = outer_ip->protocol,
+				.direction = POLICY_DIR_INGRESS,
+			};
+			struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
+
+			if (verdict && verdict->action == FLOW_VERDICT_DENY) {
+				denied_flow_upsert(&flow, DROP_REASON_POLICY_DENY, now_ns);
+				metric_add(METRIC_FLOWS_DENIED, 1);
+				emit_flow_event(now_ns, flow.src_ip, flow.dst_ip, flow.src_port,
+						flow.dst_port, flow.proto, FLOW_VERDICT_DENY,
+						event_src_id, event_dst_id, packet_bytes);
+				return TC_ACT_STOLEN;
+			}
+		}
 		return TC_ACT_OK;
-	if (udp->dest != bpf_htons(MERIDIAN_GENEVE_UDP_PORT))
-		return TC_ACT_OK;
+	}
 
 	/* Geneve base header (8 bytes) starts after UDP. */
 	__u8 *geneve = (void *)(udp + 1);
@@ -212,23 +345,18 @@ int meridian_tc_egress(struct __sk_buff *skb)
 		goto encap_fail;
 
 	/*
-	 * Headroom model:
-	 *   - no reserved room: inner IP starts at opts+opt_bytes
-	 *   - reserved room:    inner IP starts at opts+opt_bytes+8
-	 * This keeps parsing verifier-simple and deterministic.
+	 * Inner payload model (see parse_ipv4_in_geneve_payload):
+	 *   - T2 reserved slot: inner IP at opts+opt_bytes+8
+	 *   - T2 / proto 0x0800: raw inner IP at opts+opt_bytes
+	 *   - kernel Geneve (ETH_P_TEB): inner Ethernet at opts+opt_bytes
 	 */
 	__u8 *inner_base = opts + opt_bytes;
 	struct iphdr *inner_ip = 0;
 	__u32 reserved_headroom = 0;
-	if (looks_like_ipv4(inner_base, data_end)) {
-		inner_ip = (void *)inner_base;
-		reserved_headroom = 0;
-	} else if (looks_like_ipv4(inner_base + MERIDIAN_GENEVE_OPT_BYTES, data_end)) {
-		inner_ip = (void *)(inner_base + MERIDIAN_GENEVE_OPT_BYTES);
-		reserved_headroom = MERIDIAN_GENEVE_OPT_BYTES;
-	} else {
-		goto encap_fail;
-	}
+
+	if (!parse_ipv4_in_geneve_payload(inner_base, data_end, &inner_ip,
+					  &reserved_headroom))
+		return TC_ACT_OK;
 
 	__u16 src_port = 0;
 	__u16 dst_port = 0;
@@ -256,24 +384,51 @@ int meridian_tc_egress(struct __sk_buff *skb)
 		goto encap_fail;
 	event_src_id = *src_identity;
 
+	if (dst_identity && *dst_identity != 0) {
+		struct policy_key policy_key = {
+			.src_id = event_src_id,
+			.dst_id = *dst_identity,
+			.dst_port = bpf_ntohs(dst_port),
+			.proto = inner_ip->protocol,
+			.direction = POLICY_DIR_INGRESS,
+		};
+		struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
+
+		if (verdict && verdict->action == FLOW_VERDICT_DENY) {
+			denied_flow_upsert(&flow, DROP_REASON_POLICY_DENY, now_ns);
+			metric_add(METRIC_FLOWS_DENIED, 1);
+			emit_flow_event(now_ns, flow.src_ip, flow.dst_ip, flow.src_port,
+					flow.dst_port, flow.proto, FLOW_VERDICT_DENY,
+					event_src_id, event_dst_id, packet_bytes);
+			return TC_ACT_STOLEN;
+		}
+	}
+
 	if (option_count >= MERIDIAN_MAX_GENEVE_OPTS)
 		goto encap_fail;
-	if (reserved_headroom != MERIDIAN_GENEVE_OPT_BYTES)
+
+	__u32 stamp_off = 0;
+	__u32 geneve_off = (__u32)((__u8 *)geneve - (__u8 *)data);
+
+	if (reserved_headroom == MERIDIAN_GENEVE_OPT_BYTES) {
+		stamp_off = (__u32)(inner_base - (__u8 *)data);
+	} else if (reserved_headroom == 0) {
+		__u32 room_off = (__u32)(inner_base - (__u8 *)data);
+		__u32 inner_ip_off = (__u32)((__u8 *)inner_ip - (__u8 *)data);
+		__u32 outer_ip_off = (__u32)((__u8 *)outer_ip - (__u8 *)data);
+		__u32 udp_off = (__u32)((__u8 *)udp - (__u8 *)data);
+
+		if (insert_inner_tlv_room(skb, room_off, inner_ip_off, udp_off, opt_bytes))
+			goto encap_fail;
+		(void)bump_udp_geneve_lengths(skb, outer_ip_off, udp_off);
+		stamp_off = room_off;
+	} else {
+		goto encap_fail;
+	}
+
+	if (stamp_identity_tlv(skb, stamp_off, geneve_off, opt_words, event_src_id))
 		goto encap_fail;
 
-	/* Construct Meridian identity TLV in the reserved headroom slot. */
-	__u8 *new_opt = inner_base;
-	if (new_opt + MERIDIAN_GENEVE_OPT_BYTES > (__u8 *)data_end)
-		goto encap_fail;
-
-	__u16 class_be = bpf_htons(MERIDIAN_GENEVE_CLASS);
-	__u32 src_id_be = bpf_htonl(event_src_id);
-	__builtin_memcpy(&new_opt[0], &class_be, sizeof(class_be));
-	new_opt[2] = MERIDIAN_OPT_IDENTITY;
-	new_opt[3] = MERIDIAN_GENEVE_IDENTITY_LEN_WORDS;
-	__builtin_memcpy(&new_opt[4], &src_id_be, sizeof(src_id_be));
-
-	geneve[0] = (geneve[0] & 0xc0) | (opt_words + MERIDIAN_GENEVE_OPT_WORDS);
 	return TC_ACT_OK;
 
 encap_fail:

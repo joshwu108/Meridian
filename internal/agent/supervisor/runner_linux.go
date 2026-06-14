@@ -9,7 +9,6 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/joshuawu/meridian/bpf"
 	"github.com/joshuawu/meridian/internal/agent/attach"
 	"github.com/joshuawu/meridian/internal/agent/bpfobj"
 	"github.com/joshuawu/meridian/internal/agent/config"
@@ -18,12 +17,8 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-func (r *StartupRuntime) CounterObjects() (*bpf.CounterObjects, error) {
-	objs, ok := r.Opaque().(*bpf.CounterObjects)
-	if !ok || objs == nil {
-		return nil, fmt.Errorf("startup runtime opaque objects are %T, want *bpf.CounterObjects", r.Opaque())
-	}
-	return objs, nil
+func (r *StartupRuntime) CounterObjects() (*bpfobj.CounterObjects, error) {
+	return bpfobj.AsCounterObjects(r.Opaque())
 }
 
 // Consumer returns the flow-event consumer the supervisor constructed over the
@@ -149,10 +144,6 @@ func NewPolicyStartupRunner(opts StartupOptions) *StartupRunner {
 
 // TcIngressObjects returns the loaded tc_ingress collection for integration
 // tests that need direct map handles (e.g. denied_flows_map assertions).
-func (r *StartupRuntime) TcIngressObjects() (*bpf.TcIngressObjects, error) {
-	objs, ok := r.Opaque().(*bpf.TcIngressObjects)
-	if !ok || objs == nil {
-		return nil, fmt.Errorf("startup runtime opaque objects are %T, want *bpf.TcIngressObjects", r.Opaque())
-	}
-	return objs, nil
+func (r *StartupRuntime) TcIngressObjects() (*bpfobj.TcIngressObjects, error) {
+	return bpfobj.AsTcIngressObjects(r.Opaque())
 }

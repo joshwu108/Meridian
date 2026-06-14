@@ -27,11 +27,13 @@ provision:
     script: |
       #!/bin/bash
       set -eu
-      # Find the mounted repo (the home mount keeps host paths) and provision.
-      for d in /Users/*/Meridian /home/*/Meridian; do
+      # Best-effort first-boot provision. make vm-up re-runs provision.sh with an
+      # explicit REPO_ROOT, so a miss here (repo not yet visible on the mount) is
+      # recoverable without recreating the VM.
+      for d in /Users/*/Meridian /home/*/meridian /home/*/Meridian; do
         if [ -f "$d/test/vm/provision.sh" ]; then
           REPO_ROOT="$d" bash "$d/test/vm/provision.sh"
           exit 0
         fi
       done
-      echo "Meridian repo not found under the home mount; run provision.sh manually." >&2
+      echo "[lima provision] Meridian repo not found on home mount; run 'make vm-up' from the repo after the VM starts." >&2

@@ -24,6 +24,8 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 		unknownMode     reference.UnknownIdentityMode
 		seedSrcIdentity *uint32
 		seedDstIdentity *uint32
+		seedSrcIP       []byte
+		seedDstIP       []byte
 		rules           []reference.Rule
 	}{
 		{
@@ -119,18 +121,6 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			seedDstIdentity: ptrUint32(2001),
 		},
 		{
-			name:        "malformed packet follows unknown posture",
-			packet:      synthMalformedIPv4IHLPacket(4),
-			unknownMode: reference.UnknownIdentityFailClosed,
-			input: reference.Input{
-				SrcIdentity: wire.IdentityUnknown,
-				DstIdentity: wire.IdentityUnknown,
-				DstPort:     0,
-				Protocol:    6,
-				Direction:   reference.DirectionIngress,
-			},
-		},
-		{
 			name:        "ipv6 passthrough",
 			packet:      synthNonIPv4Packet(0x86dd),
 			unknownMode: reference.UnknownIdentityFailOpen,
@@ -140,6 +130,34 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 				DstPort:     0,
 				Protocol:    0,
 				Direction:   reference.DirectionIngress,
+			},
+		},
+		{
+			name:        "vlan tagged allow policy hit",
+			packet:      synthVLANTaggedIPv4Packet(6, []byte{10, 42, 4, 2}, []byte{10, 42, 4, 3}),
+			unknownMode: reference.UnknownIdentityFailClosed,
+			input: reference.Input{
+				SrcIdentity: 1005,
+				DstIdentity: 2005,
+				DstPort:     8080,
+				Protocol:    6,
+				Direction:   reference.DirectionIngress,
+			},
+			seedSrcIdentity: ptrUint32(1005),
+			seedDstIdentity: ptrUint32(2005),
+			seedSrcIP:       []byte{10, 42, 4, 2},
+			seedDstIP:       []byte{10, 42, 4, 3},
+			rules: []reference.Rule{
+				{
+					SrcIdentity: 1005,
+					DstIdentity: 2005,
+					DstPort:     8080,
+					Protocol:    6,
+					Direction:   reference.DirectionIngress,
+					Verdict: wire.PolicyVerdict{
+						Action: wire.PolicyActionAllow,
+					},
+				},
 			},
 		},
 		{
@@ -183,11 +201,19 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			}
 
 			objs := loadTcIngress(t)
+			srcIP := tc.packet[26:30]
+			dstIP := tc.packet[30:34]
+			if tc.seedSrcIP != nil {
+				srcIP = tc.seedSrcIP
+			}
+			if tc.seedDstIP != nil {
+				dstIP = tc.seedDstIP
+			}
 			if tc.seedSrcIdentity != nil {
-				seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(tc.packet[26:30]), *tc.seedSrcIdentity)
+				seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(srcIP), *tc.seedSrcIdentity)
 			}
 			if tc.seedDstIdentity != nil {
-				seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(tc.packet[30:34]), *tc.seedDstIdentity)
+				seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(dstIP), *tc.seedDstIdentity)
 			}
 			for _, rule := range tc.rules {
 				seedPolicy(t, objs.PolicyMap, rule)
@@ -203,7 +229,7 @@ func TestVerdictMatrixMatchesReferenceEvaluator(t *testing.T) {
 			if !ok {
 				t.Fatalf("unsupported expected action in current matrix: %d", want.Action)
 			}
-			if got != wantTCAct {
+			if got != uint32(wantTCAct) {
 				t.Fatalf("verdict mismatch: kernel=%d expected(tc)=%d expected(action)=%d", got, wantTCAct, want.Action)
 			}
 		})

@@ -50,6 +50,23 @@ policies:
 	}
 }
 
+func TestLoadPolicySnapshotIntegrationFixture(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "test", "integration", "testdata", "policy.yaml")
+	got, err := LoadPolicySnapshot(path)
+	if err != nil {
+		t.Fatalf("LoadPolicySnapshot() error = %v", err)
+	}
+	if len(got.Identities) != 2 || len(got.Policies) != 2 {
+		t.Fatalf("identities=%d policies=%d, want 2 each", len(got.Identities), len(got.Policies))
+	}
+	if got.Policies[0].Verdict.Action != wire.PolicyActionAllow {
+		t.Fatalf("first policy action = %d, want allow", got.Policies[0].Verdict.Action)
+	}
+	if got.Policies[1].Verdict.Action != wire.PolicyActionDeny {
+		t.Fatalf("second policy action = %d, want deny", got.Policies[1].Verdict.Action)
+	}
+}
+
 func TestLoadPolicySnapshotRejectsMissingIdentityIPv4(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
 	const body = `

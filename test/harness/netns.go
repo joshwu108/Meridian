@@ -46,11 +46,12 @@ type VethPair struct {
 // with real addressing; octet keeps concurrent pairs disjoint.
 func NewVethPair(t *testing.T, name string, octet byte) *VethPair {
 	t.Helper()
+	sfx := shortSuffix(name)
 	v := &VethPair{
 		Name:     name,
 		Netns:    fmt.Sprintf("%s%s-%s", NetnsPrefix, RunID(), name),
-		HostVeth: "mh-" + name,
-		PeerVeth: "mp-" + name,
+		HostVeth: "mh-" + sfx,
+		PeerVeth: "mp-" + sfx,
 		HostAddr: fmt.Sprintf("169.254.%d.1", octet),
 		PeerIP:   fmt.Sprintf("169.254.%d.2", octet),
 		t:        t,

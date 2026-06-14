@@ -11,6 +11,8 @@ import (
 
 	"github.com/joshuawu/meridian/bpf"
 	"github.com/joshuawu/meridian/internal/agent/metrics"
+	"github.com/joshuawu/meridian/internal/reference"
+	"github.com/joshuawu/meridian/pkg/wire"
 	"github.com/joshuawu/meridian/test/harness"
 )
 
@@ -31,23 +33,129 @@ type denyInfo struct {
 	Reason uint32
 }
 
+func runTcEgress(t *testing.T, prog *ebpf.Program, pkt []byte) (uint32, []byte) {
+	t.Helper()
+	// Live encap may grow the skb by MERIDIAN_GENEVE_OPT_BYTES via adjust_room;
+	// prog_test_run needs headroom in DataOut or the helper returns ENOSPC.
+	out := make([]byte, len(pkt)+8)
+	copy(out, pkt)
+	ret, err := prog.Run(&ebpf.RunOptions{Data: pkt, DataOut: out})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	return ret, out
+}
+
 func TestTcEgressSuccessfulEncapsulation(t *testing.T) {
 	objs := loadTcEgress(t)
 
 	pkt := synthGeneveIPv4Packet(6, []byte{10, 60, 1, 2}, []byte{10, 60, 1, 3}, true)
 	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 60, 1, 2}), 7001)
 
-	ret, err := objs.MeridianTcEgress.Run(&ebpf.RunOptions{Data: pkt})
-	if err != nil {
-		t.Fatalf("prog test run: %v", err)
-	}
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
 	if ret != tcActOK {
 		t.Fatalf("egress verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 
-	geneve := pkt[14+20+8:]
+	geneve := out[14+20+8:]
 	if got := geneve[0] & 0x3f; got != 2 {
 		t.Fatalf("geneve opt_len words=%d, want 2", got)
+	}
+}
+
+// TestTcEgressAdjustRoomPath exercises the live kernel path where Geneve frames
+// arrive without pre-reserved TLV headroom (MER-28 / ADR-0002).
+func TestTcEgressAdjustRoomPath(t *testing.T) {
+	objs := loadTcEgress(t)
+	reader := metrics.NewMapReader(objs.MetricsMap)
+
+	pkt := synthGeneveIPv4Packet(6, []byte{10, 60, 2, 2}, []byte{10, 60, 2, 3}, false)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 60, 2, 2}), 7002)
+
+	before, err := reader.Read(metrics.MetricGeneveEncapFail)
+	if err != nil {
+		t.Fatalf("read metric before: %v", err)
+	}
+
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
+	if ret != tcActOK {
+		after, _ := reader.Read(metrics.MetricGeneveEncapFail)
+		t.Fatalf("adjust-room egress verdict=%d, want TC_ACT_OK (%d); encap_fail=%d->%d",
+			ret, tcActOK, before, after)
+	}
+
+	after, err := reader.Read(metrics.MetricGeneveEncapFail)
+	if err != nil {
+		t.Fatalf("read metric after: %v", err)
+	}
+	if after != before {
+		t.Fatalf("encap fail metric=%d, want unchanged %d", after, before)
+	}
+
+	geneve := out[14+20+8:]
+	if got := geneve[0] & 0x3f; got != 2 {
+		t.Fatalf("geneve opt_len words=%d, want 2", got)
+	}
+	opt := out[14+20+8+8 : 14+20+8+8+8]
+	if got := binary.BigEndian.Uint32(opt[4:8]); got != 7002 {
+		t.Fatalf("identity body=%d, want 7002", got)
+	}
+}
+
+func TestTcEgressKernelTEBPath(t *testing.T) {
+	objs := loadTcEgress(t)
+	reader := metrics.NewMapReader(objs.MetricsMap)
+
+	innerSrc := []byte{10, 60, 3, 2}
+	innerDst := []byte{10, 60, 3, 3}
+	pkt := synthGeneveTEBIPv4Packet(6, innerSrc, innerDst)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerSrc), 7003)
+
+	before, err := reader.Read(metrics.MetricGeneveEncapFail)
+	if err != nil {
+		t.Fatalf("read metric before: %v", err)
+	}
+
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
+	if ret != tcActOK {
+		after, _ := reader.Read(metrics.MetricGeneveEncapFail)
+		t.Fatalf("TEB egress verdict=%d, want TC_ACT_OK (%d); encap_fail=%d->%d",
+			ret, tcActOK, before, after)
+	}
+
+	after, err := reader.Read(metrics.MetricGeneveEncapFail)
+	if err != nil {
+		t.Fatalf("read metric after: %v", err)
+	}
+	if after != before {
+		t.Fatalf("encap fail metric=%d, want unchanged %d", after, before)
+	}
+
+	geneve := out[14+20+8:]
+	if got := geneve[0] & 0x3f; got != 2 {
+		t.Fatalf("geneve opt_len words=%d, want 2", got)
+	}
+}
+
+func TestTcEgressKernelEncapShapeAdjustRoom(t *testing.T) {
+	objs := loadTcEgress(t)
+
+	const srcIdentity = uint32(7010)
+	pkt := synthGeneveIPv4Packet(6, []byte{10, 60, 2, 2}, []byte{10, 60, 2, 3}, false)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 60, 2, 2}), srcIdentity)
+
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
+	if ret != tcActOK {
+		t.Fatalf("kernel encap shape verdict=%d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+
+	geneve := out[14+20+8:]
+	if got := geneve[0] & 0x3f; got != 2 {
+		t.Fatalf("geneve opt_len words=%d, want 2 after adjust_room", got)
+	}
+	opt := out[14+20+8+8 : 14+20+8+8+8]
+	if got := binary.BigEndian.Uint32(opt[4:8]); got != srcIdentity {
+		t.Fatalf("identity body=%d, want %d", got, srcIdentity)
 	}
 }
 
@@ -58,15 +166,12 @@ func TestTcEgressIdentityPropagation(t *testing.T) {
 	pkt := synthGeneveIPv4Packet(17, []byte{10, 61, 1, 2}, []byte{10, 61, 1, 3}, true)
 	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 61, 1, 2}), srcIdentity)
 
-	ret, err := objs.MeridianTcEgress.Run(&ebpf.RunOptions{Data: pkt})
-	if err != nil {
-		t.Fatalf("prog test run: %v", err)
-	}
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
 	if ret != tcActOK {
 		t.Fatalf("identity propagation verdict=%d, want TC_ACT_OK (%d)", ret, tcActOK)
 	}
 
-	opt := pkt[14+20+8+8 : 14+20+8+8+8]
+	opt := out[14+20+8+8 : 14+20+8+8+8]
 	if got := binary.BigEndian.Uint16(opt[0:2]); got != 0x4d52 {
 		t.Fatalf("option class=0x%x, want 0x4d52", got)
 	}
@@ -86,7 +191,7 @@ func TestTcEgressEncapsulationFailure(t *testing.T) {
 	reader := metrics.NewMapReader(objs.MetricsMap)
 
 	pkt := synthGeneveIPv4Packet(6, []byte{10, 62, 1, 2}, []byte{10, 62, 1, 3}, false)
-	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire([]byte{10, 62, 1, 2}), 9001)
+	// No identity_map entry: egress cannot stamp the TLV.
 
 	before, err := reader.Read(metrics.MetricGeneveEncapFail)
 	if err != nil {
@@ -169,6 +274,27 @@ func TestTcEgressMalformedPacket(t *testing.T) {
 	}
 }
 
+func TestTcEgressVlanTaggedIdentityPropagation(t *testing.T) {
+	objs := loadTcEgress(t)
+
+	const srcIdentity = uint32(8124)
+	innerSrc := []byte{10, 61, 2, 2}
+	innerDst := []byte{10, 61, 2, 3}
+	pkt := synthVLANTaggedGeneveIPv4Packet(17, innerSrc, innerDst, true)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerSrc), srcIdentity)
+
+	ret, out := runTcEgress(t, objs.MeridianTcEgress, pkt)
+	if ret != tcActOK {
+		t.Fatalf("vlan-tagged egress verdict=%d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+
+	// Outer layout: eth(14) + vlan(4) + ip(20) + udp(8) + geneve(8) + opt(8)
+	opt := out[14+4+20+8+8 : 14+4+20+8+8+8]
+	if got := binary.BigEndian.Uint32(opt[4:8]); got != srcIdentity {
+		t.Fatalf("identity body=%d, want %d", got, srcIdentity)
+	}
+}
+
 func TestTcEgressNonTunnelPassthroughNoEncapFailMetric(t *testing.T) {
 	objs := loadTcEgress(t)
 	reader := metrics.NewMapReader(objs.MetricsMap)
@@ -196,8 +322,50 @@ func TestTcEgressNonTunnelPassthroughNoEncapFailMetric(t *testing.T) {
 	}
 }
 
+func TestTcEgressToIngressTEBRoundTrip(t *testing.T) {
+	ingressObjs := loadTcIngress(t)
+	egressObjs := loadTcEgress(t)
+
+	const remoteIdentity = uint32(1001)
+	const localIdentity = uint32(2001)
+	const testPort = 18080
+	innerSrc := []byte{10, 200, 80, 1}
+	innerDst := []byte{10, 200, 80, 2}
+
+	pkt := synthGeneveTEBIPv4Packet(6, innerSrc, innerDst)
+	innerIPOff := 14 + 20 + 8 + 8 + 14
+	binary.BigEndian.PutUint16(pkt[innerIPOff+20+2:innerIPOff+20+4], testPort)
+
+	seedIdentity(t, egressObjs.IdentityMap, keyFromIPv4Wire(innerSrc), remoteIdentity)
+	seedIdentity(t, ingressObjs.IdentityMap, keyFromIPv4Wire(innerDst), localIdentity)
+	seedPolicy(t, ingressObjs.PolicyMap, reference.Rule{
+		SrcIdentity: wire.IdentityID(remoteIdentity),
+		DstIdentity: wire.IdentityID(localIdentity),
+		DstPort:     testPort,
+		Protocol:    6,
+		Direction:   reference.DirectionIngress,
+		Verdict:     wire.PolicyVerdict{Action: wire.PolicyActionAllow},
+	})
+
+	egressRet, stamped := runTcEgress(t, egressObjs.MeridianTcEgress, pkt)
+	if egressRet != tcActOK {
+		t.Fatalf("egress round-trip verdict=%d, want TC_ACT_OK (%d)", egressRet, tcActOK)
+	}
+
+	ingressRet, err := ingressObjs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: stamped})
+	if err != nil {
+		t.Fatalf("ingress prog test run: %v", err)
+	}
+	if ingressRet != tcActOK {
+		t.Fatalf("ingress round-trip verdict=%d, want TC_ACT_OK (%d)", ingressRet, tcActOK)
+	}
+}
+
 func loadTcEgress(t *testing.T) *bpf.TcEgressObjects {
 	t.Helper()
+	bpfLoadMu.Lock()
+	defer bpfLoadMu.Unlock()
+
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {
 		t.Fatalf("remove memlock rlimit: %v", err)

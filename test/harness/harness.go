@@ -46,6 +46,7 @@ const (
 var (
 	runIDOnce sync.Once
 	runIDVal  string
+	pinDirMu  sync.Mutex
 )
 
 // RunID returns the per-process run identifier, e.g. "4711-1a2b3c". It is
@@ -95,13 +96,19 @@ func WaitUntil(t *testing.T, timeout time.Duration, cond func() bool, msg string
 // sweeps anything a crashing test leaks.
 func PinDir(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(BpffsRoot, RunID(), sanitizeName(t.Name()))
+	runDir := filepath.Join(BpffsRoot, RunID())
+	dir := filepath.Join(runDir, sanitizeName(t.Name()))
+	pinDirMu.Lock()
+	defer pinDirMu.Unlock()
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("PinDir: mkdir %s: %v", runDir, err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("PinDir: mkdir %s: %v", dir, err)
 	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir) // best-effort; the reaper is the backstop
-	})
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("PinDir: stat %s: %v", dir, err)
+	}
 	return dir
 }
 

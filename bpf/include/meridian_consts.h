@@ -15,11 +15,17 @@
 #define TC_ACT_UNSPEC   (-1)
 #define TC_ACT_OK         0
 #define TC_ACT_SHOT       2
+#define TC_ACT_STOLEN     4
 #define TC_ACT_REDIRECT   7
 
 /* Ethertypes (compared against eth->h_proto in network order via bpf_htons). */
-#define ETH_P_IP   0x0800   /* IPv4 */
-#define ETH_P_IPV6 0x86DD   /* IPv6 (Phase 0: passthrough, not parsed) */
+#define ETH_P_IP     0x0800   /* IPv4 */
+#define ETH_P_8021Q  0x8100   /* 802.1Q VLAN (MER-43: unwrap inner L3) */
+#define ETH_P_TEB    0x6558   /* Transparent Ethernet Bridging (kernel Geneve) */
+#define ETH_P_IPV6   0x86DD   /* IPv6 (Phase 0: passthrough, not parsed) */
+
+/* 802.1Q tag after ethhdr: TCI (2) + inner ethertype (2). TPID is eth->h_proto. */
+#define VLAN_INNER_HDR_BYTES 4
 
 /* L4 protocol numbers (ip->protocol). */
 #define IPPROTO_TCP 6
@@ -33,6 +39,7 @@
 #define MERIDIAN_POLICY_MAP_ENTRIES   16384
 #define MERIDIAN_DENIED_FLOWS_ENTRIES 4096
 #define MERIDIAN_UDP_SEEN_FLOWS_ENTRIES 4096
+#define MERIDIAN_SOCKHASH_ENTRIES     65536 /* ADR-0007 SOCKHASH (Phase 2) */
 
 /* runtime_config_map[0] bit flags (D16). Unset bits = fail-closed defaults. */
 #define MERIDIAN_CFG_FALLOPEN_UNKNOWN (1u << 0)

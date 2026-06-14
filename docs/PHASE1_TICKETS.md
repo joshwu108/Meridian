@@ -1,5 +1,8 @@
 # Phase 1 Implementation Tickets — TC Policy Engine
 
+**Status: complete (MER-34 exit).** Gate evidence:
+[`PHASE1_GATE_EVIDENCE.log`](PHASE1_GATE_EVIDENCE.log).
+
 Derived from [PHASE1_PLAN.md](PHASE1_PLAN.md) (same IDs). Format follows
 [PHASE0_TICKETS.md](PHASE0_TICKETS.md): every ticket ≤ 4h, acceptance criteria
 are testable, **Wave** marks tickets that run concurrently (different lanes

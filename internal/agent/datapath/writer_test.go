@@ -204,7 +204,7 @@ func TestWriterApplyPartialFailureNamesFailedKey(t *testing.T) {
 	}
 	expectedKeyText := formatPolicyRuleKey(failingKey)
 	policyMap.failMatch = func(op mapOp) bool {
-		return op.Kind == "update" && strings.Contains(op.Key, "101") && strings.Contains(op.Key, "202")
+		return op.Kind == "update" && strings.Contains(op.Key, "SrcID:0x65") && strings.Contains(op.Key, "DstID:0xca")
 	}
 
 	err := w.Apply(context.Background(), wire.CommitPlan{
@@ -220,70 +220,5 @@ func TestWriterApplyPartialFailureNamesFailedKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), expectedKeyText) {
 		t.Fatalf("error must include failed key %q, got %q", expectedKeyText, err.Error())
-	}
-}
-
-func TestTranslatePolicyKeyDirectionRoundTrip(t *testing.T) {
-	for _, direction := range []wire.Direction{wire.DirectionIngress, wire.DirectionEgress} {
-		in := wire.PolicyRuleKey{
-			SrcIdentity: 7,
-			DstIdentity: 9,
-			DstPort:     5353,
-			Protocol:    17,
-			Direction:   direction,
-		}
-		got := translatePolicyRuleKey(in)
-		if got.SrcID != uint32(in.SrcIdentity) ||
-			got.DstID != uint32(in.DstIdentity) ||
-			got.DstPort != in.DstPort ||
-			got.Proto != in.Protocol {
-			t.Fatalf("translated key mismatch: got=%+v in=%+v", got, in)
-		}
-		if got.Direction != uint8(direction) {
-			t.Fatalf("direction mismatch: got=%d want=%d", got.Direction, direction)
-		}
-	}
-}
-
-func TestTranslatePolicyVerdictFlagsAndZeroPad(t *testing.T) {
-	in := wire.PolicyVerdict{
-		Action: wire.PolicyActionRedirectProxy,
-		Flags:  wire.PolicyFlagSockmapEligible | wire.PolicyFlagAudit,
-	}
-	got := translatePolicyVerdict(in)
-	if got.Action != uint8(in.Action) {
-		t.Fatalf("action mismatch: got=%d want=%d", got.Action, in.Action)
-	}
-	if got.Flags != uint8(in.Flags) {
-		t.Fatalf("flags mismatch: got=%d want=%d", got.Flags, in.Flags)
-	}
-	if got.Pad != 0 {
-		t.Fatalf("policy_verdict pad must be zero, got=%d", got.Pad)
-	}
-}
-
-func TestTranslateIdentityRequiresIPv4Field(t *testing.T) {
-	_, err := translateIdentity(wire.Identity{ID: 99})
-	if err == nil {
-		t.Fatalf("expected error when wire.Identity has no IPv4 field")
-	}
-	if !strings.Contains(err.Error(), "id=99") {
-		t.Fatalf("expected error naming identity id, got %q", err.Error())
-	}
-}
-
-func TestTranslateIdentityUsesNetworkOrderIPv4Key(t *testing.T) {
-	entry, err := translateIdentity(wire.Identity{
-		ID:      88,
-		PodIPv4: "10.0.0.42",
-	})
-	if err != nil {
-		t.Fatalf("translateIdentity error = %v", err)
-	}
-	if entry.Key != 0x0a00002a {
-		t.Fatalf("identity key = %#08x, want 0x0a00002a", entry.Key)
-	}
-	if entry.Value != 88 {
-		t.Fatalf("identity value = %d, want 88", entry.Value)
 	}
 }

@@ -70,6 +70,8 @@ ebpf: ## Compile bpf/*.c and regenerate committed bpf2go Go bindings (Linux-only
 	@test -f $(BPF_DIR)/counter_bpfel.o || { echo "ERROR: expected generated file bpf/counter_bpfel.o was not created."; exit 1; }
 	@test -f $(BPF_DIR)/tcingress_bpfel.go || { echo "ERROR: expected generated file bpf/tcingress_bpfel.go was not created."; exit 1; }
 	@test -f $(BPF_DIR)/tcingress_bpfel.o || { echo "ERROR: expected generated file bpf/tcingress_bpfel.o was not created."; exit 1; }
+	@test -f $(BPF_DIR)/tcegress_bpfel.go || { echo "ERROR: expected generated file bpf/tcegress_bpfel.go was not created."; exit 1; }
+	@test -f $(BPF_DIR)/tcegress_bpfel.o || { echo "ERROR: expected generated file bpf/tcegress_bpfel.o was not created."; exit 1; }
 
 .PHONY: vmlinux
 vmlinux: ## Regenerate bpf/include/vmlinux.h from the running kernel's BTF (Linux-only)
@@ -109,12 +111,13 @@ test-unit: ## T1: pure-Go unit tests; runs anywhere incl. macOS host
 .PHONY: test-bpf
 test-bpf: ## T2: bpf_prog_test_run + bpfobj loader tests (tag 'bpf'); needs root/CAP_BPF, Linux
 	$(require_linux)
-	$(GO) test -tags=bpf -exec sudo -count=1 ./test/bpf/... ./internal/agent/bpfobj/...
+	$(GO) test -tags=bpf -exec sudo -count=1 -parallel 1 ./test/bpf/...
+	$(GO) test -tags=bpf -exec sudo -count=1 -parallel 1 ./internal/agent/bpfobj/...
 
 .PHONY: test-integration
 test-integration: ## T3: netns integration tests (tag 'integration'); needs root, Linux
 	$(require_linux)
-	$(GO) test -tags=integration -exec sudo -count=1 -timeout=10m ./test/integration/...
+	$(GO) test -tags=integration -exec sudo -count=1 -parallel 1 -timeout=10m ./test/integration/...
 
 .PHONY: check-gate-skips
 check-gate-skips: ## MER-44: fail if any armed Phase-1 gate test reports skips

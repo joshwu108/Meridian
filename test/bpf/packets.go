@@ -41,7 +41,60 @@ func synthTCPPacket() []byte {
 	return pkt
 }
 
+// synthVLANTaggedIPv4Packet wraps synthIPv4Packet with a single 802.1Q tag.
+func synthVLANTaggedIPv4Packet(proto uint8, srcIP, dstIP []byte) []byte {
+	inner := synthIPv4PacketFrom(proto, srcIP, dstIP)
+	pkt := make([]byte, 4+len(inner))
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100) // VLAN-tagged
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064) // VLAN ID 100
+	binary.BigEndian.PutUint16(pkt[16:18], 0x0800) // inner IPv4
+	copy(pkt[18:], inner[14:])                     // skip inner Ethernet header
+	return pkt
+}
+
+// synthTruncatedVLANTaggedPacket has 802.1Q ethertype but no complete VLAN tag.
+func synthTruncatedVLANTaggedPacket() []byte {
+	pkt := make([]byte, 16)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	return pkt
+}
+
+// synthVLANTaggedNonIPv4Packet carries VLAN with a non-IPv4 inner ethertype.
+func synthVLANTaggedNonIPv4Packet(innerEthertype uint16) []byte {
+	pkt := make([]byte, 18+32)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	binary.BigEndian.PutUint16(pkt[16:18], innerEthertype)
+	return pkt
+}
+
+// synthVLANTaggedGeneveIPv4Packet wraps synthGeneveIPv4Packet with 802.1Q.
+func synthVLANTaggedGeneveIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte, reserveTLVHeadroom bool) []byte {
+	inner := synthGeneveIPv4Packet(innerProto, innerSrcIP, innerDstIP, reserveTLVHeadroom)
+	pkt := make([]byte, 4+len(inner))
+
+	copy(pkt[0:6], inner[0:6])
+	copy(pkt[6:12], inner[6:12])
+	binary.BigEndian.PutUint16(pkt[12:14], 0x8100)
+	binary.BigEndian.PutUint16(pkt[14:16], 0x0064)
+	binary.BigEndian.PutUint16(pkt[16:18], 0x0800)
+	copy(pkt[18:], inner[14:])
+	return pkt
+}
+
 func synthIPv4Packet(proto uint8, srcIP, dstIP []byte) []byte {
+	return synthIPv4PacketFrom(proto, srcIP, dstIP)
+}
+
+func synthIPv4PacketFrom(proto uint8, srcIP, dstIP []byte) []byte {
 	const (
 		ethHdrLen = 14
 		ipHdrLen  = 20
@@ -72,6 +125,50 @@ func synthNonIPv4Packet(ethertype uint16) []byte {
 	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
 	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
 	binary.BigEndian.PutUint16(pkt[12:14], ethertype)
+	return pkt
+}
+
+// synthTruncatedEthPacket is a minimum-size Ethernet header (14 bytes). Pair with
+// runTcIngressWithDataEnd(..., dataEnd < 14) to exercise the truncated-L2 path
+// under bpf_prog_test_run's 14-byte minimum Data length.
+func synthTruncatedEthPacket() []byte {
+	pkt := make([]byte, 14)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+	return pkt
+}
+
+// synthTruncatedIPv4Packet has a valid Ethernet header but fewer than 20 IPv4 bytes.
+func synthTruncatedIPv4Packet() []byte {
+	const ethHdrLen = 14
+	pkt := make([]byte, ethHdrLen+10)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	return pkt
+}
+
+// synthMalformedIPv4IHLOptionsTruncated claims IHL=15 (60-byte header) in a short frame.
+func synthMalformedIPv4IHLOptionsTruncated() []byte {
+	const (
+		ethHdrLen = 14
+		ipHdrLen  = 20
+	)
+	pkt := make([]byte, ethHdrLen+ipHdrLen)
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x4f // version 4, IHL 15
+	binary.BigEndian.PutUint16(ip[2:4], ipHdrLen)
+	ip[8] = 64
+	ip[9] = 6
+	copy(ip[12:16], []byte{10, 9, 1, 1})
+	copy(ip[16:20], []byte{10, 9, 1, 2})
 	return pkt
 }
 
@@ -144,6 +241,112 @@ func synthGeneveIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte, rese
 	geneve[7] = 0x00
 
 	copy(geneve[geneveHdrLen+headroom:], inner)
+	return pkt
+}
+
+// synthGeneveTEBIPv4Packet mirrors the kernel geneve driver: proto ETH_P_TEB with
+// an inner Ethernet header wrapping the IPv4 payload (MER-28 live path).
+func synthGeneveTEBIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte) []byte {
+	innerIP := synthInnerIPv4L4Payload(innerProto, innerSrcIP, innerDstIP)
+	innerEth := make([]byte, 14+len(innerIP))
+	copy(innerEth[0:6], []byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa})
+	copy(innerEth[6:12], []byte{0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb})
+	binary.BigEndian.PutUint16(innerEth[12:14], 0x0800)
+	copy(innerEth[14:], innerIP)
+
+	const (
+		ethHdrLen    = 14
+		ipHdrLen     = 20
+		udpHdrLen    = 8
+		geneveHdrLen = 8
+	)
+
+	payloadLen := udpHdrLen + geneveHdrLen + len(innerEth)
+	pkt := make([]byte, ethHdrLen+ipHdrLen+payloadLen)
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], uint16(ipHdrLen+payloadLen))
+	ip[8] = 64
+	ip[9] = 17
+	copy(ip[12:16], []byte{172, 31, 1, 2})
+	copy(ip[16:20], []byte{172, 31, 1, 3})
+
+	udp := pkt[ethHdrLen+ipHdrLen:]
+	binary.BigEndian.PutUint16(udp[0:2], 40000)
+	binary.BigEndian.PutUint16(udp[2:4], 6081)
+	binary.BigEndian.PutUint16(udp[4:6], uint16(udpHdrLen+geneveHdrLen+len(innerEth)))
+
+	geneve := udp[udpHdrLen:]
+	geneve[0] = 0x00
+	geneve[1] = 0x00
+	binary.BigEndian.PutUint16(geneve[2:4], 0x6558) // ETH_P_TEB
+	geneve[4] = 0x00
+	geneve[5] = 0x00
+	geneve[6] = 0x64
+	geneve[7] = 0x00
+
+	copy(geneve[geneveHdrLen:], innerEth)
+	return pkt
+}
+
+// synthGeneveTEBPacketWithIdentity builds a kernel-shaped TEB Geneve frame that
+// already carries the Meridian identity TLV (post-tc_egress shape).
+func synthGeneveTEBPacketWithIdentity(innerProto uint8, innerSrcIP, innerDstIP []byte, srcIdentity uint32) []byte {
+	innerIP := synthInnerIPv4L4Payload(innerProto, innerSrcIP, innerDstIP)
+	innerEth := make([]byte, 14+len(innerIP))
+	copy(innerEth[0:6], []byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa})
+	copy(innerEth[6:12], []byte{0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb})
+	binary.BigEndian.PutUint16(innerEth[12:14], 0x0800)
+	copy(innerEth[14:], innerIP)
+
+	const (
+		ethHdrLen    = 14
+		ipHdrLen     = 20
+		udpHdrLen    = 8
+		geneveHdrLen = 8
+		optBytes     = 8
+	)
+
+	payloadLen := udpHdrLen + geneveHdrLen + optBytes + len(innerEth)
+	pkt := make([]byte, ethHdrLen+ipHdrLen+payloadLen)
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], uint16(ipHdrLen+payloadLen))
+	ip[8] = 64
+	ip[9] = 17
+	copy(ip[12:16], []byte{172, 31, 1, 2})
+	copy(ip[16:20], []byte{172, 31, 1, 3})
+
+	udp := pkt[ethHdrLen+ipHdrLen:]
+	binary.BigEndian.PutUint16(udp[0:2], 40000)
+	binary.BigEndian.PutUint16(udp[2:4], 6081)
+	binary.BigEndian.PutUint16(udp[4:6], uint16(udpHdrLen+geneveHdrLen+optBytes+len(innerEth)))
+
+	geneve := udp[udpHdrLen:]
+	geneve[0] = 0x02
+	geneve[1] = 0x00
+	binary.BigEndian.PutUint16(geneve[2:4], 0x6558)
+	geneve[4] = 0x00
+	geneve[5] = 0x00
+	geneve[6] = 0x64
+	geneve[7] = 0x00
+
+	opts := geneve[geneveHdrLen:]
+	binary.BigEndian.PutUint16(opts[0:2], 0x4d52)
+	opts[2] = 1
+	opts[3] = 1
+	binary.BigEndian.PutUint32(opts[4:8], srcIdentity)
+	copy(opts[optBytes:], innerEth)
 	return pkt
 }
 

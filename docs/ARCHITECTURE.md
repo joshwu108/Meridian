@@ -20,8 +20,17 @@ Decisions made during design; each was open in the PRD or ROADMAP (CC-x referenc
 | D10 | **Pinned clang 17**, `-O2 -g -Wall -Werror -target bpfel -mcpu=v3 -Iinclude`; generated bindings + `vmlinux.h` committed; CI `verify-gen` diffs after regeneration. | `-O2` is verifier-mandatory; pinned compiler makes committed output stable |
 | D11 | Module path `github.com/joshuawu/meridian`; **minimal go.mod**, deps added by the phase that first imports them (versions pinned in comments from PRD §13). | YAGNI; avoids 40 unused transitive modules in security scans |
 | D12 | **`policy_key` carries an explicit `direction` byte** (0=ingress, 1=egress) replacing v1's pad — same 12-byte size; every compiled rule is direction-explicit (a "both ways" policy compiles to two entries). Part of schema v2. See [ADR-0003](adr/0003-policy-key.md). | Separate ingress/egress TC programs need direction-aware rules; wildcard or dual-map alternatives cost hot-path lookups or map sprawl |
+| D13 | **Decision-point `flow_event` emission** (Phase 1 as-built): `tc_ingress`/`tc_egress` emit ring events only on TCP SYN (or UDP first-sight via program-local `udp_seen_flows_map`), DENY, and REDIRECT — not per-packet. Per-packet/byte totals use `metrics_map` slots 2–5. `counter.c` remains for Phase 0 toolchain/`verify-gen` tests only. | Ring volume bounded; SYN reused as connection-open detector (D2 alignment) |
+| D14 | **`denied_flows_map`**: `LRU_HASH`, 4096 entries, `flow_key` (16 B, BE) → `deny_info{last_ns, count, reason}` — debug/join surface only, never policy input. | Self-evicting under flood; richer than v1's bare `drop_reason` u32 |
+| D15 | **Schema version 2** (`MERIDIAN_SCHEMA_VERSION = 2`): sentinel typed as `enum meridian_schema_version`, exported to Go via bpf2go (D-1 closed); v1 pins **refused** (fail closed); pre-GA upgrade = wipe pin dir. Full freeze in [ADR-0004](adr/0004-map-schema-freeze.md). | One startup check; no versioned map names (D6) |
+| D16 | **Unknown-identity posture wired** per [ADR-0001](adr/0001-unknown-identity-posture.md): default **deny**; `runtime_config_map[0]` bit 0 `FALLOPEN_UNKNOWN` opts into allow; supervisor **seeds maps before TC attach** (MER-27/29). Both postures in T2 (MER-18). | Kernel and reference evaluator share one posture byte-for-byte |
+| D17 | **wire↔kernel translation boundary**: `internal/agent/datapath` is the **sole** importer of both `pkg/wire` and generated `bpf/` types; `translate.go` + T1 equivalence tests (MER-15); depguard enforced. | Eliminates silent C/Go drift at the writer |
+| D18 | **SOCKHASH `sockhash` instantiated** (Phase-2 contract land, MER-47 / [ADR-0007](adr/0007-sockmap-redirect.md)): pinned `BPF_MAP_TYPE_SOCKHASH`, key `struct sock_key{dst_ip BE; dst_port BE; pad=0}`, value `__u64`, `MERIDIAN_SOCKHASH_ENTRIES`=65536, declared in the shared `meridian_maps.h`. `sock_ops` (sole writer) and `sk_msg` (sole reader) land as verifier-clean **no-op skeletons**; gated insertion (CC-5, `POLICY_FLAG_SOCKMAP_ELIGIBLE`) is MER-48, redirect is MER-50. Per-program objects (`SockOps`/`SkMsg`), not a combined collection; `sock_key` mirror generated once as `CounterSockKey`. | Freezes the Phase-2 program/map surface; the CC-5 bypass point stays inert until MER-48/49 add the gate + permanent negative test |
+| D19 | **Sock-layer policy primitive single-sourced** (MER-48 / ADR-0007, CC-5/CC-6): identity resolution, the compiled-verdict lookup, and the SOCKMAP-eligibility predicate live once in `bpf/include/meridian_helpers.h`, shared by `sock_ops` (MER-48) and `sk_msg` (MER-50). `tc_ingress`/`tc_egress` **deliberately keep their inline enforcement** — that path has skb side effects (flow_event emission, denied_flows, metrics) the sock layer does not model — so the helper is the L4 verdict *primitive* both layers agree on, not a re-home of tc logic. `sock_ops` inserts a socket under its own local `(ip,port)` so a peer redirecting toward it (sk_msg) finds it; insertion is gated on `ALLOW && SOCKMAP_ELIGIBLE` with unknown identity / policy miss failing closed. | Prevents a future "DRY" merge that would wrongly fold packet-context enforcement into the socket path; keeps the CC-5 bypass check identical across both sock programs |
 
-**Still open** (each needs an ADR before the phase that consumes it): unknown-identity posture (fail-open passthrough vs default-deny-on-attach — skeleton keeps a one-constant `FALLOPEN_UNKNOWN` toggle; recommendation: default-deny once the agent populates `identity_map` before TC attach); Geneve parse placement relative to kernel decap (the biggest unresolved data-path detail); `dst_port` endianness is **host order** in `policy_key` (pinned below) — compiler must match; where remote-dst egress L4 policy is enforced (recommendation: destination node, inbound-authoritative); egress encap-failure policy (drop vs pass-unencapsulated).
+**Still open** (each needs an ADR before the phase that consumes it): where remote-dst egress L4 policy is enforced (recommendation: destination node, inbound-authoritative — ADR-0002 fixes attachment, not this rule); live v1→v2 pin migration (explicitly out of scope pre-GA, D15). **Resolved:** combined bpf2go collection vs per-program objects → per-program objects (MER-47 / D18), matching `tc_ingress`/`tc_egress`.
+
+**Closed by Phase 1 ADRs** (no longer open): unknown-identity posture ([ADR-0001](adr/0001-unknown-identity-posture.md)); Geneve parse placement ([ADR-0002](adr/0002-geneve-topology.md)); egress encap-failure ([ADR-0005](adr/0005-geneve-encap-failure-policy.md)); `policy_key.direction` ([ADR-0003](adr/0003-policy-key.md)); map-schema freeze ([ADR-0004](adr/0004-map-schema-freeze.md)).
 
 ---
 
@@ -59,7 +68,7 @@ Ring events at **decision points only**: every deny, the redirect SYN (once per 
 
 ---
 
-## 2. eBPF map schema (FROZEN v2 — Phase 1 contract freeze, MER-14)
+## 2. eBPF map schema (FROZEN v2 — Phase 1 exit gate, ADR-0004 / MER-34)
 
 Canonical headers: `bpf/include/meridian_types.h` (structs/enums), `meridian_maps.h` (map defs), `meridian_consts.h` (constants). Go mirrors generated only via bpf2go `-type` (D9). Pin root: `/sys/fs/bpf/meridian/` (tests: `/sys/fs/bpf/meridian-test/<run>/<test>/`), `LIBBPF_PIN_BY_NAME`.
 
@@ -79,8 +88,10 @@ Canonical headers: `bpf/include/meridian_types.h` (structs/enums), `meridian_map
 v2 deltas from v1 (all in this freeze): `policy_key.pad` → `direction`;
 `denied_flows_map` value widened from `u32 drop_reason` to `deny_info`;
 `runtime_config_map` added; sentinel value typed as the schema enum. v1 pins
-are **refused** (fail closed) — pre-GA upgrade is "wipe the pin dir" (D15);
-`sockhash`/`sock_key` remain specified-but-not-instantiated until Phase 2.
+are **refused** (fail closed) — pre-GA upgrade is "wipe the pin dir" (D15).
+`sockhash`/`sock_key` are **instantiated in Phase 2** (MER-47 / D18,
+[ADR-0007](adr/0007-sockmap-redirect.md)); the v2 freeze above is unchanged by
+the new map (ADR-0004: SOCKHASH instantiation must not alter the v2 schema).
 
 Worst-case kernel memory ≈ 17 MB/node (separate from the agent's 50 MB RSS NFR); realistic steady state 4–6 MB, dominated by the 4 MiB ring. `RLIMIT_MEMLOCK`/memcg must permit it; surfaced via `meridian doctor` and `map stats`.
 

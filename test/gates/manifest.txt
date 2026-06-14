@@ -16,15 +16,15 @@ yes bpf ./test/bpf/... TestVerdictMatrixMatchesReferenceEvaluator
 # P1.2 — MER-29 live policy integration (agent stub product path)
 yes integration ./test/integration/... TestLivePolicyIntegrationGate_MER29
 
-# P1.3 — MER-21 Geneve two-node (blocker MER-20 landed; suite still stub)
-no integration ./test/integration/... TestGeneveIngressIdentityPolicyGate_MER21
+# P1.3 — MER-21 Geneve two-node (underlay ingress + remote identity policy)
+yes integration ./test/integration/... TestGeneveIngressIdentityPolicyGate_MER21
 
 # CP-2 — MER-24 compiler ≡ reference property harness
 yes '' ./internal/control/... TestCompilerMatchesReferenceProperty
 yes '' ./internal/control/... TestConformanceRegressionCorpus
 
-# O-2 — MER-32 denied-flows metrics gate (not yet authored)
-no integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
+# O-2 — MER-32 denied-flows metrics gate
+yes integration ./test/integration/... TestDeniedFlowsMetricsGate_MER32
 
 # --- Phase 2 gates (MER-46 plan; implementation gated on MER-34) ---
 

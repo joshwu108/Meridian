@@ -1,0 +1,29 @@
+# Canonical agent-stub policy for integration tests (MER-27).
+# Loaded by internal/agent/config tests and referenced from MER-29/MER-32 gates.
+version: v1
+identities:
+  - id: 1001
+    pod_ipv4: 10.60.1.10
+    spiffe_id: spiffe://meridian/ns/default/sa/client
+    namespace: default
+    name: client
+  - id: 2001
+    pod_ipv4: 10.60.2.10
+    spiffe_id: spiffe://meridian/ns/default/sa/server
+    namespace: default
+    name: server
+policies:
+  - src_identity: 1001
+    dst_identity: 2001
+    dst_port: 8080
+    protocol: 6
+    direction: 0
+    action: allow
+    flags: 0
+  - src_identity: 1001
+    dst_identity: 2001
+    dst_port: 8081
+    protocol: 6
+    direction: 0
+    action: deny
+    flags: 0

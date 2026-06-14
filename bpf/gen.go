@@ -22,7 +22,13 @@ package bpf
 // therefore every cross-boundary struct plus the schema-version enum (the
 // sentinel map's value type) — is in this object's BTF; listing them here
 // makes bpf2go generate the canonical Go mirrors.
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" -type flow_event -type policy_key -type policy_verdict -type flow_key -type deny_info -type meridian_schema_version Counter counter.c
+//
+// MER-47: counter.c includes meridian_maps.h, which now defines the Phase-2
+// `sockhash` map and its `struct sock_key`, so sock_key is in this object's BTF
+// too. Per the same single-mirror convention, the canonical sock_key Go mirror
+// (CounterSockKey) is generated HERE via -type — NOT under the SockOps/SkMsg
+// objects below.
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" -type flow_event -type policy_key -type policy_verdict -type flow_key -type deny_info -type meridian_schema_version -type sock_key Counter counter.c
 
 // Phase 1 — production tc_ingress parser + identity resolution.
 //
@@ -35,3 +41,11 @@ package bpf
 
 // Phase 1 — tc_egress Geneve identity TLV propagation (MER-20).
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" TcEgress tc_egress.c
+
+// Phase 2 — SOCKMAP contract skeletons (MER-47 / ADR-0007). sock_ops populates
+// the shared `sockhash` (gated insertion, MER-48); sk_msg redirects eligible
+// sends (MER-50). Like TcIngress/TcEgress above, do NOT re-list -type here —
+// sock_key's canonical mirror is generated under the Counter prefix above
+// (CounterSockKey). These are no-op skeletons at MER-47.
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" SockOps sock_ops.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $BPF_TARGET -go-package bpf -output-dir . -cc $CLANG -strip $STRIP -cflags "$BPF_CFLAGS" SkMsg sk_msg.c
