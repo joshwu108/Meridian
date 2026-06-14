@@ -1,80 +1,67 @@
 # Active Ticket
 
-ID: MER-48
+ID: MER-49
 
-Title: sock_ops.c — gated SOCKHASH population (P2.1 core, CC-5 insertion invariant)
+Title: P2.1-N gate — permanent SOCKMAP-negative test (CC-5 / eBPF R2)
 
 Objective:
-Fill the MER-47 `sock_ops` skeleton with the **policy-gated SOCKHASH insertion**
-that is the heart of the Phase-2 intra-node fast path. On TCP established, the
-program resolves the flow's compiled policy verdict and calls
-`bpf_sock_hash_update()` into the shared `sockhash` map **only** when the verdict
-is `ALLOW` carrying `POLICY_FLAG_SOCKMAP_ELIGIBLE`. Every other verdict class
-leaves `sockhash` untouched. This map write is ROADMAP Top-risk #2 / eBPF R2 — the
-exact point where a wrongly-inserted socket would later let `sk_msg` (MER-50)
-silently bypass mTLS, L7 policy, redirect, or deny. The kernel re-checks the flag
-at the write site even though the compiler is supposed to only ever set it for
-plain-L4 allows (defense in depth, per ADR-0007).
+Lock the CC-5 gated-insertion invariant that MER-48 just made live, BEFORE the
+`sk_msg` redirect consumer (MER-50) lands. Add a permanent, armed, table-driven
+negative test proving every NON-eligible verdict class never enters `sockhash`,
+with an eligible control proving presence. Arm the P2.1-N gate so CI fails if any
+future change lets a denied / L7-required / mTLS-required / REDIRECT / plain-ALLOW
+socket become SOCKMAP-redirectable — the standing guard for ROADMAP Top-risk #2 /
+eBPF R2 (silent mTLS/L7/policy bypass via a wrongly-inserted socket).
 
-This ticket lands the population + a **positive** smoke (eligible flow present
-after connect). The exhaustive *negative* matrix (DENY / L7 / mTLS / REDIRECT /
-ALLOW-without-flag all absent) is the **armed gate MER-49 (P2.1-N)**, which
-depends on this ticket — do not fold MER-49's matrix in here.
+This is a TEST + GATE-ARMING ticket only. The kernel behavior is already correct
+(MER-48); do NOT modify `sock_ops.c`, `meridian_helpers.h`, or any frozen schema.
 
 Dependencies:
-- MER-47 (DONE at `70c52ad`): `sockhash` map, `struct sock_key`, `sock_ops.c`
-  skeleton (`SEC("sockops")` → `meridian_sock_ops`), and bpf2go bindings exist.
-- Binding contracts:
-  - ADR-0007 — gated-insertion invariant (§"Gated insertion invariant"): insert
-    only on `ALLOW` + `POLICY_FLAG_SOCKMAP_ELIGIBLE`; the listed non-eligible
-    classes (DENY, REDIRECT, ALLOW+`L7_REQUIRED`, ALLOW+`MTLS_REQUIRED`,
-    ALLOW-without-flag, policy miss, malformed/unsupported) leave SOCKHASH untouched.
-  - ADR-0004 — `sock_key` / `sockhash` / `policy_*` shapes are FROZEN; do not
-    mutate them. `sock_key{dst_ip BE; dst_port BE; pad=0}`, value `__u64`.
-  - ADR-0003 / D12 — `policy_key` carries an explicit `direction` byte
-    (0=ingress, 1=egress); active vs passive established maps to the correct
-    direction and src/dst-identity ordering.
-  - CC-6 single-source: any reusable policy-resolution helper lives in a C header
-    (`bpf/include/meridian_helpers.h`, new); do not duplicate the tc lookup logic.
-- Blocks: MER-49 (P2.1-N gate), MER-50 (sk_msg redirect), MER-51/52, MER-57/58.
+- MER-48 (DONE `77540ce`): `sock_ops` gated insertion + `meridian_helpers.h`.
+  Reuse the `bpftest` helpers it added: `loadSockOps`, `establish`,
+  `currentCgroupV2Path`, `sockhashHasKey` / `waitKeyPresent`, `sockKeyFor`,
+  plus `seedPolicy` / `seedIdentity` — do NOT fork a second harness.
+- MER-22 (DONE, Phase 1): `reference.Evaluator` already rejects `SOCKMAP_ELIGIBLE`
+  unless `ALLOW ∧ ¬L7 ∧ ¬mTLS` (the compiler-side half of CC-5). This ticket is
+  the KERNEL-side permanent guard of the same invariant.
+- ADR-0007 (§"Gated insertion invariant" names MER-49 as the permanent
+  enforcement test), CC-5, MER-44 (skip-integrity: an armed gate must report
+  0 skips — the test must RUN, not skip, on the 5.15 CI target).
 
 Acceptance Criteria:
-1. `meridian_sock_ops` handles `BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB` and
-   `BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB` (requesting them via
-   `bpf_sock_ops_cb_flags_set` on the connect/established path as needed),
-   resolves `(src_id, dst_id, dst_port, proto, direction)` from the socket
-   4-tuple via `identity_map`, and looks up `policy_map`.
-2. `bpf_sock_hash_update(ctx, &sockhash, &key, …)` is called **iff**
-   `verdict.action == ALLOW && (verdict.flags & POLICY_FLAG_SOCKMAP_ELIGIBLE)`.
-   The key is `sock_key{dst_ip, dst_port, pad=0}` in network order. ALL other
-   verdict classes — and policy miss, malformed key material, or unsupported
-   proto — return without touching `sockhash` (CC-5).
-3. `sock_ops.c` loads **verifier-clean** on 5.15 (no unbounded loops, all map
-   values bounds-checked before use).
-4. T2 smoke (prog_test_run or cgroup attach) proves an eligible
-   `ALLOW + SOCKMAP_ELIGIBLE` flow's socket **is present** in `sockhash` after
-   connect; a single DENY (or non-eligible) control case proves **absence**.
-   (Full negative matrix is MER-49, not here.)
-5. `make ebpf` regenerates bindings **byte-identical** to source; ADR-0004 frozen
-   maps and `sock_key`/`sockhash` shape are unchanged (no schema-contract drift).
-6. No Phase-1 regression: `make test-bpf`, `make test-integration`, and
-   `make check-gate-skips` (0 skips, 0 failures across all armed gates) stay green.
-7. After commit, `git status` is clean and `make check-commits` passes
-   (conventional, MER-48-referenced commit per MER-45 linkage).
+1. New `test/bpf/sockmap_negative_test.go` defines `TestSockmapNegativeGate_MER49`
+   (exact, stable name — it becomes the MER-44 manifest gate row).
+2. Table-driven over the non-eligible verdict classes, each establishing a real
+   flow and asserting the socket is ABSENT from `sockhash`:
+   - DENY
+   - ALLOW + `POLICY_FLAG_L7_REQUIRED`
+   - ALLOW + `POLICY_FLAG_MTLS_REQUIRED`
+   - REDIRECT
+   - ALLOW without `POLICY_FLAG_SOCKMAP_ELIGIBLE`
+   A control row ALLOW + `POLICY_FLAG_SOCKMAP_ELIGIBLE` asserts PRESENCE (so the
+   test fails if the gate is trivially passing because nothing ever inserts).
+3. Reuses the MER-48 helpers (no duplicate cgroup/connect/iteration harness);
+   absence is asserted only AFTER allowing time for any erroneous insertion to
+   land (no false-green from checking too early — mirror the MER-48 deny subtest).
+4. The test RUNS on the 5.15 CI target (cgroup v2 present on ubuntu-22.04 / Lima)
+   and reports ZERO skips — required because the row becomes `armed=yes`.
+5. `test/gates/manifest.txt`: flip the P2.1-N row
+   (`TestSockmapNegativeGate_MER49`) from `armed=no` to `armed=yes`.
+6. `docs/PHASE2_GATES.md`: mark P2.1-N green and cite the committed evidence.
+7. `make check-gate-skips` reports 0 skips / 0 failures with P2.1-N now armed and
+   green; `make test-bpf` (incl. P1.1) and `make test-integration` stay green;
+   `git status` clean; `make check-commits` passes (MER-49 ref, MER-45 linkage).
 
 Files Expected To Change:
-- bpf/sock_ops.c                     (gated population: hook callbacks, policy resolve, sock_hash_update)
-- bpf/include/meridian_helpers.h     (new — shared policy_key build + verdict lookup helper, CC-6)
-- bpf/sockops_bpfel.o / .go          (regenerated bindings)
-- test/bpf/sockops_test.go           (new — T2 positive smoke: eligible present, control absent)
-- docs/ARCHITECTURE.md               (optional: D19 if the helper boundary warrants a decision-log note)
+- test/bpf/sockmap_negative_test.go (new — TestSockmapNegativeGate_MER49 matrix)
+- test/gates/manifest.txt              (P2.1-N row armed=no → armed=yes)
+- docs/PHASE2_GATES.md                 (P2.1-N green + committed evidence)
 
 Required Tests:
-- `make ebpf`             → sock_ops compiles verifier-clean; bindings regenerate byte-identical
-- `make test-bpf`         → new sock_ops smoke green AND P1.1 verdict matrix still green (no regression)
+- `make test-bpf`         → TestSockmapNegativeGate_MER49 green (all non-eligible absent, eligible present) + P1.1 matrix green
+- `make check-gate-skips` → 0 skips, 0 failures; P2.1-N now armed and green
 - `make test-integration` → Phase-1 integration gates still green
-- `make check-gate-skips` → 0 skips, 0 failures across all armed Phase-1 rows
-- `make check-commits`    → MER-48 commit-linkage satisfied
+- `make check-commits`    → MER-49 commit-linkage satisfied
 
 Commit Message:
-feat(ebpf): MER-48 sock_ops gated SOCKHASH population (CC-5 eligible-only insertion)
+test(ebpf): MER-49 arm P2.1-N permanent SOCKMAP-negative gate (CC-5/eBPF R2)
