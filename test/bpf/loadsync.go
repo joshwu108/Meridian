@@ -4,6 +4,5 @@ package bpftest
 
 import "sync"
 
-// bpfLoadMu serializes collection loads that pin maps under bpffs. Parallel
-// test functions otherwise raced on per-run pin directory creation (MER-18).
+// bpfLoadMu synchronizes BPF object loads for prog_test_run/attach tests that pin maps under bpffs.
 var bpfLoadMu sync.Mutex
