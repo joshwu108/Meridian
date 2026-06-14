@@ -114,4 +114,34 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } denied_flows_map SEC(".maps");
 
+/*
+ * sock_key — SOCKHASH key (ADR-0007 / ADR-0004 frozen shape): the destination
+ * IPv4 and port of an established connection. dst_ip and dst_port are NETWORK
+ * order (copied verbatim from packet/socket fields per the ARCHITECTURE
+ * byte-order rule); pad is always zero. Declared once here (CC-6 single-source)
+ * and exported to Go via bpf2go under the Counter prefix (see bpf/gen.go).
+ */
+struct sock_key {
+	__u32 dst_ip;   /* network order */
+	__u16 dst_port; /* network order */
+	__u16 pad;      /* always 0 */
+};
+
+/*
+ * sockhash — Phase-2 intra-node fast-path map of established sockets keyed by
+ * sock_key (ADR-0007). sock_ops is the SOLE writer and inserts a socket ONLY
+ * when the flow's compiled policy_verdict carries POLICY_FLAG_SOCKMAP_ELIGIBLE
+ * (the CC-5 gated-insertion invariant; population lands in MER-48). sk_msg is
+ * the SOLE reader and redirects on hit, falling through (SK_PASS) on miss
+ * (MER-50). Instantiated by MER-47 (D18); the map type, key shape, byte order,
+ * and pinning are frozen by ADR-0004 — changing them is a schema-contract bump.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_SOCKHASH);
+	__uint(max_entries, MERIDIAN_SOCKHASH_ENTRIES);
+	__type(key, struct sock_key);
+	__type(value, __u64);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} sockhash SEC(".maps");
+
 #endif /* MERIDIAN_MAPS_H */

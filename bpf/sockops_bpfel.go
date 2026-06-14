@@ -12,13 +12,13 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type CounterDenyInfo struct {
+type SockOpsDenyInfo struct {
 	LastNs uint64
 	Count  uint32
 	Reason uint32
 }
 
-type CounterFlowEvent struct {
+type SockOpsFlowEvent struct {
 	TimestampNs  uint64
 	SrcIp        uint32
 	DstIp        uint32
@@ -36,7 +36,7 @@ type CounterFlowEvent struct {
 	Pad2         [3]uint16
 }
 
-type CounterFlowKey struct {
+type SockOpsFlowKey struct {
 	SrcIp   uint32
 	DstIp   uint32
 	SrcPort uint16
@@ -45,13 +45,13 @@ type CounterFlowKey struct {
 	Pad     [3]uint8
 }
 
-type CounterMeridianSchemaVersion uint32
+type SockOpsMeridianSchemaVersion uint32
 
 const (
-	CounterMeridianSchemaVersionMERIDIAN_SCHEMA_VERSION CounterMeridianSchemaVersion = 2
+	SockOpsMeridianSchemaVersionMERIDIAN_SCHEMA_VERSION SockOpsMeridianSchemaVersion = 2
 )
 
-type CounterPolicyKey struct {
+type SockOpsPolicyKey struct {
 	SrcId     uint32
 	DstId     uint32
 	DstPort   uint16
@@ -59,40 +59,40 @@ type CounterPolicyKey struct {
 	Direction uint8
 }
 
-type CounterPolicyVerdict struct {
+type SockOpsPolicyVerdict struct {
 	Action uint8
 	Flags  uint8
 	Pad    uint16
 }
 
-type CounterSockKey struct {
+type SockOpsSockKey struct {
 	DstIp   uint32
 	DstPort uint16
 	Pad     uint16
 }
 
-// LoadCounter returns the embedded CollectionSpec for Counter.
-func LoadCounter() (*ebpf.CollectionSpec, error) {
-	reader := bytes.NewReader(_CounterBytes)
+// LoadSockOps returns the embedded CollectionSpec for SockOps.
+func LoadSockOps() (*ebpf.CollectionSpec, error) {
+	reader := bytes.NewReader(_SockOpsBytes)
 	spec, err := ebpf.LoadCollectionSpecFromReader(reader)
 	if err != nil {
-		return nil, fmt.Errorf("can't load Counter: %w", err)
+		return nil, fmt.Errorf("can't load SockOps: %w", err)
 	}
 
 	return spec, err
 }
 
-// LoadCounterObjects loads Counter and converts it into a struct.
+// LoadSockOpsObjects loads SockOps and converts it into a struct.
 //
 // The following types are suitable as obj argument:
 //
-//	*CounterObjects
-//	*CounterPrograms
-//	*CounterMaps
+//	*SockOpsObjects
+//	*SockOpsPrograms
+//	*SockOpsMaps
 //
 // See ebpf.CollectionSpec.LoadAndAssign documentation for details.
-func LoadCounterObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
-	spec, err := LoadCounter()
+func LoadSockOpsObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+	spec, err := LoadSockOps()
 	if err != nil {
 		return err
 	}
@@ -100,26 +100,26 @@ func LoadCounterObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
 	return spec.LoadAndAssign(obj, opts)
 }
 
-// CounterSpecs contains maps and programs before they are loaded into the kernel.
+// SockOpsSpecs contains maps and programs before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type CounterSpecs struct {
-	CounterProgramSpecs
-	CounterMapSpecs
-	CounterVariableSpecs
+type SockOpsSpecs struct {
+	SockOpsProgramSpecs
+	SockOpsMapSpecs
+	SockOpsVariableSpecs
 }
 
-// CounterProgramSpecs contains programs before they are loaded into the kernel.
+// SockOpsProgramSpecs contains programs before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type CounterProgramSpecs struct {
-	MeridianCounter *ebpf.ProgramSpec `ebpf:"meridian_counter"`
+type SockOpsProgramSpecs struct {
+	MeridianSockOps *ebpf.ProgramSpec `ebpf:"meridian_sock_ops"`
 }
 
-// CounterMapSpecs contains maps before they are loaded into the kernel.
+// SockOpsMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type CounterMapSpecs struct {
+type SockOpsMapSpecs struct {
 	DeniedFlowsMap    *ebpf.MapSpec `ebpf:"denied_flows_map"`
 	FlowEvents        *ebpf.MapSpec `ebpf:"flow_events"`
 	IdentityMap       *ebpf.MapSpec `ebpf:"identity_map"`
@@ -130,32 +130,32 @@ type CounterMapSpecs struct {
 	Sockhash          *ebpf.MapSpec `ebpf:"sockhash"`
 }
 
-// CounterVariableSpecs contains global variables before they are loaded into the kernel.
+// SockOpsVariableSpecs contains global variables before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type CounterVariableSpecs struct {
+type SockOpsVariableSpecs struct {
 }
 
-// CounterObjects contains all objects after they have been loaded into the kernel.
+// SockOpsObjects contains all objects after they have been loaded into the kernel.
 //
-// It can be passed to LoadCounterObjects or ebpf.CollectionSpec.LoadAndAssign.
-type CounterObjects struct {
-	CounterPrograms
-	CounterMaps
-	CounterVariables
+// It can be passed to LoadSockOpsObjects or ebpf.CollectionSpec.LoadAndAssign.
+type SockOpsObjects struct {
+	SockOpsPrograms
+	SockOpsMaps
+	SockOpsVariables
 }
 
-func (o *CounterObjects) Close() error {
-	return _CounterClose(
-		&o.CounterPrograms,
-		&o.CounterMaps,
+func (o *SockOpsObjects) Close() error {
+	return _SockOpsClose(
+		&o.SockOpsPrograms,
+		&o.SockOpsMaps,
 	)
 }
 
-// CounterMaps contains all maps after they have been loaded into the kernel.
+// SockOpsMaps contains all maps after they have been loaded into the kernel.
 //
-// It can be passed to LoadCounterObjects or ebpf.CollectionSpec.LoadAndAssign.
-type CounterMaps struct {
+// It can be passed to LoadSockOpsObjects or ebpf.CollectionSpec.LoadAndAssign.
+type SockOpsMaps struct {
 	DeniedFlowsMap    *ebpf.Map `ebpf:"denied_flows_map"`
 	FlowEvents        *ebpf.Map `ebpf:"flow_events"`
 	IdentityMap       *ebpf.Map `ebpf:"identity_map"`
@@ -166,8 +166,8 @@ type CounterMaps struct {
 	Sockhash          *ebpf.Map `ebpf:"sockhash"`
 }
 
-func (m *CounterMaps) Close() error {
-	return _CounterClose(
+func (m *SockOpsMaps) Close() error {
+	return _SockOpsClose(
 		m.DeniedFlowsMap,
 		m.FlowEvents,
 		m.IdentityMap,
@@ -179,26 +179,26 @@ func (m *CounterMaps) Close() error {
 	)
 }
 
-// CounterVariables contains all global variables after they have been loaded into the kernel.
+// SockOpsVariables contains all global variables after they have been loaded into the kernel.
 //
-// It can be passed to LoadCounterObjects or ebpf.CollectionSpec.LoadAndAssign.
-type CounterVariables struct {
+// It can be passed to LoadSockOpsObjects or ebpf.CollectionSpec.LoadAndAssign.
+type SockOpsVariables struct {
 }
 
-// CounterPrograms contains all programs after they have been loaded into the kernel.
+// SockOpsPrograms contains all programs after they have been loaded into the kernel.
 //
-// It can be passed to LoadCounterObjects or ebpf.CollectionSpec.LoadAndAssign.
-type CounterPrograms struct {
-	MeridianCounter *ebpf.Program `ebpf:"meridian_counter"`
+// It can be passed to LoadSockOpsObjects or ebpf.CollectionSpec.LoadAndAssign.
+type SockOpsPrograms struct {
+	MeridianSockOps *ebpf.Program `ebpf:"meridian_sock_ops"`
 }
 
-func (p *CounterPrograms) Close() error {
-	return _CounterClose(
-		p.MeridianCounter,
+func (p *SockOpsPrograms) Close() error {
+	return _SockOpsClose(
+		p.MeridianSockOps,
 	)
 }
 
-func _CounterClose(closers ...io.Closer) error {
+func _SockOpsClose(closers ...io.Closer) error {
 	for _, closer := range closers {
 		if err := closer.Close(); err != nil {
 			return err
@@ -209,5 +209,5 @@ func _CounterClose(closers ...io.Closer) error {
 
 // Do not access this directly.
 //
-//go:embed counter_bpfel.o
-var _CounterBytes []byte
+//go:embed sockops_bpfel.o
+var _SockOpsBytes []byte

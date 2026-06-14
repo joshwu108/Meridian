@@ -39,6 +39,7 @@
 #define MERIDIAN_POLICY_MAP_ENTRIES   16384
 #define MERIDIAN_DENIED_FLOWS_ENTRIES 4096
 #define MERIDIAN_UDP_SEEN_FLOWS_ENTRIES 4096
+#define MERIDIAN_SOCKHASH_ENTRIES     65536 /* ADR-0007 SOCKHASH (Phase 2) */
 
 /* runtime_config_map[0] bit flags (D16). Unset bits = fail-closed defaults. */
 #define MERIDIAN_CFG_FALLOPEN_UNKNOWN (1u << 0)

@@ -65,6 +65,12 @@ type TcEgressPolicyVerdict struct {
 	Pad    uint16
 }
 
+type TcEgressSockKey struct {
+	DstIp   uint32
+	DstPort uint16
+	Pad     uint16
+}
+
 // LoadTcEgress returns the embedded CollectionSpec for TcEgress.
 func LoadTcEgress() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_TcEgressBytes)
@@ -121,6 +127,7 @@ type TcEgressMapSpecs struct {
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
 	RuntimeConfigMap  *ebpf.MapSpec `ebpf:"runtime_config_map"`
 	SchemaSentinelMap *ebpf.MapSpec `ebpf:"schema_sentinel_map"`
+	Sockhash          *ebpf.MapSpec `ebpf:"sockhash"`
 }
 
 // TcEgressVariableSpecs contains global variables before they are loaded into the kernel.
@@ -156,6 +163,7 @@ type TcEgressMaps struct {
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
 	RuntimeConfigMap  *ebpf.Map `ebpf:"runtime_config_map"`
 	SchemaSentinelMap *ebpf.Map `ebpf:"schema_sentinel_map"`
+	Sockhash          *ebpf.Map `ebpf:"sockhash"`
 }
 
 func (m *TcEgressMaps) Close() error {
@@ -167,6 +175,7 @@ func (m *TcEgressMaps) Close() error {
 		m.PolicyMap,
 		m.RuntimeConfigMap,
 		m.SchemaSentinelMap,
+		m.Sockhash,
 	)
 }
 

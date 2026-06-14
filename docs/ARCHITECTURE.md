@@ -25,8 +25,9 @@ Decisions made during design; each was open in the PRD or ROADMAP (CC-x referenc
 | D15 | **Schema version 2** (`MERIDIAN_SCHEMA_VERSION = 2`): sentinel typed as `enum meridian_schema_version`, exported to Go via bpf2go (D-1 closed); v1 pins **refused** (fail closed); pre-GA upgrade = wipe pin dir. Full freeze in [ADR-0004](adr/0004-map-schema-freeze.md). | One startup check; no versioned map names (D6) |
 | D16 | **Unknown-identity posture wired** per [ADR-0001](adr/0001-unknown-identity-posture.md): default **deny**; `runtime_config_map[0]` bit 0 `FALLOPEN_UNKNOWN` opts into allow; supervisor **seeds maps before TC attach** (MER-27/29). Both postures in T2 (MER-18). | Kernel and reference evaluator share one posture byte-for-byte |
 | D17 | **wire↔kernel translation boundary**: `internal/agent/datapath` is the **sole** importer of both `pkg/wire` and generated `bpf/` types; `translate.go` + T1 equivalence tests (MER-15); depguard enforced. | Eliminates silent C/Go drift at the writer |
+| D18 | **SOCKHASH `sockhash` instantiated** (Phase-2 contract land, MER-47 / [ADR-0007](adr/0007-sockmap-redirect.md)): pinned `BPF_MAP_TYPE_SOCKHASH`, key `struct sock_key{dst_ip BE; dst_port BE; pad=0}`, value `__u64`, `MERIDIAN_SOCKHASH_ENTRIES`=65536, declared in the shared `meridian_maps.h`. `sock_ops` (sole writer) and `sk_msg` (sole reader) land as verifier-clean **no-op skeletons**; gated insertion (CC-5, `POLICY_FLAG_SOCKMAP_ELIGIBLE`) is MER-48, redirect is MER-50. Per-program objects (`SockOps`/`SkMsg`), not a combined collection; `sock_key` mirror generated once as `CounterSockKey`. | Freezes the Phase-2 program/map surface; the CC-5 bypass point stays inert until MER-48/49 add the gate + permanent negative test |
 
-**Still open** (each needs an ADR before the phase that consumes it): where remote-dst egress L4 policy is enforced (recommendation: destination node, inbound-authoritative — ADR-0002 fixes attachment, not this rule); combined bpf2go collection vs per-program objects (deferred MER-47); live v1→v2 pin migration (explicitly out of scope pre-GA, D15).
+**Still open** (each needs an ADR before the phase that consumes it): where remote-dst egress L4 policy is enforced (recommendation: destination node, inbound-authoritative — ADR-0002 fixes attachment, not this rule); live v1→v2 pin migration (explicitly out of scope pre-GA, D15). **Resolved:** combined bpf2go collection vs per-program objects → per-program objects (MER-47 / D18), matching `tc_ingress`/`tc_egress`.
 
 **Closed by Phase 1 ADRs** (no longer open): unknown-identity posture ([ADR-0001](adr/0001-unknown-identity-posture.md)); Geneve parse placement ([ADR-0002](adr/0002-geneve-topology.md)); egress encap-failure ([ADR-0005](adr/0005-geneve-encap-failure-policy.md)); `policy_key.direction` ([ADR-0003](adr/0003-policy-key.md)); map-schema freeze ([ADR-0004](adr/0004-map-schema-freeze.md)).
 
@@ -86,8 +87,10 @@ Canonical headers: `bpf/include/meridian_types.h` (structs/enums), `meridian_map
 v2 deltas from v1 (all in this freeze): `policy_key.pad` → `direction`;
 `denied_flows_map` value widened from `u32 drop_reason` to `deny_info`;
 `runtime_config_map` added; sentinel value typed as the schema enum. v1 pins
-are **refused** (fail closed) — pre-GA upgrade is "wipe the pin dir" (D15);
-`sockhash`/`sock_key` remain specified-but-not-instantiated until Phase 2.
+are **refused** (fail closed) — pre-GA upgrade is "wipe the pin dir" (D15).
+`sockhash`/`sock_key` are **instantiated in Phase 2** (MER-47 / D18,
+[ADR-0007](adr/0007-sockmap-redirect.md)); the v2 freeze above is unchanged by
+the new map (ADR-0004: SOCKHASH instantiation must not alter the v2 schema).
 
 Worst-case kernel memory ≈ 17 MB/node (separate from the agent's 50 MB RSS NFR); realistic steady state 4–6 MB, dominated by the 4 MiB ring. `RLIMIT_MEMLOCK`/memcg must permit it; surfaced via `meridian doctor` and `map stats`.
 

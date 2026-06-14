@@ -65,6 +65,12 @@ type TcIngressPolicyVerdict struct {
 	Pad    uint16
 }
 
+type TcIngressSockKey struct {
+	DstIp   uint32
+	DstPort uint16
+	Pad     uint16
+}
+
 // LoadTcIngress returns the embedded CollectionSpec for TcIngress.
 func LoadTcIngress() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_TcIngressBytes)
@@ -121,6 +127,7 @@ type TcIngressMapSpecs struct {
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
 	RuntimeConfigMap  *ebpf.MapSpec `ebpf:"runtime_config_map"`
 	SchemaSentinelMap *ebpf.MapSpec `ebpf:"schema_sentinel_map"`
+	Sockhash          *ebpf.MapSpec `ebpf:"sockhash"`
 	UdpSeenFlowsMap   *ebpf.MapSpec `ebpf:"udp_seen_flows_map"`
 }
 
@@ -157,6 +164,7 @@ type TcIngressMaps struct {
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
 	RuntimeConfigMap  *ebpf.Map `ebpf:"runtime_config_map"`
 	SchemaSentinelMap *ebpf.Map `ebpf:"schema_sentinel_map"`
+	Sockhash          *ebpf.Map `ebpf:"sockhash"`
 	UdpSeenFlowsMap   *ebpf.Map `ebpf:"udp_seen_flows_map"`
 }
 
@@ -169,6 +177,7 @@ func (m *TcIngressMaps) Close() error {
 		m.PolicyMap,
 		m.RuntimeConfigMap,
 		m.SchemaSentinelMap,
+		m.Sockhash,
 		m.UdpSeenFlowsMap,
 	)
 }
