@@ -26,8 +26,9 @@ These are **not** duplicated here; see the phase ticket files:
 | IDs | Where | Status (summary) |
 |-----|-------|----------------|
 | MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | **Phase-1 COMPLETE & committed.** MER-15 `f70dbb5`, MER-18 `9caa828`, MER-19 `bddc72c`, MER-21 `80de7c8`, MER-24 `4ae654e`, MER-29 `fbfc00d`, MER-32 `36c0c5a`, MER-34 `a4b369d`/`31409c5`. P1.3 live-path fix (MER-66) landed `630f616` — all five gates green at HEAD, 0 skips. |
-| MER-66 | this file | **CLOSED `630f616`** — P1.3 green on live two-node TCP connect; `make ebpf`/`test-bpf`/`test-integration`/`check-gate-skips`/`check-commits` verified on Lima 5.15. |
-| MER-47 … MER-59 | `docs/PHASE2_TICKETS.md` | **UNBLOCKED** — Phase-2 entry gate (MER-34 green) satisfied at `630f616`. Wave-0 ticket **MER-47** is active (`activeticket.md`); not yet started. |
+| MER-66 | this file | **CLOSED `630f616`** — P1.3 green on live two-node TCP connect; verified on Lima 5.15. |
+| MER-47 | `docs/PHASE2_TICKETS.md` | **CLOSED `70c52ad`** — Phase-2 contract landed: `sockhash` map + `sock_ops`/`sk_msg` no-op skeletons, ARCHITECTURE D18; all six Phase-1 gates green, 0 skips. |
+| MER-48 … MER-59 | `docs/PHASE2_TICKETS.md` | **IN PROGRESS.** Critical path now at **MER-48** (gated `sock_ops` SOCKHASH population, CC-5) — active in `activeticket.md`. MER-49/50/51/52/53/57/58 downstream per the Phase-2 dependency graph. |
 
 ---
 
@@ -179,3 +180,21 @@ until Phase-3 completion. `Next free ID` stays **MER-67**.
 Selected next ticket: **MER-47 — Phase 2 contract land** (Wave-0 serialization
 point; blocks the entire eBPF + Agent lanes). `activeticket.md` rewritten to
 MER-47.
+
+## Batch 2026-06-13e — TPM/Auditor run (HEAD 70c52ad)
+
+Findings: **MER-47 landed at `70c52ad`** — the implementation loop produced real
+code this cycle (`sockhash` SOCKHASH map + `struct sock_key`, no-op
+`sock_ops`/`sk_msg` skeletons, bpf2go bindings, ARCHITECTURE D18). Reviewed for
+ADR-0007 (SOCKHASH shape exact; gated-insertion + redirect correctly deferred to
+MER-48/50), ADR-0004 (frozen schema untouched, additive map), and CC-6
+(single-source `sock_key`, canonical `CounterSockKey`) — **APPROVED**. All six
+Phase-1 gates remain green with 0 skips; working tree clean.
+
+No new tickets: MER-48 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-48 — sock_ops gated SOCKHASH population (CC-5 core)**,
+the next critical-path blocker (MER-47 → MER-48 → MER-50 → MER-51 → MER-59) and
+the bypass point for ROADMAP Top-risk #2. It unblocks the MER-49 permanent
+negative gate and MER-50 redirect. `activeticket.md` holds the MER-48 spec.
