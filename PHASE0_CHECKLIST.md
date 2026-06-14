@@ -44,13 +44,22 @@ require a Linux 5.15 environment.
 - [x] Ring-buffer record decodes byte-correct in Go (T3 assertion 2)
 - [x] PERCPU counter readback matches injected traffic (T2 + T3 assertion 1)
 
+## Phase 1 exit (MER-34 — complete)
+
+- [x] Five upstream gates green on 5.15 — see [`docs/PHASE1_GATE_EVIDENCE.log`](docs/PHASE1_GATE_EVIDENCE.log) and [`docs/PHASE1_GATES.md`](docs/PHASE1_GATES.md)
+- [x] [ADR-0004](docs/adr/0004-map-schema-freeze.md) map-schema freeze published
+- [x] D12–D17 recorded as-built in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [x] `make check-gate-skips` — zero skips on armed Phase-1 gates
+
 ## Decisions to make before Phase 1 (each gets an ADR in docs/adr/)
 
-- [ ] **Unknown-identity posture** (CC-5): fail-open passthrough (PRD skeleton) vs default-deny-on-attach. Recommendation: default-deny once the agent populates `identity_map` before TC attach.
-- [ ] **Geneve parse placement** relative to kernel decap (underlay-iface pre-decap vs tunnel-device program) — the largest unresolved data-path detail; affects agent attach topology.
-- [ ] **Module path**: `github.com/joshuawu/meridian` is a placeholder (no remote exists). Changing later is a tree-wide rewrite — decide before Phase 1 code lands.
-- [ ] **License split**: `bpf/` must be GPL-2.0 (GPL-only helpers); Go code license (Apache-2.0 proposed) is a legal decision — no LICENSE file was generated.
-- [ ] **bpf2go prefix convention** for Phase 1: per-program objects (current) vs one combined collection once programs share maps. Recommendation: one combined collection at Phase 1 schema freeze.
+- [x] **Unknown-identity posture** — [ADR-0001](docs/adr/0001-unknown-identity-posture.md) (default-deny + `FALLOPEN_UNKNOWN` toggle)
+- [x] **Geneve parse placement** — [ADR-0002](docs/adr/0002-geneve-topology.md) (underlay pre-decap)
+- [x] **`policy_key.direction`** — [ADR-0003](docs/adr/0003-policy-key.md)
+- [x] **Map-schema freeze** — [ADR-0004](docs/adr/0004-map-schema-freeze.md)
+- [ ] **Module path**: `github.com/joshuawu/meridian` is a placeholder (no remote exists). Changing later is a tree-wide rewrite — decide before Phase 3 code lands at scale.
+- [x] **License split**: `bpf/LICENSE` (GPL-2.0) + root `LICENSE` (Apache-2.0) — MER-13
+- [x] **bpf2go prefix convention**: per-program objects (`Counter`, `TcIngress`, `TcEgress`) with shared `-type` on `Counter` only — deviation noted in ADR-0004; combined collection deferred to MER-47
 
 ## Deliberately deferred / omitted
 

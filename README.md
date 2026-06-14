@@ -8,8 +8,15 @@ xDS-compatible control plane pushes configuration to per-node agents over gRPC.
 
 ## Status
 
-**Phase 0 — complete (MER-35 sign-off).** Phase 1 work is underway; see
-[PHASE0_REVIEW.md](docs/PHASE0_REVIEW.md) and [PHASE0_GATE_EVIDENCE.log](docs/PHASE0_GATE_EVIDENCE.log).
+**Phase 0 — complete (MER-35 sign-off).** **Phase 1 — complete (MER-34 exit
+gate).** Map schemas and cross-boundary structs are frozen in
+[ADR-0004](docs/adr/0004-map-schema-freeze.md); Phase 2 implementation
+(MER-47+) may proceed once [PHASE2_GATES.md](docs/PHASE2_GATES.md) entry
+criteria are met.
+
+Gate evidence: [PHASE0_GATE_EVIDENCE.log](docs/PHASE0_GATE_EVIDENCE.log) ·
+[PHASE1_GATE_EVIDENCE.log](docs/PHASE1_GATE_EVIDENCE.log) ·
+[PHASE1_GATES.md](docs/PHASE1_GATES.md).
 
 ## Prerequisites
 
