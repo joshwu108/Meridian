@@ -108,8 +108,12 @@ func (t2 *TwoNode) setup(baseOctet byte) {
 	t2.run("ip", "link", "set", t2.NodeA.Veth, "netns", t2.NodeA.Namespace)
 	t2.run("ip", "addr", "add", hostAUnderlay+"/30", "dev", t2.HostVethA)
 	t2.run("ip", "link", "set", t2.HostVethA, "up")
+	t2.run("ip", "link", "set", "dev", t2.HostVethA, "mtu", "9000")
+	t2.disableVethOffloads("", t2.HostVethA)
 	t2.runIn(t2.NodeA.Namespace, "ip", "addr", "add", t2.NodeA.UnderlayIP+"/30", "dev", t2.NodeA.Veth)
 	t2.runIn(t2.NodeA.Namespace, "ip", "link", "set", t2.NodeA.Veth, "up")
+	t2.runIn(t2.NodeA.Namespace, "ip", "link", "set", "dev", t2.NodeA.Veth, "mtu", "9000")
+	t2.disableVethOffloads(t2.NodeA.Namespace, t2.NodeA.Veth)
 	t2.runIn(t2.NodeA.Namespace, "ip", "link", "set", "lo", "up")
 
 	// Underlay links: root <-> node B.
@@ -117,8 +121,12 @@ func (t2 *TwoNode) setup(baseOctet byte) {
 	t2.run("ip", "link", "set", t2.NodeB.Veth, "netns", t2.NodeB.Namespace)
 	t2.run("ip", "addr", "add", hostBUnderlay+"/30", "dev", t2.HostVethB)
 	t2.run("ip", "link", "set", t2.HostVethB, "up")
+	t2.run("ip", "link", "set", "dev", t2.HostVethB, "mtu", "9000")
+	t2.disableVethOffloads("", t2.HostVethB)
 	t2.runIn(t2.NodeB.Namespace, "ip", "addr", "add", t2.NodeB.UnderlayIP+"/30", "dev", t2.NodeB.Veth)
 	t2.runIn(t2.NodeB.Namespace, "ip", "link", "set", t2.NodeB.Veth, "up")
+	t2.runIn(t2.NodeB.Namespace, "ip", "link", "set", "dev", t2.NodeB.Veth, "mtu", "9000")
+	t2.disableVethOffloads(t2.NodeB.Namespace, t2.NodeB.Veth)
 	t2.runIn(t2.NodeB.Namespace, "ip", "link", "set", "lo", "up")
 
 	// Routing between nodes through root namespace.
@@ -126,21 +134,24 @@ func (t2 *TwoNode) setup(baseOctet byte) {
 	t2.runIn(t2.NodeA.Namespace, "ip", "route", "replace", t2.NodeB.UnderlayIP+"/32", "via", hostAUnderlay, "dev", t2.NodeA.Veth)
 	t2.runIn(t2.NodeB.Namespace, "ip", "route", "replace", t2.NodeA.UnderlayIP+"/32", "via", hostBUnderlay, "dev", t2.NodeB.Veth)
 
-	// Geneve tunnel.
+	// Geneve tunnel. iproute2 on Ubuntu 22.04 / 5.15 accepts id/remote/dstport only
+	// (no "local" keyword); the kernel picks the underlay source from routing.
 	t2.runIn(t2.NodeA.Namespace, "ip", "link", "add", geneveDeviceName, "type", "geneve",
 		"id", strconv.Itoa(geneveVNI),
 		"remote", t2.NodeB.UnderlayIP,
-		"local", t2.NodeA.UnderlayIP,
 		"dstport", strconv.Itoa(genevePort))
 	t2.runIn(t2.NodeB.Namespace, "ip", "link", "add", geneveDeviceName, "type", "geneve",
 		"id", strconv.Itoa(geneveVNI),
 		"remote", t2.NodeA.UnderlayIP,
-		"local", t2.NodeB.UnderlayIP,
 		"dstport", strconv.Itoa(genevePort))
 	t2.runIn(t2.NodeA.Namespace, "ip", "addr", "add", t2.NodeA.OverlayIP+"/24", "dev", geneveDeviceName)
 	t2.runIn(t2.NodeB.Namespace, "ip", "addr", "add", t2.NodeB.OverlayIP+"/24", "dev", geneveDeviceName)
 	t2.runIn(t2.NodeA.Namespace, "ip", "link", "set", geneveDeviceName, "up")
+	t2.runIn(t2.NodeA.Namespace, "ip", "link", "set", "dev", geneveDeviceName, "mtu", "9000")
+	t2.disableVethOffloads(t2.NodeA.Namespace, geneveDeviceName)
 	t2.runIn(t2.NodeB.Namespace, "ip", "link", "set", geneveDeviceName, "up")
+	t2.runIn(t2.NodeB.Namespace, "ip", "link", "set", "dev", geneveDeviceName, "mtu", "9000")
+	t2.disableVethOffloads(t2.NodeB.Namespace, geneveDeviceName)
 
 	// Explicit host routes over Geneve for deterministic pathing.
 	t2.runIn(t2.NodeA.Namespace, "ip", "route", "replace", t2.NodeB.OverlayIP+"/32", "dev", geneveDeviceName)
@@ -247,6 +258,24 @@ func (t2 *TwoNode) run(name string, args ...string) {
 	if err != nil {
 		t2.t.Fatalf("command failed: %s %s\n  err: %v\n  output: %s",
 			name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+}
+
+// disableVethOffloads turns off segmentation offloads so TC BPF room growth on
+// Geneve UDP frames is not dropped as dodgy-GSO skbs (MER-21 live path).
+func (t2 *TwoNode) disableVethOffloads(netns, ifName string) {
+	t2.t.Helper()
+	args := []string{"-K", ifName, "gso", "off", "gro", "off", "tso", "off", "ufo", "off"}
+	if netns == "" {
+		out, err := exec.Command("ethtool", args...).CombinedOutput()
+		if err != nil {
+			t2.t.Logf("ethtool on %s (best-effort): %v: %s", ifName, err, strings.TrimSpace(string(out)))
+		}
+		return
+	}
+	out, err := runInNetNSNetOnlyQuiet(netns, "ethtool", args...)
+	if err != nil {
+		t2.t.Logf("ethtool on %s in %s (best-effort): %v: %s", ifName, netns, err, strings.TrimSpace(out))
 	}
 }
 

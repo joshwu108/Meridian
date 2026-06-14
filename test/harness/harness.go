@@ -106,9 +106,6 @@ func PinDir(t *testing.T) string {
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("PinDir: stat %s: %v", dir, err)
 	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir) // best-effort; Reap() is the backstop
-	})
 	return dir
 }
 

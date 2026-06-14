@@ -56,4 +56,29 @@ static __always_inline __u32 parse_ipv4_after_eth(struct ethhdr *eth, void *data
 	return 1;
 }
 
+/*
+ * parse_ipv4_in_geneve_payload locates the inner IPv4 header carried inside a
+ * Geneve frame. Test packets use proto 0x0800 with either a pre-reserved TLV
+ * slot (MERIDIAN_GENEVE_OPT_BYTES before the inner IP) or none. The kernel
+ * geneve driver uses proto ETH_P_TEB (0x6558) with an inner Ethernet header
+ * (MER-28 / ADR-0002 live path).
+ */
+static __always_inline __u32 parse_ipv4_in_geneve_payload(void *payload, void *data_end,
+							  struct iphdr **ip_out,
+							  __u32 *reserved_tlv_bytes_out)
+{
+	*reserved_tlv_bytes_out = 0;
+
+	if (looks_like_ipv4(payload + MERIDIAN_GENEVE_OPT_BYTES, data_end)) {
+		*ip_out = payload + MERIDIAN_GENEVE_OPT_BYTES;
+		*reserved_tlv_bytes_out = MERIDIAN_GENEVE_OPT_BYTES;
+		return 1;
+	}
+	if (looks_like_ipv4(payload, data_end)) {
+		*ip_out = payload;
+		return 1;
+	}
+	return parse_ipv4_after_eth(payload, data_end, ip_out);
+}
+
 #endif /* MERIDIAN_PARSE_H */

@@ -4,7 +4,6 @@ package bpftest
 
 import (
 	"encoding/binary"
-	"sync"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -15,8 +14,6 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 	"github.com/joshuawu/meridian/test/harness"
 )
-
-var loadTcIngressMu sync.Mutex
 
 const (
 	cfgSlotUnknownIdentity = uint32(0)
@@ -252,6 +249,34 @@ func TestTcIngressGeneveCarriedIdentityAllows(t *testing.T) {
 	}
 }
 
+func TestTcIngressGeneveTEBCarriedIdentityAllows(t *testing.T) {
+	objs := loadTcIngress(t)
+
+	const remoteIdentity = uint32(1001)
+	const localIdentity = uint32(2001)
+	innerSrc := []byte{10, 200, 80, 1}
+	innerDst := []byte{10, 200, 80, 2}
+
+	pkt := synthGeneveTEBPacketWithIdentity(6, innerSrc, innerDst, remoteIdentity)
+	seedIdentity(t, objs.IdentityMap, keyFromIPv4Wire(innerDst), localIdentity)
+	seedPolicy(t, objs.PolicyMap, reference.Rule{
+		SrcIdentity: wire.IdentityID(remoteIdentity),
+		DstIdentity: wire.IdentityID(localIdentity),
+		DstPort:     8080,
+		Protocol:    6,
+		Direction:   reference.DirectionIngress,
+		Verdict:     wire.PolicyVerdict{Action: wire.PolicyActionAllow},
+	})
+
+	ret, err := objs.MeridianTcIngress.Run(&ebpf.RunOptions{Data: pkt})
+	if err != nil {
+		t.Fatalf("prog test run: %v", err)
+	}
+	if ret != tcActOK {
+		t.Fatalf("geneve TEB carried identity verdict = %d, want TC_ACT_OK (%d)", ret, tcActOK)
+	}
+}
+
 func TestTcIngressGeneveMissingTLVFailClosed(t *testing.T) {
 	objs := loadTcIngress(t)
 
@@ -271,8 +296,8 @@ func TestTcIngressGeneveMissingTLVFailClosed(t *testing.T) {
 
 func loadTcIngress(t *testing.T) *bpf.TcIngressObjects {
 	t.Helper()
-	loadTcIngressMu.Lock()
-	defer loadTcIngressMu.Unlock()
+	bpfLoadMu.Lock()
+	defer bpfLoadMu.Unlock()
 
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {

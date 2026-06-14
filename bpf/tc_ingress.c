@@ -140,6 +140,7 @@ static __always_inline __u32 try_parse_geneve_inner(struct iphdr *outer_ip,
 	__u8 *opts;
 	__u8 *inner_base;
 	struct iphdr *inner_ip;
+	__u32 ignored_tlv = 0;
 
 	if (outer_ip->protocol != IPPROTO_UDP)
 		return 0;
@@ -166,10 +167,9 @@ static __always_inline __u32 try_parse_geneve_inner(struct iphdr *outer_ip,
 		return 0;
 
 	inner_base = opts + opt_bytes;
-	if (!looks_like_ipv4(inner_base, data_end))
+	if (!parse_ipv4_in_geneve_payload(inner_base, data_end, &inner_ip, &ignored_tlv))
 		return 0;
 
-	inner_ip = (void *)inner_base;
 	*inner_ip_out = inner_ip;
 	*geneve_tlv_found_out = parse_geneve_identity(opts, data_end, opt_bytes,
 						      geneve_src_id_out);
@@ -250,6 +250,11 @@ static __always_inline __u32 is_tcp_connection_open(struct iphdr *ip, void *data
 
 	flags = l4[13];
 	return (flags & 0x02) && !(flags & 0x10); /* SYN && !ACK */
+}
+
+static __always_inline __u32 is_geneve_tcp_client_syn(struct iphdr *ip, void *data_end)
+{
+	return is_tcp_connection_open(ip, data_end);
 }
 
 static __always_inline __u32 udp_first_sight(struct flow_key *key)
@@ -342,6 +347,19 @@ static __always_inline int enforce_flow(struct __sk_buff *skb, struct iphdr *ip,
 	}
 }
 
+static __always_inline __u32 is_geneve_udp_outer(struct iphdr *outer_ip, void *data_end)
+{
+	struct udphdr *udp;
+
+	if (outer_ip->protocol != IPPROTO_UDP)
+		return 0;
+
+	udp = (void *)outer_ip + outer_ip->ihl * IPV4_WORD_BYTES;
+	if ((void *)(udp + 1) > data_end)
+		return 0;
+	return udp->dest == bpf_htons(MERIDIAN_GENEVE_UDP_PORT);
+}
+
 SEC("tc")
 int meridian_tc_ingress(struct __sk_buff *skb)
 {
@@ -364,6 +382,11 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	metric_add(METRIC_PACKETS_TOTAL, 1);
 	metric_add(METRIC_BYTES_TOTAL, packet_bytes);
 
+	if (bpf_skb_pull_data(skb, skb->len))
+		return TC_ACT_OK;
+	data = (void *)(long)skb->data;
+	data_end = (void *)(long)skb->data_end;
+
 	struct ethhdr *eth = data;
 	if (!parse_ipv4_after_eth(eth, data_end, &ip))
 		return TC_ACT_OK;
@@ -377,6 +400,8 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 
 	is_geneve = try_parse_geneve_inner(ip, data_end, &inner_ip, &geneve_src_id,
 					   &geneve_tlv_found);
+	if (!is_geneve && is_geneve_udp_outer(ip, data_end))
+		return TC_ACT_OK;
 	if (is_geneve)
 		ip = inner_ip;
 
@@ -395,6 +420,15 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 
 	if (mapped_dst && *mapped_dst != 0)
 		dst_id = *mapped_dst;
+
+	/*
+	 * Geneve underlay ingress sees both directions. Enforce policy only on
+	 * the initial client SYN once src_identity is known; return segments pass
+	 * through (MER-21 gate). Missing TLV / unknown src must still fail closed.
+	 */
+	if (is_geneve && ip->protocol == IPPROTO_TCP && src_id != 0 &&
+	    !is_geneve_tcp_client_syn(ip, data_end))
+		return TC_ACT_OK;
 
 	return enforce_flow(skb, ip, data_end, packet_bytes, now_ns, src_port, dst_port,
 			    src_id, dst_id);

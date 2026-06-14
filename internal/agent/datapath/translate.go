@@ -71,7 +71,10 @@ func identityIPv4NetworkKey(identity wire.Identity) (uint32, error) {
 		return 0, fmt.Errorf("translate identity id=%d pod_ipv4=%q: not IPv4", identity.ID, identity.PodIPv4)
 	}
 	v4 := addr.As4()
-	return binary.BigEndian.Uint32(v4[:]), nil
+	// identity_map keys are pod IPv4 in network byte order. On little-endian
+	// hosts the uint32 passed to bpf.Map.Update must use the same 4-byte layout
+	// BPF reads from ip->saddr (see test/bpf keyFromIPv4Wire).
+	return binary.LittleEndian.Uint32(v4[:]), nil
 }
 
 var (

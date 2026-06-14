@@ -244,6 +244,112 @@ func synthGeneveIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte, rese
 	return pkt
 }
 
+// synthGeneveTEBIPv4Packet mirrors the kernel geneve driver: proto ETH_P_TEB with
+// an inner Ethernet header wrapping the IPv4 payload (MER-28 live path).
+func synthGeneveTEBIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte) []byte {
+	innerIP := synthInnerIPv4L4Payload(innerProto, innerSrcIP, innerDstIP)
+	innerEth := make([]byte, 14+len(innerIP))
+	copy(innerEth[0:6], []byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa})
+	copy(innerEth[6:12], []byte{0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb})
+	binary.BigEndian.PutUint16(innerEth[12:14], 0x0800)
+	copy(innerEth[14:], innerIP)
+
+	const (
+		ethHdrLen    = 14
+		ipHdrLen     = 20
+		udpHdrLen    = 8
+		geneveHdrLen = 8
+	)
+
+	payloadLen := udpHdrLen + geneveHdrLen + len(innerEth)
+	pkt := make([]byte, ethHdrLen+ipHdrLen+payloadLen)
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], uint16(ipHdrLen+payloadLen))
+	ip[8] = 64
+	ip[9] = 17
+	copy(ip[12:16], []byte{172, 31, 1, 2})
+	copy(ip[16:20], []byte{172, 31, 1, 3})
+
+	udp := pkt[ethHdrLen+ipHdrLen:]
+	binary.BigEndian.PutUint16(udp[0:2], 40000)
+	binary.BigEndian.PutUint16(udp[2:4], 6081)
+	binary.BigEndian.PutUint16(udp[4:6], uint16(udpHdrLen+geneveHdrLen+len(innerEth)))
+
+	geneve := udp[udpHdrLen:]
+	geneve[0] = 0x00
+	geneve[1] = 0x00
+	binary.BigEndian.PutUint16(geneve[2:4], 0x6558) // ETH_P_TEB
+	geneve[4] = 0x00
+	geneve[5] = 0x00
+	geneve[6] = 0x64
+	geneve[7] = 0x00
+
+	copy(geneve[geneveHdrLen:], innerEth)
+	return pkt
+}
+
+// synthGeneveTEBPacketWithIdentity builds a kernel-shaped TEB Geneve frame that
+// already carries the Meridian identity TLV (post-tc_egress shape).
+func synthGeneveTEBPacketWithIdentity(innerProto uint8, innerSrcIP, innerDstIP []byte, srcIdentity uint32) []byte {
+	innerIP := synthInnerIPv4L4Payload(innerProto, innerSrcIP, innerDstIP)
+	innerEth := make([]byte, 14+len(innerIP))
+	copy(innerEth[0:6], []byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa})
+	copy(innerEth[6:12], []byte{0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb})
+	binary.BigEndian.PutUint16(innerEth[12:14], 0x0800)
+	copy(innerEth[14:], innerIP)
+
+	const (
+		ethHdrLen    = 14
+		ipHdrLen     = 20
+		udpHdrLen    = 8
+		geneveHdrLen = 8
+		optBytes     = 8
+	)
+
+	payloadLen := udpHdrLen + geneveHdrLen + optBytes + len(innerEth)
+	pkt := make([]byte, ethHdrLen+ipHdrLen+payloadLen)
+
+	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
+	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
+	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
+
+	ip := pkt[ethHdrLen:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], uint16(ipHdrLen+payloadLen))
+	ip[8] = 64
+	ip[9] = 17
+	copy(ip[12:16], []byte{172, 31, 1, 2})
+	copy(ip[16:20], []byte{172, 31, 1, 3})
+
+	udp := pkt[ethHdrLen+ipHdrLen:]
+	binary.BigEndian.PutUint16(udp[0:2], 40000)
+	binary.BigEndian.PutUint16(udp[2:4], 6081)
+	binary.BigEndian.PutUint16(udp[4:6], uint16(udpHdrLen+geneveHdrLen+optBytes+len(innerEth)))
+
+	geneve := udp[udpHdrLen:]
+	geneve[0] = 0x02
+	geneve[1] = 0x00
+	binary.BigEndian.PutUint16(geneve[2:4], 0x6558)
+	geneve[4] = 0x00
+	geneve[5] = 0x00
+	geneve[6] = 0x64
+	geneve[7] = 0x00
+
+	opts := geneve[geneveHdrLen:]
+	binary.BigEndian.PutUint16(opts[0:2], 0x4d52)
+	opts[2] = 1
+	opts[3] = 1
+	binary.BigEndian.PutUint32(opts[4:8], srcIdentity)
+	copy(opts[optBytes:], innerEth)
+	return pkt
+}
+
 // synthGeneveIPv4PacketWithIdentity builds a Geneve-encapsulated frame whose
 // option region already carries the Meridian identity TLV (post-egress shape).
 func synthGeneveIPv4PacketWithIdentity(innerProto uint8, innerSrcIP, innerDstIP []byte, srcIdentity uint32) []byte {

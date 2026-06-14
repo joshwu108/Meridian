@@ -4,6 +4,8 @@ package integration
 
 import (
 	"context"
+	"encoding/binary"
+	"net/netip"
 	"path/filepath"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/joshuawu/meridian/bpf"
 	"github.com/joshuawu/meridian/internal/agent/bpfobj"
 	"github.com/joshuawu/meridian/internal/agent/datapath"
+	"github.com/joshuawu/meridian/internal/agent/metrics"
 	"github.com/joshuawu/meridian/pkg/wire"
 	"github.com/joshuawu/meridian/test/harness"
 )
@@ -39,6 +42,10 @@ func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 
 	ingressObjs, egressObjs, writer := loadGenevePrograms(t, pinDir)
 	t.Cleanup(func() {
+		if t.Failed() {
+			dumpGeneveGateMetrics(t, egressObjs.MetricsMap, ingressObjs.MetricsMap)
+			dumpDeniedFlowsMap(t, ingressObjs.DeniedFlowsMap)
+		}
 		_ = ingressObjs.Close()
 		_ = egressObjs.Close()
 	})
@@ -57,7 +64,6 @@ func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Node A needs a local identity mapping so tc_egress can stamp the TLV.
 	if err := harness.SeedIdentity(ctx, writer, wire.Identity{
 		ID:       identityRemoteClient,
 		PodIPv4:  top.NodeA.OverlayIP,
@@ -65,7 +71,6 @@ func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed node A identity: %v", err)
 	}
-	// Node B resolves the destination locally; remote src is carried only in Geneve.
 	if err := harness.SeedIdentity(ctx, writer, wire.Identity{
 		ID:       identityLocalServer,
 		PodIPv4:  top.NodeB.OverlayIP,
@@ -99,6 +104,15 @@ func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 		t.Fatalf("seed deny policy: %v", err)
 	}
 
+	var seededID uint32
+	overlayKey := overlayIPv4Key(t, top.NodeA.OverlayIP)
+	if err := ingressObjs.IdentityMap.Lookup(overlayKey, &seededID); err != nil {
+		t.Fatalf("lookup seeded overlay identity: %v", err)
+	}
+	if seededID != uint32(identityRemoteClient) {
+		t.Fatalf("overlay identity=%d want %d", seededID, identityRemoteClient)
+	}
+
 	harness.AssertAllowed(t, top.NodeA.Namespace, top.NodeB.Namespace, top.NodeB.OverlayIP, geneveAllowPort)
 	harness.AssertDenied(t, top.NodeA.Namespace, top.NodeB.Namespace, top.NodeB.OverlayIP, geneveDenyPort)
 }
@@ -106,7 +120,6 @@ func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 func loadGenevePrograms(t *testing.T, pinDir string) (*bpf.TcIngressObjects, *bpf.TcEgressObjects, datapath.Writer) {
 	t.Helper()
 
-	// Open pinned maps via the counter loader (schema sentinel + shared maps).
 	counter, err := bpfobj.LoadCounter(pinDir)
 	if err != nil {
 		t.Fatalf("load shared counter/maps: %v", err)
@@ -132,4 +145,69 @@ func loadGenevePrograms(t *testing.T, pinDir string) (*bpf.TcIngressObjects, *bp
 
 	writer := datapath.NewWriter(ingress.IdentityMap, ingress.PolicyMap)
 	return &ingress, &egress, writer
+}
+
+func overlayIPv4Key(t *testing.T, addr string) uint32 {
+	t.Helper()
+	parsed, err := netip.ParseAddr(addr)
+	if err != nil {
+		t.Fatalf("parse overlay addr %q: %v", addr, err)
+	}
+	if !parsed.Is4() {
+		t.Fatalf("overlay addr %q is not IPv4", addr)
+	}
+	v4 := parsed.As4()
+	return binary.NativeEndian.Uint32(v4[:])
+}
+
+func dumpGeneveGateMetrics(t *testing.T, egressMap, ingressMap *ebpf.Map) {
+	t.Helper()
+	for _, pair := range []struct {
+		name string
+		m    *ebpf.Map
+	}{
+		{"egress", egressMap},
+		{"ingress", ingressMap},
+	} {
+		reader := metrics.NewMapReader(pair.m)
+		for _, id := range []metrics.MetricID{
+			metrics.MetricPacketsTotal,
+			metrics.MetricGeneveEncapFail,
+			metrics.MetricGeneveDecodeFail,
+			metrics.MetricFlowsDenied,
+			metrics.MetricFlowsAllowed,
+		} {
+			v, err := reader.Read(id)
+			t.Logf("%s metric %d = %d err=%v", pair.name, id, v, err)
+		}
+	}
+}
+
+func dumpDeniedFlowsMap(t *testing.T, m *ebpf.Map) {
+	t.Helper()
+	type flowKey struct {
+		SrcIP   uint32
+		DstIP   uint32
+		SrcPort uint16
+		DstPort uint16
+		Proto   uint8
+		Pad     [3]uint8
+	}
+	type denyInfo struct {
+		LastNs uint64
+		Count  uint32
+		Reason uint32
+	}
+	var (
+		key flowKey
+		val denyInfo
+	)
+	iter := m.Iterate()
+	for iter.Next(&key, &val) {
+		t.Logf("denied flow src=%#x dst=%#x sport=%#x dport=%#x proto=%d reason=%d count=%d",
+			key.SrcIP, key.DstIP, key.SrcPort, key.DstPort, key.Proto, val.Reason, val.Count)
+	}
+	if err := iter.Err(); err != nil {
+		t.Logf("denied flows iterate: %v", err)
+	}
 }

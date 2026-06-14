@@ -144,8 +144,8 @@ func TestTranslateIdentityUsesNetworkOrderIPv4Key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("translateIdentity error = %v", err)
 	}
-	if entry.Key != 0x0a00002a {
-		t.Fatalf("identity key = %#08x, want 0x0a00002a (network-order IPv4)", entry.Key)
+	if entry.Key != 0x2a00000a {
+		t.Fatalf("identity key = %#08x, want 0x2a00000a (packet-byte layout for BPF lookup)", entry.Key)
 	}
 	if entry.Value != 88 {
 		t.Fatalf("identity value = %d, want 88", entry.Value)

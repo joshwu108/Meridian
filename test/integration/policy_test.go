@@ -220,7 +220,9 @@ func ipv4NetworkKey(t *testing.T, addr string) uint32 {
 		t.Fatalf("address %q is not IPv4", addr)
 	}
 	v4 := parsed.As4()
-	return binary.BigEndian.Uint32(v4[:])
+	// flow_key src_ip/dst_ip are copied verbatim from packet bytes (network order);
+	// on little-endian hosts bpf map iteration exposes them as LE uint32.
+	return binary.LittleEndian.Uint32(v4[:])
 }
 
 func hostPortToFlowKey(port uint16) uint16 {
