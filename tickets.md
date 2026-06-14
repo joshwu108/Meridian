@@ -25,8 +25,8 @@ These are **not** duplicated here; see the phase ticket files:
 
 | IDs | Where | Status (summary) |
 |-----|-------|----------------|
-| MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | Phase-1 gates and remaining deliverables |
-| MER-47 … MER-59 | `docs/PHASE2_TICKETS.md` | Blocked on MER-34 (Phase-1 exit) |
+| MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | Phase-1 ticket set landed: MER-15 `f70dbb5`, MER-18 `9caa828`, MER-19 `bddc72c`, MER-21 `80de7c8` (P1.3 integrity now tracked by MER-66), MER-24 `4ae654e`, MER-29 `fbfc00d`, MER-32 `36c0c5a`, MER-34 `a4b369d`/`31409c5` |
+| MER-47 … MER-59 | `docs/PHASE2_TICKETS.md` | Blocked on MER-66: `make check-gate-skips` still reports P1.3 `TestGeneveIngressIdentityPolicyGate_MER21` red |
 
 ---
 
