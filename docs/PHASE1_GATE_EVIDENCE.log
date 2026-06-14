@@ -1,21 +1,25 @@
-go test -tags=bpf -exec sudo -count=1 -parallel 1 ./test/bpf/...
-ok  	github.com/joshuawu/meridian/test/bpf	0.760s
-go test -tags=bpf -exec sudo -count=1 -parallel 1 ./internal/agent/bpfobj/...
-ok  	github.com/joshuawu/meridian/internal/agent/bpfobj	0.072s
-go test -tags=integration -exec sudo -count=1 -parallel 1 -timeout=10m ./test/integration/...
---- FAIL: TestGeneveIngressIdentityPolicyGate_MER21 (3.35s)
-    geneve_test.go:115: WaitUntil timed out after 3s: expected connect to succeed: src=mrdn-98526-c4de9a-geneve-gate-a dst=10.200.80.2:18080
-    geneve_test.go:46: egress metric 0 = 15 err=<nil>
-    geneve_test.go:46: egress metric 6 = 0 err=<nil>
-    geneve_test.go:46: egress metric 7 = 3 err=<nil>
-    geneve_test.go:46: egress metric 4 = 3 err=<nil>
-    geneve_test.go:46: egress metric 3 = 0 err=<nil>
-    geneve_test.go:46: ingress metric 0 = 15 err=<nil>
-    geneve_test.go:46: ingress metric 6 = 0 err=<nil>
-    geneve_test.go:46: ingress metric 7 = 3 err=<nil>
-    geneve_test.go:46: ingress metric 4 = 3 err=<nil>
-    geneve_test.go:46: ingress metric 3 = 0 err=<nil>
-FAIL
-FAIL	github.com/joshuawu/meridian/test/integration	7.909s
-FAIL
-make: *** [Makefile:120: test-integration] Error 1
+# Phase-1 gate evidence — Lima VM (5.15.0-179-generic)
+# Date: 2026-06-13
+# Host: limactl shell meridian
+# Commands:
+#   make ebpf && make test-bpf
+#   go test -tags=integration -exec sudo -count=1 -parallel 1 ./test/integration/...
+#   go run ./test/tools/checkgateskips -manifest test/gates/manifest.txt
+
+## Results
+
+| Gate | Ticket | Test | Result | Skips |
+|------|--------|------|--------|-------|
+| P1.1 | MER-18 | TestVerdictMatrixMatchesReferenceEvaluator | PASS | 0 |
+| P1.2 | MER-29 | TestLivePolicyIntegrationGate_MER29 | PASS | 0 |
+| P1.3 | MER-21 | TestGeneveIngressIdentityPolicyGate_MER21 | FAIL | 0 |
+| CP-2 | MER-24 | TestCompilerMatchesReferenceProperty + TestConformanceRegressionCorpus | PASS | 0 |
+| O-2 | MER-32 | TestDeniedFlowsMetricsGate_MER32 | PASS | 0 |
+
+## Notes
+
+- `make test-bpf` green (./test/bpf/... + ./internal/agent/bpfobj/...).
+- MER-21: live two-node TCP connect times out; egress encap_fail metric stays 0 after
+  bpf_skb_adjust_room hybrid insert — likely post-stamp skb corruption or ingress
+  passthrough on unparseable Geneve outer frames. T2 round-trip (TestTcEgressToIngressTEBRoundTrip) green.
+- Run integration gates in isolation after `sudo rm -rf /sys/fs/bpf/meridian-test` to avoid pin pollution.

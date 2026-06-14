@@ -411,10 +411,10 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	mapped_src = bpf_map_lookup_elem(&identity_map, &ip->saddr);
 	mapped_dst = bpf_map_lookup_elem(&identity_map, &ip->daddr);
 
-	if (mapped_src && *mapped_src != 0)
-		src_id = *mapped_src;
-	else if (is_geneve && geneve_tlv_found)
+	if (is_geneve && geneve_tlv_found)
 		src_id = geneve_src_id;
+	else if (mapped_src && *mapped_src != 0)
+		src_id = *mapped_src;
 	else if (is_geneve && !geneve_tlv_found)
 		metric_add(METRIC_GENEVE_DECODE_FAIL, 1);
 

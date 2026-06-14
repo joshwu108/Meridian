@@ -151,23 +151,34 @@ static __always_inline int insert_inner_tlv_room(struct __sk_buff *skb, __u32 ro
 						 __u32 inner_ip_off, __u32 udp_off,
 						 __u32 opt_bytes)
 {
-	__u16 ip_tot_be;
 	__u32 paylen;
 	__u32 i;
 	__u8 b;
+	__u64 adj_flags;
 
+	(void)inner_ip_off;
 	(void)udp_off;
 	(void)opt_bytes;
 
 	if (bpf_skb_pull_data(skb, skb->len))
 		return 1;
-
-	if (bpf_skb_load_bytes(skb, inner_ip_off + 2, &ip_tot_be, 2))
+	if (room_off >= skb->len)
 		return 1;
-	paylen = bpf_ntohs(ip_tot_be) + (inner_ip_off - room_off);
+
+	/* Prefer the kernel helper on live TC skbs; fall back to change_tail when
+	 * adjust_room rejects the frame (prog_test_run / older shapes). */
+	adj_flags = ((__u64)room_off << BPF_ADJ_ROOM_ENCAP_L2_SHIFT) |
+		    BPF_F_ADJ_ROOM_ENCAP_L2_ETH;
+	if (!bpf_skb_adjust_room(skb, MERIDIAN_GENEVE_OPT_BYTES, BPF_ADJ_ROOM_MAC,
+				 adj_flags)) {
+		if (bpf_skb_pull_data(skb, skb->len))
+			return 1;
+		return 0;
+	}
+
+	paylen = skb->len - room_off;
 	if (paylen == 0 || paylen > MERIDIAN_MAX_INNER_SHIFT_BYTES)
 		return 1;
-
 	if (bpf_skb_change_tail(skb, skb->len + MERIDIAN_GENEVE_OPT_BYTES, 0))
 		return 1;
 	if (bpf_skb_pull_data(skb, skb->len))
