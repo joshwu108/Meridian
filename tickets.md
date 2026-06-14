@@ -28,8 +28,9 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 | `docs/PHASE1_TICKETS.md` | **Phase-1 COMPLETE & committed.** MER-15 `f70dbb5`, MER-18 `9caa828`, MER-19 `bddc72c`, MER-21 `80de7c8`, MER-24 `4ae654e`, MER-29 `fbfc00d`, MER-32 `36c0c5a`, MER-34 `a4b369d`/`31409c5`. P1.3 live-path fix (MER-66) landed `630f616` — all five gates green at HEAD, 0 skips. |
 | MER-66 | this file | **CLOSED `630f616`** — P1.3 green on live two-node TCP connect; verified on Lima 5.15. |
 | MER-47 | `docs/PHASE2_TICKETS.md` | **CLOSED `70c52ad`** — Phase-2 contract: `sockhash` map + `sock_ops`/`sk_msg` no-op skeletons, ARCHITECTURE D18. |
-| MER-48 | `docs/PHASE2_TICKETS.md` | **CLOSED `77540ce`** — gated `sock_ops` SOCKHASH population (CC-5); `meridian_helpers.h` + D19; smoke proves eligible-present / DENY-absent. |
-| MER-49 … MER-59 | `docs/PHASE2_TICKETS.md` | **IN PROGRESS.** Active: **MER-49** (P2.1-N permanent SOCKMAP-negative gate, CC-5/eBPF R2) — arm the CI guard before MER-50 redirect lands. MER-50/51/52/53/57/58 downstream per the Phase-2 dependency graph. |
+| MER-48 | `docs/PHASE2_TICKETS.md` | **CLOSED `77540ce`** — gated `sock_ops` SOCKHASH population (CC-5); `meridian_helpers.h` + D19. |
+| MER-49 | `docs/PHASE2_TICKETS.md` | **CLOSED `d0125c1`** — P2.1-N permanent SOCKMAP-negative gate armed (CC-5/eBPF R2); 7 armed gates, 0 skips. CC-5 locked in CI. |
+| MER-50 … MER-59 | `docs/PHASE2_TICKETS.md` | **IN PROGRESS.** Active: **MER-50** (`sk_msg` SOCKHASH redirect + SK_PASS fall-through) — the redirect consumer, now safe to build under the P2.1-N gate. MER-51/52/53/57/58 downstream per the Phase-2 dependency graph. |
 
 ---
 
@@ -219,3 +220,24 @@ because MER-48 made the SOCKHASH write live with NO armed CI guard; ADR-0007
 designates MER-49 as the permanent enforcement test, and the redirect consumer
 must not land before the bypass invariant is locked in CI. `activeticket.md`
 rewritten to MER-49.
+
+## Batch 2026-06-14a — TPM/Auditor run (HEAD d0125c1)
+
+Findings: **MER-49 landed at `d0125c1`** — P2.1-N permanent SOCKMAP-negative gate
+is armed (`armed=yes`) and green: DENY / L7-required / mTLS-required / REDIRECT /
+ALLOW-without-flag all proven absent from `sockhash`, eligible ALLOW present, on a
+real loopback connect. `make check-gate-skips` now reports 0 skips across all
+SEVEN armed gates. The CC-5 invariant (ROADMAP top-risk #2 / eBPF R2) is locked in
+CI. Reviewed — test-only, reuses the MER-48 harness, no production code touched —
+**APPROVED**.
+
+No new tickets: MER-50 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-50 — `sk_msg` SOCKHASH redirect + SK_PASS
+fall-through** (ADR-0007), the next critical-path blocker (MER-50 → MER-51 →
+MER-59). It is the SOCKHASH consumer and is now safe to land because MER-49 armed
+the gate guaranteeing only eligible sockets are ever inserted. Note for the
+implementer (corrects the plan text): SOCKHASH redirect uses
+`bpf_msg_redirect_hash`, not `bpf_msg_redirect_map`; `sk_msg` has no SK_REDIRECT
+verdict. `activeticket.md` rewritten to MER-50.
