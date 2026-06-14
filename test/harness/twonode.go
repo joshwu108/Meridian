@@ -210,6 +210,39 @@ func AssertDenied(t *testing.T, srcNS, dstNS, dstIP string, port int) {
 	}, fmt.Sprintf("expected connect to fail: src=%s dst=%s:%d", srcNS, dstIP, port))
 }
 
+// AssertDeniedTimeout asserts a TCP connect is dropped rather than refused.
+func AssertDeniedTimeout(t *testing.T, srcNS, dstNS, dstIP string, port int) {
+	t.Helper()
+	stop := startNetcatListener(t, dstNS, port)
+	defer stop()
+
+	waitForListenerReady(t, dstNS, port)
+	deadline := time.Now().Add(3 * time.Second)
+	var lastOut string
+	var lastErr error
+	var lastElapsed time.Duration
+	for {
+		start := time.Now()
+		out, err := tryConnect(srcNS, dstIP, port)
+		elapsed := time.Since(start)
+		if err == nil {
+			t.Fatalf("expected connect to time out, got success: src=%s dst=%s:%d", srcNS, dstIP, port)
+		}
+		lastOut = out
+		lastErr = err
+		lastElapsed = elapsed
+		if elapsed >= 750*time.Millisecond {
+			return
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(PollInterval)
+	}
+	t.Fatalf("connect failed too quickly; want timeout/drop not refuse: src=%s dst=%s:%d elapsed=%s err=%v output=%q",
+		srcNS, dstIP, port, lastElapsed, lastErr, strings.TrimSpace(lastOut))
+}
+
 func waitForListenerReady(t *testing.T, netns string, port int) {
 	t.Helper()
 	WaitUntil(t, 2*time.Second, func() bool {
@@ -221,7 +254,7 @@ func waitForListenerReady(t *testing.T, netns string, port int) {
 func tryConnect(netns, ip string, port int) (string, error) {
 	args := []string{
 		"netns", "exec", netns,
-		"nc", "-z", "-w", "1", ip, strconv.Itoa(port),
+		"nc", "-vz", "-w", "1", ip, strconv.Itoa(port),
 	}
 	out, err := exec.Command("ip", args...).CombinedOutput()
 	return string(out), err
@@ -229,9 +262,8 @@ func tryConnect(netns, ip string, port int) (string, error) {
 
 func startNetcatListener(t *testing.T, netns string, port int) func() {
 	t.Helper()
-	// Loop to keep a listener present across retries from WaitUntil.
 	cmd := exec.Command("ip", "netns", "exec", netns, "sh", "-c",
-		fmt.Sprintf("while true; do nc -l -p %d >/dev/null 2>&1 || true; done", port))
+		fmt.Sprintf("python3 -c 'import socketserver; socketserver.TCPServer.allow_reuse_address = True; socketserver.TCPServer((\"0.0.0.0\", %d), socketserver.BaseRequestHandler).serve_forever()'", port))
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start listener failed (netns=%s, port=%d): %v", netns, port, err)
 	}

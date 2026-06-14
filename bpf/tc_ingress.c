@@ -273,7 +273,7 @@ static __always_inline int enforce_flow(struct __sk_buff *skb, struct iphdr *ip,
 					void *data_end, __u32 packet_bytes,
 					__u64 now_ns, __u16 src_port,
 					__u16 dst_port, __u32 src_id,
-					__u32 dst_id)
+					__u32 dst_id, __u32 deny_action)
 {
 	struct flow_key flow_key = {
 		.src_ip = ip->saddr,
@@ -329,7 +329,7 @@ static __always_inline int enforce_flow(struct __sk_buff *skb, struct iphdr *ip,
 		emit_flow_event(now_ns, ip->saddr, ip->daddr, src_port, dst_port,
 				ip->protocol, FLOW_VERDICT_DENY, src_id, dst_id,
 				packet_bytes);
-		return TC_ACT_SHOT;
+		return deny_action;
 	case FLOW_VERDICT_REDIRECT:
 		skb->mark |= MERIDIAN_MARK_REDIRECT_PLACEHOLDER;
 		metric_add(METRIC_FLOWS_REDIRECTED, 1);
@@ -431,7 +431,7 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 		return TC_ACT_OK;
 
 	return enforce_flow(skb, ip, data_end, packet_bytes, now_ns, src_port, dst_port,
-			    src_id, dst_id);
+			    src_id, dst_id, is_geneve ? TC_ACT_STOLEN : TC_ACT_SHOT);
 }
 
 char _license[] SEC("license") = "GPL";

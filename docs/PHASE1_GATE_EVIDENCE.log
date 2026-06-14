@@ -1,10 +1,12 @@
 # Phase-1 gate evidence — Lima VM (5.15.0-179-generic)
 # Date: 2026-06-13
 # Host: limactl shell meridian
-# Commands:
-#   make ebpf && make test-bpf
-#   go test -tags=integration -exec sudo -count=1 -parallel 1 ./test/integration/...
-#   go run ./test/tools/checkgateskips -manifest test/gates/manifest.txt
+# Commands (MER-66 rerun on Lima 5.15.0-179-generic):
+#   scripts/lima-delegate.sh test-clean
+#   scripts/lima-delegate.sh test-bpf
+#   scripts/lima-delegate.sh test-integration
+#   scripts/lima-delegate.sh check-gate-skips
+#   make check-commits
 
 ## Results
 
@@ -12,14 +14,18 @@
 |------|--------|------|--------|-------|
 | P1.1 | MER-18 | TestVerdictMatrixMatchesReferenceEvaluator | PASS | 0 |
 | P1.2 | MER-29 | TestLivePolicyIntegrationGate_MER29 | PASS | 0 |
-| P1.3 | MER-21 | TestGeneveIngressIdentityPolicyGate_MER21 | FAIL | 0 |
+| P1.3 | MER-21 / MER-66 | TestGeneveIngressIdentityPolicyGate_MER21 | PASS | 0 |
 | CP-2 | MER-24 | TestCompilerMatchesReferenceProperty + TestConformanceRegressionCorpus | PASS | 0 |
 | O-2 | MER-32 | TestDeniedFlowsMetricsGate_MER32 | PASS | 0 |
 
 ## Notes
 
-- `make test-bpf` green (./test/bpf/... + ./internal/agent/bpfobj/...).
-- MER-21: live two-node TCP connect times out; egress encap_fail metric stays 0 after
-  bpf_skb_adjust_room hybrid insert — likely post-stamp skb corruption or ingress
-  passthrough on unparseable Geneve outer frames. T2 round-trip (TestTcEgressToIngressTEBRoundTrip) green.
-- Run integration gates in isolation after `sudo rm -rf /sys/fs/bpf/meridian-test` to avoid pin pollution.
+- `make test-bpf` green (`./test/bpf/...` + `./internal/agent/bpfobj/...`).
+- `make test-integration` green on the live two-node TCP path. P1.3 now asserts:
+  allow connects, deny times out, and ingress policy uses the carried Geneve
+  identity TLV instead of the local `identity_map` fallback.
+- Root cause (MER-66): synthetic `bpf_prog_test_run` exercised already-shaped
+  Geneve packets and did not prove the live kernel TEB/veth path. The live path
+  needs egress stamping after kernel Geneve encapsulation, plus a pre-encap
+  silent deny hook so denied TCP connects drop instead of returning a refusal.
+- `make check-gate-skips` reports 0 skips for every armed gate, including P1.3.

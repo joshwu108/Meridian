@@ -154,7 +154,6 @@ static __always_inline int insert_inner_tlv_room(struct __sk_buff *skb, __u32 ro
 	__u32 paylen;
 	__u32 i;
 	__u8 b;
-	__u64 adj_flags;
 
 	(void)inner_ip_off;
 	(void)udp_off;
@@ -164,17 +163,6 @@ static __always_inline int insert_inner_tlv_room(struct __sk_buff *skb, __u32 ro
 		return 1;
 	if (room_off >= skb->len)
 		return 1;
-
-	/* Prefer the kernel helper on live TC skbs; fall back to change_tail when
-	 * adjust_room rejects the frame (prog_test_run / older shapes). */
-	adj_flags = ((__u64)room_off << BPF_ADJ_ROOM_ENCAP_L2_SHIFT) |
-		    BPF_F_ADJ_ROOM_ENCAP_L2_ETH;
-	if (!bpf_skb_adjust_room(skb, MERIDIAN_GENEVE_OPT_BYTES, BPF_ADJ_ROOM_MAC,
-				 adj_flags)) {
-		if (bpf_skb_pull_data(skb, skb->len))
-			return 1;
-		return 0;
-	}
 
 	paylen = skb->len - room_off;
 	if (paylen == 0 || paylen > MERIDIAN_MAX_INNER_SHIFT_BYTES)
@@ -286,14 +274,53 @@ int meridian_tc_egress(struct __sk_buff *skb)
 	if (outer_ip->version != 4 || outer_ip->ihl < IPV4_IHL_MIN ||
 	    outer_ip->ihl > IPV4_IHL_MAX)
 		return TC_ACT_OK;
-	if (outer_ip->protocol != IPPROTO_UDP)
-		return TC_ACT_OK;
-
 	struct udphdr *udp = (void *)outer_ip + outer_ip->ihl * IPV4_WORD_BYTES;
-	if ((void *)(udp + 1) > data_end)
+	if (outer_ip->protocol != IPPROTO_UDP || (void *)(udp + 1) > data_end ||
+	    udp->dest != bpf_htons(MERIDIAN_GENEVE_UDP_PORT)) {
+		__u16 src_port = 0;
+		__u16 dst_port = 0;
+		__u32 src_key = outer_ip->saddr;
+		__u32 dst_key = outer_ip->daddr;
+		__u32 *src_identity = bpf_map_lookup_elem(&identity_map, &src_key);
+		__u32 *dst_identity = bpf_map_lookup_elem(&identity_map, &dst_key);
+
+		if (parse_l4_ports(outer_ip, data_end, &src_port, &dst_port)) {
+			flow.src_ip = outer_ip->saddr;
+			flow.dst_ip = outer_ip->daddr;
+			flow.src_port = src_port;
+			flow.dst_port = dst_port;
+			flow.proto = outer_ip->protocol;
+			flow._pad[0] = 0;
+			flow._pad[1] = 0;
+			flow._pad[2] = 0;
+			has_flow = 1;
+		}
+		if (dst_identity)
+			event_dst_id = *dst_identity;
+		if (!src_identity || *src_identity == 0)
+			return TC_ACT_OK;
+		event_src_id = *src_identity;
+		if (dst_identity && *dst_identity != 0) {
+			struct policy_key policy_key = {
+				.src_id = event_src_id,
+				.dst_id = *dst_identity,
+				.dst_port = bpf_ntohs(dst_port),
+				.proto = outer_ip->protocol,
+				.direction = POLICY_DIR_INGRESS,
+			};
+			struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
+
+			if (verdict && verdict->action == FLOW_VERDICT_DENY) {
+				denied_flow_upsert(&flow, DROP_REASON_POLICY_DENY, now_ns);
+				metric_add(METRIC_FLOWS_DENIED, 1);
+				emit_flow_event(now_ns, flow.src_ip, flow.dst_ip, flow.src_port,
+						flow.dst_port, flow.proto, FLOW_VERDICT_DENY,
+						event_src_id, event_dst_id, packet_bytes);
+				return TC_ACT_STOLEN;
+			}
+		}
 		return TC_ACT_OK;
-	if (udp->dest != bpf_htons(MERIDIAN_GENEVE_UDP_PORT))
-		return TC_ACT_OK;
+	}
 
 	/* Geneve base header (8 bytes) starts after UDP. */
 	__u8 *geneve = (void *)(udp + 1);
@@ -356,6 +383,26 @@ int meridian_tc_egress(struct __sk_buff *skb)
 	if (!src_identity || *src_identity == 0)
 		goto encap_fail;
 	event_src_id = *src_identity;
+
+	if (dst_identity && *dst_identity != 0) {
+		struct policy_key policy_key = {
+			.src_id = event_src_id,
+			.dst_id = *dst_identity,
+			.dst_port = bpf_ntohs(dst_port),
+			.proto = inner_ip->protocol,
+			.direction = POLICY_DIR_INGRESS,
+		};
+		struct policy_verdict *verdict = bpf_map_lookup_elem(&policy_map, &policy_key);
+
+		if (verdict && verdict->action == FLOW_VERDICT_DENY) {
+			denied_flow_upsert(&flow, DROP_REASON_POLICY_DENY, now_ns);
+			metric_add(METRIC_FLOWS_DENIED, 1);
+			emit_flow_event(now_ns, flow.src_ip, flow.dst_ip, flow.src_port,
+					flow.dst_port, flow.proto, FLOW_VERDICT_DENY,
+					event_src_id, event_dst_id, packet_bytes);
+			return TC_ACT_STOLEN;
+		}
+	}
 
 	if (option_count >= MERIDIAN_MAX_GENEVE_OPTS)
 		goto encap_fail;

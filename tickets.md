@@ -9,7 +9,7 @@ Completed backlog tickets (MER-35, MER-36, MER-37, MER-38, MER-39, MER-40,
 MER-41, MER-42, MER-44, MER-45, MER-46, MER-60) are removed from this file;
 see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
 
-Next free ID = **MER-65**.
+Next free ID = **MER-67**.
 
 ---
 
@@ -96,3 +96,67 @@ multiple cycles.
   1. New `docs/adr/0007-sockmap-redirect.md` records the SOCKHASH map shape, the `sock_ops` gated-insertion rule (insert **only** when verdict has `SOCKMAP_ELIGIBLE`), the `sk_msg` redirect/fall-through contract, and the rejected alternatives — closing the ROADMAP note that each cross-cutting decision (CC-5) "warrants an ADR."
   2. ADR cross-references the MER-49 permanent SOCKMAP-negative test as the enforcement of its invariant (eBPF R2 / mTLS-bypass mitigation).
   3. `docs/adr/README.md` index updated; numbering gap check passes.
+
+## Batch 2026-06-13b — Backlog Manager run (HEAD 95ed2bb)
+
+Findings: Phase-1 **exit is fully persisted and committed** since the prior batch —
+MER-21 (`80de7c8`), MER-34 ADR-0004 + reconciliation (`a4b369d`), MER-27 policy.yaml
+(`c31d03f`, the long-standing 6-cycle blocker), gate evidence log (`31409c5`), and
+MER-61 closure (`95ed2bb`). `loadsync.go` is committed with a correct `//go:build bpf`
+tag. CI (`ci.yml`) runs the privileged bpf+integration gate suites + `check-gate-skips`
+on ubuntu-22.04 per-PR, so gate-green is a genuine CI signal. Prior-batch MER-61/62/63
+are effectively retired by these commits; **MER-64 (ADR-0007) remains open and is now
+unblocked**. One new documentation gap surfaced: the ledger table below is stale now
+that Phase 1 is complete and Phase 2 is unblocked.
+
+---
+
+### MER-65 — Reconcile `tickets.md` ledger: Phase-1 complete, Phase-2 unblocked
+
+- **ID:** MER-65
+- **TITLE:** Update the "Open work tracked elsewhere" table — mark Phase-1 set complete, MER-47…59 unblocked
+- **PRIORITY:** P3 / LOW (documentation hygiene)
+- **ESTIMATE:** 0.5h
+- **BLOCKS:** ledger accuracy for future Backlog Manager runs (avoids re-flagging done work)
+- **DEPENDENCIES:** none (MER-34 already green at HEAD)
+- **ACCEPTANCE CRITERIA:**
+  1. The `tickets.md` row "MER-15, MER-18, MER-19, MER-21, MER-24, MER-29, MER-32, MER-34 … Phase-1 gates and remaining deliverables" is updated to reflect Phase-1 **complete** (or the IDs moved to the completed-list note like MER-35…MER-60), citing the closing SHAs.
+  2. The "MER-47 … MER-59 … Blocked on MER-34 (Phase-1 exit)" status is changed to **unblocked / ready** now that MER-34 is committed-green.
+  3. No open backlog ticket (MER-61…65) is altered; only the stale pointer/summary rows are corrected.
+
+## Batch 2026-06-13c — Backlog Manager run (HEAD 2cbd04c)
+
+Findings: MER-62 (`1f465c9`) and MER-64 ADR-0007 (`8dd56f2`) landed — both closed.
+**But a P0 gate-integrity failure surfaced:** commit `2cbd04c` ("fix(gates): MER-21
+Geneve live-path egress insert and TLV precedence") records in its body that **"P1.3
+still red on live TCP connect."** P1.3 (MER-21) is `armed=yes` in `test/gates/manifest.txt`
+and was cited as green by MER-34 EXIT — so an armed merge-blocker gate is actually RED,
+violating the MER-44 skip-integrity rule and undermining the Phase-1 exit / Phase-2
+entry claim. An in-flight fix (egress `bpf_skb_adjust_room` ENCAP_L2 flag, `pull_data`
+placement, pre-attach neighbor resolution) sits uncommitted in `bpf/tc_egress.c` +
+`test/integration/geneve_test.go`.
+
+---
+
+### MER-66 — P1.3 gate RED on live TCP connect: fix Geneve egress insert + restore EXIT integrity
+
+- **ID:** MER-66
+- **TITLE:** Make the MER-21 Geneve two-node gate green on the **live TCP connect** path (not just prog_test_run)
+- **PRIORITY:** P0 / CRITICAL (armed merge-blocker gate is red; MER-44 violation)
+- **ESTIMATE:** 4h
+- **BLOCKS:** truthful MER-34 EXIT (Phase-1 exit); Phase-2 entry (MER-47 … MER-59); any merge relying on "all five Phase-1 gates green"
+- **DEPENDENCIES:** none (regression on landed MER-20/MER-21 work)
+- **ACCEPTANCE CRITERIA:**
+  1. `TestGeneveIngressIdentityPolicyGate_MER21` passes on the **live two-node TCP connect** path on the 5.15 CI target (ubuntu-22.04, `make test-integration`) — allow-case connects, deny-case times out — not only on synthetic `prog_test_run`.
+  2. The in-flight egress fix (`bpf/tc_egress.c` `insert_inner_tlv_room` flags / `pull_data` placement; the test's pre-attach neighbor-resolution step) is committed with regenerated `tcegress_bpfel.o`; `git status` clean.
+  3. `make check-gate-skips` reports 0 skips **and** 0 failures for the P1.3 row at HEAD; the row stays `armed=yes` only because it is genuinely green.
+  4. `docs/PHASE1_GATE_EVIDENCE.log` updated with the live-connect pass; MER-34 EXIT/`docs/PHASE1_GATES.md` no longer cite P1.3 green on stale evidence.
+  5. Root-cause note added (synthetic-vs-live divergence) so the gate cannot pass synthetically while failing live again.
+
+**Resolution (2026-06-13):** implemented under this MER-66 fix. P1.3 now runs
+against the live two-node TCP path with a conflicting ingress fallback identity,
+so the allow case only passes when the carried Geneve TLV is decoded and
+preferred. The denied case is consumed before emission on the source Geneve
+egress path and times out. Validation on Lima 5.15:
+`make test-bpf`, `make test-integration`, `make check-gate-skips`, and
+`make check-commits` all pass.
