@@ -53,6 +53,18 @@ Enforcement layers:
    appear in `sockhash`. This test must never be deleted or skipped; it is a
    top-project risk mitigation (ROADMAP top risk #2).
 
+## Gate status
+
+| Gate | Ticket | Armed | State | Evidence |
+|------|--------|-------|-------|----------|
+| P2.1-N | MER-49 | **yes** | **GREEN** | `TestSockmapNegativeGate_MER49` — DENY / L7-required / mTLS-required / REDIRECT / ALLOW-without-flag all absent from `sockhash`; eligible ALLOW present. Real loopback connect on Lima 5.15; `make check-gate-skips` 0 skips. |
+| P2.2 | MER-51 | no | pending | gated on MER-50/57 |
+| P2.2-BENCH | MER-52 | no | pending | nightly T4 |
+| CP-3 | MER-56 | no | pending | gated on MER-55 |
+
+Layer 3 of the CC-5 invariant is now armed in CI: a regression that lets any
+non-eligible verdict class enter `sockhash` fails P2.1-N.
+
 ## Skip-integrity rule
 
 Same as Phase 1 (MER-44):
