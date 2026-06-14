@@ -20,9 +20,10 @@ caught at review instead of discovered later.
 | [0004](0004-map-schema-freeze.md) | Map-schema freeze (v2 maps + cross-boundary structs) | **MER-34** | Accepted | Phase-1 exit gate; kernel half of CC-2. D12–D17 as-built in ARCHITECTURE. |
 | [0005](0005-geneve-encap-failure-policy.md) | Geneve encapsulation failure policy (drop vs pass-unencapsulated) | **MER-41** (tracking; backfilled) | Accepted | Authored ad hoc inside the MER-26 commit (`754e2ee`) with no tracking ticket; linkage backfilled by MER-41. Resolves the encap-failure item deferred by ADR-0002. Consumed by MER-20/21/28/29. |
 | [0006](0006-original-destination-recovery.md) | Original-destination recovery (CC-1) — TPROXY vs eBPF DNAT | **MER-40** | Accepted | Phase-4 **entry gate**; formalizes ARCHITECTURE D1 (TPROXY + `IP_TRANSPARENT`, no orig-dst map in v1). Validated by the node-proxy P4.1 no-TLS echo prototype before Phase 4 starts. Consumed by A-5 + P4.1–4.4. |
+| [0007](0007-sockmap-redirect.md) | SOCKMAP redirect architecture (CC-5) | **MER-64** | Accepted | Phase-2 SOCKHASH/`sock_ops`/`sk_msg` contract; freezes verdict-gated insertion and MER-49 permanent negative-test enforcement for ROADMAP top risk #2. |
 
-**Next free ADR number: `0007`.** `0004` is *accepted* (MER-34);
-`0005` and `0006` are *used*.
+**Next free ADR number: `0008`.** `0004` is *accepted* (MER-34);
+`0005`, `0006`, and `0007` are *used*.
 
 ## Conventions
 
