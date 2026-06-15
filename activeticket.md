@@ -1,76 +1,77 @@
 # Active Ticket
 
-ID: MER-50
+ID: MER-53
 
-Title: sk_msg.c — SOCKHASH redirect + SK_PASS fall-through + redirect telemetry
+Title: CP-1 slice — control-plane memory store + identity registry + REST skeleton
 
 Objective:
-Fill the MER-47 `sk_msg` skeleton with the intra-node redirect fast path. On
-`sendmsg`, look up the destination peer socket in `sockhash` by `sock_key` and,
-on hit, redirect the message to that peer; on miss, return `SK_PASS` so the
-normal kernel TCP path is unchanged (ADR-0007 fall-through contract). This is the
-SOCKHASH *consumer* — safe to land now that the P2.1-N gate (MER-49) guarantees
-only `ALLOW + SOCKMAP_ELIGIBLE` sockets are ever in `sockhash`, so a hit can never
-redirect a flow that required mTLS / L7 / proxy / deny handling.
+Stand up the control-plane core that the ADS lane (MER-54 server → MER-55 stub →
+MER-56 CP-3 gate → MER-59 Phase-2 EXIT) builds on. This is the first
+control-plane ticket beyond the Phase-1 policy compiler (CP-2): an in-memory
+`control.Store`, a monotonic identity registry (CC-3), and a REST surface that
+accepts policy/service definitions and reports status. Pure distributed-systems
+Go — no eBPF, no kernel, no agent internals; it parallels the eBPF lane and is
+verifiable with `go test` (no VM required).
 
-`sk_msg` is the SOLE reader of `sockhash` and never inserts, repairs, or broadens
-it — write authority stays in `sock_ops` (MER-48). Do NOT modify `sock_ops.c` or
-any frozen schema. The byte-level integrity + denied-never-redirected integration
-proof is the separate gate MER-51 — do not fold it in here.
+Stay in scope: store + identity + REST + the `meridian-control` entrypoint and
+their unit tests. Do NOT start the ADS gRPC server (MER-54) or touch the eBPF /
+agent / frozen-schema code. The compiled-policy wire types live in `pkg/wire`
+(reuse them); the policy compiler already exists in `internal/control`.
 
 Dependencies:
-- MER-48 (DONE `77540ce`): `sockhash` populated by gated `sock_ops`;
-  `meridian_helpers.h` available.
-- MER-49 (DONE `d0125c1`): P2.1-N armed gate locks the CC-5 insertion invariant —
-  the precondition that makes consuming `sockhash` safe.
-- ADR-0007 (§"sk_msg redirect contract"): hit → redirect; miss → `SK_PASS`;
-  never write `sockhash`. ARCHITECTURE D13 (decision-point emission, bounded —
-  NOT per-message). ADR-0004 (frozen schema: `sock_key`/`sockhash` unchanged).
+- Phase-2 entry: MER-34 green (SATISFIED). No other open-ticket dependency.
+- Binding contracts: CC-3 (control plane is the SOLE allocator of the cluster
+  uint32 identity space — monotonic, never reused within a process lifetime,
+  ID 0 reserved for unknown). depguard `control-no-dataplane`: `internal/control`
+  must NOT import `bpf/` or `internal/agent/*` — stay control-plane + `pkg/wire`.
+- `control.Store` interface ALREADY EXISTS in `internal/control/doc.go` (package
+  `control`, identity + policy CRUD over `wire` types). Reconcile with it — do NOT
+  define a second `control.Store`. MER-54's `Watch()`-driven push depends on a
+  change-notify hook, so EXTEND the existing interface with a `Watch()`/subscription
+  seam now; the in-memory impl lives under `internal/control/store`.
 
 Acceptance Criteria:
-1. On each `sendmsg`, `meridian_sk_msg` builds the destination `sock_key`
-   { dst_ip = msg->remote_ip4 (network order), dst_port = msg->remote_port
-   (NETWORK order in sk_msg_md — convert as needed), pad = 0 } and looks it up
-   in `sockhash`.
-2. On HIT: redirect to the peer socket via **`bpf_msg_redirect_hash`** (the
-   SOCKHASH helper — NOT `bpf_msg_redirect_map`, which is index-based SOCKMAP)
-   with `BPF_F_INGRESS` so the peer receives on its ingress queue; the program
-   returns the helper's verdict. On MISS: return `SK_PASS` (normal kernel path).
-   `sk_msg` has no `SK_REDIRECT` action — the verdict is the helper's result.
-3. Redirect telemetry: increment a redirect counter (`METRIC_FLOWS_REDIRECTED`
-   or a reserved sockmap slot from `metric_id` 8..15) on the hit path, and
-   populate `flow_event.latency_ns` per D13. Emission MUST stay decision-point
-   bounded — do NOT emit a ring event on every `sendmsg` (that would be
-   per-message; bound it, e.g. first redirect per flow, or counter-only with
-   latency on a bounded event). State the chosen bound in a code comment.
-4. Loads **verifier-clean** on 5.15 (null-check the sockhash lookup; no unbounded
-   loops). The miss path must not touch `sockhash` or counters beyond the contract.
-5. T2/T3 smoke (prog_test_run is NOT supported for SK_MSG on 5.15 — use real
-   attach): attach `sk_msg` with `BPF_SK_MSG_VERDICT` to `sockhash` and `sock_ops`
-   to the cgroup, establish an eligible loopback flow (reuse the MER-48/49
-   harness), send bytes, and prove the redirect path ran (peer receives AND/OR
-   the redirect counter increments). A non-eligible flow (absent from sockhash)
-   sends bytes that arrive via the normal path with the redirect counter
-   unchanged (SK_PASS fall-through).
-6. `make ebpf` regenerates `skmsg_bpfel.{o,go}` (byte-identical on re-run); if
-   `meridian_consts.h` is touched (shared header), the consequent counter/tc*
-   object regenerations are committed (no stale drift).
-7. No regression: `make test-bpf`, `make test-integration`, `make
-   check-gate-skips` (0 skips / 0 failures across all 7 armed gates) stay green;
-   `git status` clean; `make check-commits` passes (MER-50 ref).
+1. `internal/control/store/memory.go`: in-memory `control.Store`. **Reconcile with
+   the EXISTING `control.Store` interface in `internal/control/doc.go`** (identity +
+   policy CRUD over `wire.Identity`/`wire.PolicyRule`/`wire.PolicyRuleKey`) — extend
+   that interface with the `Watch()` change-notify seam (channel or callback) for
+   MER-54; do NOT author a parallel divergent Store. ("service" in the REST surface
+   maps onto `wire.Identity`, which already carries `Name`.) Concurrency-safe;
+   immutable snapshots returned to callers (no shared mutable state).
+2. `internal/control/identity/registry.go`: allocates monotonic `uint32`
+   identities, **never reused within a process lifetime** (CC-3); ID 0 reserved
+   for unknown and never allocated; lookups by name↔ID are stable; allocation is
+   concurrency-safe.
+3. `internal/control/rest/server.go`: serves `POST`/`GET /policies`,
+   `POST`/`GET /services`, and `GET /status`; validates request bodies against a
+   schema and **fails closed** with a 4xx + structured error envelope on bad
+   input; success responses use a consistent envelope.
+4. `cmd/meridian-control/main.go`: starts the REST server on a `--listen` flag
+   (default e.g. `:8080`); clean startup/shutdown; no panics on SIGTERM.
+5. Unit tests (`server_test.go` + registry/store tests): ID-allocation invariants
+   (monotonic, no reuse across allocate/“delete”, ID 0 never handed out,
+   concurrency), REST 4xx on malformed/invalid bodies, and a happy-path CRUD
+   round-trip. Table-driven where natural.
+6. `go build ./...` clean; `go vet ./...` clean; `go test ./internal/control/...`
+   green (the existing CP-2 conformance + compiler tests must stay green);
+   depguard clean (no `bpf/`/agent imports from `internal/control`).
+7. After commit, `git status` is clean and `make check-commits` passes (MER-53 ref).
 
 Files Expected To Change:
-- bpf/sk_msg.c                       (redirect + fall-through + telemetry)
-- bpf/include/meridian_consts.h      (only if a dedicated redirect metric/mark const is added — shared header)
-- bpf/skmsg_bpfel.o / .go            (regenerated binding; + any objects forced by a consts.h change)
-- test/bpf/skmsg_test.go             (new — T2/T3 redirect-hit + miss-fallthrough smoke)
+- internal/control/doc.go                (extend existing Store with a Watch()/subscription seam — reconcile, don't duplicate)
+- internal/control/store/memory.go       (new — in-memory Store impl + Watch seam)
+- internal/control/store/memory_test.go  (new — CRUD + Watch unit tests)
+- internal/control/identity/registry.go  (new — monotonic uint32 allocator, CC-3)
+- internal/control/identity/registry_test.go (new — allocation invariants)
+- internal/control/rest/server.go        (new — REST handlers + validation)
+- internal/control/rest/server_test.go   (new — 4xx + CRUD round-trip)
+- cmd/meridian-control/main.go           (wire REST server + --listen flag)
 
 Required Tests:
-- `make ebpf`             → sk_msg compiles + loads verifier-clean; bindings byte-identical on re-run
-- `make test-bpf`         → new sk_msg smoke green + P1.1 matrix + P2.1-N gate still green
-- `make test-integration` → Phase-1 integration gates still green
-- `make check-gate-skips` → 0 skips, 0 failures across all 7 armed gates
-- `make check-commits`    → MER-50 commit-linkage satisfied
+- `go test ./internal/control/...` → new store/identity/rest tests green; CP-2 still green
+- `go build ./...`                 → meridian-control builds with --listen
+- `go vet ./...`                   → clean (depguard control-no-dataplane satisfied)
+- `make check-commits`             → MER-53 commit-linkage satisfied
 
 Commit Message:
-feat(ebpf): MER-50 sk_msg SOCKHASH redirect + SK_PASS fall-through (ADR-0007)
+feat(control): MER-53 CP-1 memory store + identity registry + REST skeleton
