@@ -31,9 +31,11 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-48 | `docs/PHASE2_TICKETS.md` | **CLOSED `77540ce`** — gated `sock_ops` SOCKHASH population (CC-5); `meridian_helpers.h` + D19. |
 | MER-49 | `docs/PHASE2_TICKETS.md` | **CLOSED `d0125c1`** — P2.1-N permanent SOCKMAP-negative gate armed (CC-5/eBPF R2); 7 armed gates, 0 skips. CC-5 locked in CI. |
 | MER-50 | `docs/PHASE2_TICKETS.md` | **CLOSED `c699887`** — `sk_msg` SOCKHASH redirect (`bpf_msg_redirect_hash`+`BPF_F_INGRESS`) + SK_PASS fall-through; smoke proves redirect-on-hit / fall-through-on-miss. SOCKHASH write+read path complete. |
-| MER-57 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** Agent cgroup + SOCKHASH attach path — moves `sock_ops`/`sk_msg` attach into the production agent. Unblocks MER-51 (P2.2 gate, which needs the agent owning the attach). |
-| MER-51, MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-57.** MER-51 (P2.2 integrity gate) ← {MER-50 ✅, MER-57}; MER-58 ← MER-57; MER-52 ← MER-51. |
-| MER-53 … MER-56 | `docs/PHASE2_TICKETS.md` | **READY** (Platform lane, off the eBPF critical path). MER-53 unblocked at entry; → MER-54 → MER-55 → MER-56 (CP-3 gate). |
+| MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
+| MER-51 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** P2.2 gate — runtime SOCKMAP byte-integrity (≥1 MiB) + denied-never-redirected. Unblocked (MER-50 ✅, MER-57 ✅); the runtime half of CC-5 (MER-49 is the static half). |
+| MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (Agent lane). Dep MER-57 ✅. `bpfobj.LoadSockOps`/`LoadSkMsg` already exist (MER-57); MER-58 adds the **restart-survives sockhash-reopen** test + schema-sentinel reconcile. |
+| MER-52 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-51.** P2.2-BENCH (nightly T4 latency). |
+| MER-53 … MER-56 | `docs/PHASE2_TICKETS.md` | **READY** (Platform lane, off the eBPF critical path). MER-53 → MER-54 → MER-55 → MER-56 (CP-3 gate). |
 
 ---
 
@@ -264,3 +266,26 @@ its AC requires the agent (not the test harness) to attach sock_ops/sk_msg.
 MER-57 unblocks MER-51 + MER-58. Outranks the parallel Platform lane (MER-53).
 Note: ARCHITECTURE D19 is taken (MER-48 helper boundary) — MER-57 records D20.
 `activeticket.md` holds the MER-57 spec.
+
+## Batch 2026-06-15b — TPM/Auditor run (HEAD 014bc2e)
+
+Findings: **MER-57 landed at `014bc2e`** — the production agent now attaches the
+SOCKMAP fast path: `CgroupSockOpsManager` (sock_ops → cgroup v2) +
+`SkMsgSockhashManager` (sk_msg → sockhash fd), behind `meridian-agent --cgroup`
+(disabled by default). Loaders live in `bpfobj` (sole `bpf/` opener) so the
+depguard wire-bpf-bridge boundary holds; attach managers take `*ebpf.Program`,
+never `bpf/`. ARCHITECTURE D20 recorded. Reviewed — idempotent attach/detach,
+production-path smoke proves a real redirect — **APPROVED**. 7 armed gates green,
+0 skips; `make ebpf` clean (Go+docs only).
+
+No new tickets: MER-51 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-51 — P2.2 GATE (SOCKMAP byte integrity +
+denied-never-redirected)**. Next critical-path item AND a gate; now unblocked
+(MER-50 ✅, MER-57 ✅). It is the RUNTIME half of CC-5 / Top-risk #2 (MER-49 is the
+static half): ≥1 MiB byte-exact transfer over the redirect path + DENY flows never
+complete via SOCKMAP. `activeticket.md` holds the MER-51 spec. Note for the
+implementer: the `bpftest` (tag `bpf`) helpers are not importable from
+`test/integration` (tag `integration`) — build the suite on `test/harness` + the
+production `bpfobj`/`attach` managers.

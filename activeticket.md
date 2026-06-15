@@ -1,74 +1,69 @@
 # Active Ticket
 
-ID: MER-57
+ID: MER-51
 
-Title: Agent cgroup + SOCKHASH attach path (production sock_ops / sk_msg)
+Title: P2.2 GATE — SOCKMAP byte integrity + denied-never-redirected (runtime CC-5 proof)
 
 Objective:
-Move the Phase-2 SOCKMAP attach out of test-only code and into the production
-agent. Today `sock_ops` (MER-48) and `sk_msg` (MER-50) are only ever attached by
-the bpf test harness; the running agent attaches nothing. This ticket adds an
-attach manager that loads the SockOps/SkMsg objects (sharing the agent's pinned
-maps) and attaches `sock_ops` to a cgroup v2 (`BPF_CGROUP_SOCK_OPS`) and `sk_msg`
-to the `sockhash` map fd (`BPF_SK_MSG_VERDICT`), wired into `meridian-agent`
-behind a new `--cgroup` flag. It is the dependency the P2.2 gate (MER-51) needs:
-that gate runs a two-pod-same-node transfer with the agent — not a test — owning
-the SOCKMAP attach.
+Arm the P2.2 gate: a T3 integration test proving the intra-node SOCKMAP fast path
+(1) moves application bytes correctly and (2) never redirects a denied flow at
+RUNTIME. MER-49 statically proves non-eligible verdicts never enter `sockhash`;
+MER-51 is the complementary *runtime* proof — with the agent's production
+managers (MER-57) actually attached, a real ≥1 MiB transfer over an eligible
+flow arrives byte-for-byte identical to a plain-TCP baseline, and flipping the
+flow's policy to DENY stops it completing via the redirect path. Together they
+close ROADMAP Top-risk #2 / eBPF R2 (silent mTLS/L7/policy bypass) as a standing
+merge blocker.
 
-Scope: attach plumbing + agent flag + smoke ONLY. Do NOT modify `sock_ops.c`,
-`sk_msg.c`, `meridian_helpers.h`, the frozen schema, or the existing TC attach
-path beyond additive wiring. Do not implement the MER-51 integrity gate here.
+This is a TEST + GATE-ARMING ticket. The datapath is already correct (MER-48/50)
+and attach is already productionized (MER-57); do NOT modify `sock_ops.c`,
+`sk_msg.c`, the attach managers, or any frozen schema. Do not fold in the MER-52
+latency benchmark.
 
 Dependencies:
-- MER-47 (DONE `70c52ad`): SockOps/SkMsg bpf2go bindings + `sockhash` map exist.
-- MER-48 (DONE `77540ce`) / MER-50 (DONE `c699887`): the programs being attached.
-- ADR-0007 (sock_ops sole writer / sk_msg sole reader of `sockhash`). The existing
-  `internal/agent/attach` package (`Manager` interface, `TCManager` clsact/tc
-  lifecycle) is the pattern to mirror — add a sibling, do not refactor `TCManager`.
+- MER-50 (DONE `c699887`): sk_msg redirect.
+- MER-57 (DONE `014bc2e`): production attach — use `bpfobj.LoadSockOps`/`LoadSkMsg`
+  + `attach.CgroupSockOpsManager`/`SkMsgSockhashManager` to attach (mirror
+  production, not ad-hoc test attach). NOTE: the MER-50/57 bpf-tag helpers live
+  in package `bpftest` (tag `bpf`) and are NOT importable from `test/integration`
+  (tag `integration`); this suite needs its own setup built on `test/harness` +
+  the production loaders/managers.
+- ADR-0007 (CC-5 gated insertion / sole reader). MER-49 is the static half of the
+  same invariant; MER-51 is the runtime half.
 
 Acceptance Criteria:
-1. New attach manager (`cgroup_linux.go` + `sockmap_linux.go`) loads the SockOps
-   and SkMsg objects with maps pinned under the agent pin dir (so `sockhash` /
-   `identity_map` / `policy_map` / `metrics_map` are the SAME instances the TC
-   datapath uses), then:
-   - attaches `sock_ops` to the cgroup v2 path via `BPF_CGROUP_SOCK_OPS`
-     (`link.AttachCgroup`), and
-   - attaches `sk_msg` to `sockhash.FD()` via `BPF_SK_MSG_VERDICT`
-     (`link.RawAttachProgram`).
-2. `EnsureAttached` is idempotent (re-running neither errors nor double-attaches);
-   `Detach` cleanly removes both attachments (`link.Close` / `RawDetachProgram`).
-3. `cmd/meridian-agent/main.go` gains a `--cgroup` flag; when set, the agent
-   attaches the SOCKMAP programs after the existing TC ingress/egress attach.
-   Absent `--cgroup`, SOCKMAP attach is skipped — **no behavior change** for
-   current TC-only deployments.
-4. T3 smoke (root, Linux): agent (or the manager directly) attaches with a real
-   cgroup v2 path + pinned `sockhash`; `sock_ops` and `sk_msg` are enumerable
-   (`bpftool prog show` or the cilium/ebpf info API); `EnsureAttached` twice is a
-   no-op; `Detach` removes both. Reuse `harness.RequireRoot` / `PinDir` /
-   `currentCgroupV2Path` conventions.
-5. ARCHITECTURE decision-log entry recorded at the next free number **D20**
-   (D19 is already taken by the MER-48 helper-boundary decision — do NOT reuse it)
-   for the agent SOCKMAP attach path.
-6. No regression: `go build ./...` clean; `make test-bpf`, `make test-integration`,
-   `make check-gate-skips` (0 skips / 0 failures across all 7 armed gates) stay
-   green; `make ebpf` leaves the tree clean (this ticket changes agent Go + docs
-   only — NO `bpf/*.c`/`.o` change).
-7. After commit, `git status` is clean and `make check-commits` passes (MER-57 ref).
+1. New `test/integration/sockmap_integrity_test.go` defines a stable
+   `TestSockmapIntegrityGate_MER51` (becomes the MER-44 manifest gate row).
+2. Two-endpoints-same-node topology with distinct identities (reuse the loopback
+   two-IP / netns pattern the MER-50/57 path uses); attach `sock_ops` + `sk_msg`
+   via the **production** bpfobj loaders + attach managers, not inline raw attach.
+3. **Byte integrity:** an eligible (`ALLOW + SOCKMAP_ELIGIBLE`) flow transfers
+   **≥1 MiB**; received bytes are byte-for-byte identical to sent (compare a hash
+   or full buffer). Prove correctness against a baseline plain-TCP transfer of the
+   same payload (no SOCKMAP attach) — no corruption, no truncation, no short read.
+4. **Denied never redirected (runtime):** with the eligible flow redirecting,
+   flip its policy to DENY (and/or evict from `sockhash`); assert subsequent sends
+   do NOT complete via the SOCKMAP redirect path (fall through or fail per stack),
+   and that a flow denied from the start never SOCKMAP-redirects
+   (`METRIC_FLOWS_REDIRECTED` does not move for it).
+5. Runs on the 5.15 target with **zero skips**; flip the P2.2 row in
+   `test/gates/manifest.txt` (`TestSockmapIntegrityGate_MER51`) `armed=no → yes`.
+6. `make check-gate-skips` reports 0 skips / 0 failures across all now-EIGHT armed
+   gates including P2.2.
+7. No regression: `make test-bpf`, `make test-integration` green; `make ebpf`
+   leaves the tree clean (test + manifest only — NO `bpf/*.c`/`.o` change);
+   `git status` clean; `make check-commits` passes (MER-51 ref).
 
 Files Expected To Change:
-- internal/agent/attach/cgroup_linux.go    (new — sock_ops → cgroup v2 attach manager)
-- internal/agent/attach/sockmap_linux.go   (new — sk_msg → sockhash BPF_SK_MSG_VERDICT attach)
-- internal/agent/attach/cgroup_test.go     (new — T3 idempotent attach/detach + enumeration smoke)
-- cmd/meridian-agent/main.go               (--cgroup flag; wire SOCKMAP attach after TC attach)
-- docs/ARCHITECTURE.md                      (D20 decision-log entry)
+- test/integration/sockmap_integrity_test.go (new — TestSockmapIntegrityGate_MER51)
+- test/gates/manifest.txt                    (P2.2 row armed=no → yes)
+- docs/PHASE2_GATES.md                        (P2.2 armed/green + committed evidence)
 
 Required Tests:
-- T3 smoke               → attach idempotent, both programs enumerated, Detach removes them
-- `go build ./...`       → agent builds with the new flag/manager
-- `make test-bpf`        → P1.1 + MER-48/49/50 still green (no regression)
-- `make test-integration`→ Phase-1 integration gates still green
-- `make check-gate-skips`→ 0 skips, 0 failures across all 7 armed gates
-- `make check-commits`   → MER-57 commit-linkage satisfied
+- `make test-integration` → TestSockmapIntegrityGate_MER51 green (1 MiB integrity + DENY-not-redirected)
+- `make check-gate-skips` → 0 skips, 0 failures across all 8 armed gates (incl. P2.2)
+- `make test-bpf`         → P1.1 + MER-48/49/50/57 still green (no regression)
+- `make check-commits`    → MER-51 commit-linkage satisfied
 
 Commit Message:
-feat(agent): MER-57 cgroup sock_ops + sockhash sk_msg attach path
+test(ebpf): MER-51 arm P2.2 gate — SOCKMAP byte integrity + denied-never-redirected
