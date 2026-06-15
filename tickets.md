@@ -30,7 +30,10 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-47 | `docs/PHASE2_TICKETS.md` | **CLOSED `70c52ad`** — Phase-2 contract: `sockhash` map + `sock_ops`/`sk_msg` no-op skeletons, ARCHITECTURE D18. |
 | MER-48 | `docs/PHASE2_TICKETS.md` | **CLOSED `77540ce`** — gated `sock_ops` SOCKHASH population (CC-5); `meridian_helpers.h` + D19. |
 | MER-49 | `docs/PHASE2_TICKETS.md` | **CLOSED `d0125c1`** — P2.1-N permanent SOCKMAP-negative gate armed (CC-5/eBPF R2); 7 armed gates, 0 skips. CC-5 locked in CI. |
-| MER-50 … MER-59 | `docs/PHASE2_TICKETS.md` | **IN PROGRESS.** Active: **MER-50** (`sk_msg` SOCKHASH redirect + SK_PASS fall-through) — the redirect consumer, now safe to build under the P2.1-N gate. MER-51/52/53/57/58 downstream per the Phase-2 dependency graph. |
+| MER-50 | `docs/PHASE2_TICKETS.md` | **CLOSED `c699887`** — `sk_msg` SOCKHASH redirect (`bpf_msg_redirect_hash`+`BPF_F_INGRESS`) + SK_PASS fall-through; smoke proves redirect-on-hit / fall-through-on-miss. SOCKHASH write+read path complete. |
+| MER-57 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** Agent cgroup + SOCKHASH attach path — moves `sock_ops`/`sk_msg` attach into the production agent. Unblocks MER-51 (P2.2 gate, which needs the agent owning the attach). |
+| MER-51, MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-57.** MER-51 (P2.2 integrity gate) ← {MER-50 ✅, MER-57}; MER-58 ← MER-57; MER-52 ← MER-51. |
+| MER-53 … MER-56 | `docs/PHASE2_TICKETS.md` | **READY** (Platform lane, off the eBPF critical path). MER-53 unblocked at entry; → MER-54 → MER-55 → MER-56 (CP-3 gate). |
 
 ---
 
@@ -241,3 +244,23 @@ the gate guaranteeing only eligible sockets are ever inserted. Note for the
 implementer (corrects the plan text): SOCKHASH redirect uses
 `bpf_msg_redirect_hash`, not `bpf_msg_redirect_map`; `sk_msg` has no SK_REDIRECT
 verdict. `activeticket.md` rewritten to MER-50.
+
+## Batch 2026-06-15a — TPM/Auditor run (HEAD c699887)
+
+Findings: **MER-50 landed at `c699887`** — `sk_msg` SOCKHASH redirect fast path:
+hit → `bpf_msg_redirect_hash` + `BPF_F_INGRESS`, miss → `SK_PASS` fall-through,
+redirect counter bounded per D13. Solved the verifier's unreleasable-socket-ref
+trap (arm `sk_redir` via the helper, always return SK_PASS) and validated the
+`remote_port >> 16` byte order via the redirect counter. Reviewed for ADR-0007
+(sole reader, fall-through) — **APPROVED**. SOCKHASH write (sock_ops) + read
+(sk_msg) path is now complete; 7 armed gates remain green, 0 skips.
+
+No new tickets: MER-51 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-57 — Agent cgroup + SOCKHASH attach path**. The
+critical-path P2.2 gate (MER-51) is now blocked ONLY on MER-57 (MER-50 done) —
+its AC requires the agent (not the test harness) to attach sock_ops/sk_msg.
+MER-57 unblocks MER-51 + MER-58. Outranks the parallel Platform lane (MER-53).
+Note: ARCHITECTURE D19 is taken (MER-48 helper boundary) — MER-57 records D20.
+`activeticket.md` holds the MER-57 spec.
