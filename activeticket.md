@@ -29,10 +29,13 @@ Dependencies:
   hook, so include a `Watch()`/subscription seam in the Store contract now.
 
 Acceptance Criteria:
-1. `internal/control/store/memory.go`: in-memory `control.Store` implementing
-   policy + service CRUD (create/get/list/delete) with a `Watch()` change-notify
-   seam (channel or callback) for MER-54. Concurrency-safe; immutable snapshots
-   returned to callers (no shared mutable state).
+1. `internal/control/store/memory.go`: in-memory `control.Store`. **Reconcile with
+   the EXISTING `control.Store` interface in `internal/control/doc.go`** (identity +
+   policy CRUD over `wire.Identity`/`wire.PolicyRule`/`wire.PolicyRuleKey`) — extend
+   that interface with the `Watch()` change-notify seam (channel or callback) for
+   MER-54; do NOT author a parallel divergent Store. ("service" in the REST surface
+   maps onto `wire.Identity`, which already carries `Name`.) Concurrency-safe;
+   immutable snapshots returned to callers (no shared mutable state).
 2. `internal/control/identity/registry.go`: allocates monotonic `uint32`
    identities, **never reused within a process lifetime** (CC-3); ID 0 reserved
    for unknown and never allocated; lookups by name↔ID are stable; allocation is
