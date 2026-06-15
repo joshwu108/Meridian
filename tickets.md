@@ -33,13 +33,39 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-50 | `docs/PHASE2_TICKETS.md` | **CLOSED `c699887`** — `sk_msg` SOCKHASH redirect (`bpf_msg_redirect_hash`+`BPF_F_INGRESS`) + SK_PASS fall-through; smoke proves redirect-on-hit / fall-through-on-miss. SOCKHASH write+read path complete. |
 | MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
-| MER-53 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** CP-1: in-memory `control.Store` + monotonic identity registry (CC-3) + REST skeleton. Head of the Platform lane — now the **critical path** to MER-59 (eBPF lane done). Pure Go, no eBPF dep. |
+| MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
 | MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
-| MER-54 … MER-56 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-53.** MER-54 (ADS server) → MER-55 (ADS stub) → MER-56 (CP-3 gate, a MER-59 join dep). |
+| MER-54 … MER-56 | `docs/PHASE2_TICKETS.md` | **MER-54 ACTIVE** (MER-53 ✅ unblocked it): ADS server version/nonce state machine + Watch-driven ordered push. MER-55 (ADS stub) → MER-56 (CP-3 gate, a MER-59 join dep) remain queued behind it. |
 
 ---
 
 <!-- Future Backlog Manager runs append new dated batches below this line. -->
+
+## Batch 2026-06-15d — TPM/Auditor run (HEAD 849f4a6)
+
+Findings: **MER-53 landed at `849f4a6`** — CP-1 control-plane core: `control.Store`
+extended with a coalescing `Watch()` seam (`internal/control/doc.go`); in-memory
+`store.Memory` (concurrency-safe, immutable value-copy snapshots, Watch teardown
+closes under the write lock so a send never races a close); `identity.Registry`
+(CC-3 monotonic uint32 allocator — ID 0 never handed out, idempotent by name, no
+reuse across Release); fail-closed `rest.Server` (`DisallowUnknownFields` +
+trailing-data rejection, 4xx structured envelope, server-side ID allocation, Go
+1.22 method-routed mux → auto-405); `meridian-control --listen` with graceful
+SIGINT/SIGTERM shutdown. `go test -race ./internal/control/...` green (incl. CP-2
+conformance); gofmt/vet clean; depguard `control-no-dataplane` satisfied
+(`pkg/wire` + stdlib + `internal/control` only). The **eBPF SOCKMAP lane and CP-1
+are both complete**; the critical path to MER-59 now runs MER-54 → MER-55 →
+MER-56 (CP-3 gate).
+
+No new tickets: MER-54 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-54 — ADS server (version/nonce state machine +
+ordered push)**, the next critical-path blocker and sole consumer of the MER-53
+`Watch()` seam. `activeticket.md` rewritten to MER-54. Note for the implementer:
+per the research-and-reuse rule, evaluate `github.com/envoyproxy/go-control-plane`
+before hand-rolling the xDS state machine; depguard still forbids `bpf/`/agent
+imports from `internal/control/ads`.
 
 ## Batch 2026-06-13 — Backlog Manager run (HEAD 36c0c5a)
 
