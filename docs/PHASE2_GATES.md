@@ -58,7 +58,7 @@ Enforcement layers:
 | Gate | Ticket | Armed | State | Evidence |
 |------|--------|-------|-------|----------|
 | P2.1-N | MER-49 | **yes** | **GREEN** | `TestSockmapNegativeGate_MER49` — DENY / L7-required / mTLS-required / REDIRECT / ALLOW-without-flag all absent from `sockhash`; eligible ALLOW present. Real loopback connect on Lima 5.15; `make check-gate-skips` 0 skips. |
-| P2.2 | MER-51 | no | pending | gated on MER-50/57 |
+| P2.2 | MER-51 | **yes** | **GREEN** | `TestSockmapIntegrityGate_MER51` — eligible flow transfers 1 MiB byte-for-byte identical (sha256) AND is redirected (`METRIC_FLOWS_REDIRECTED` rises); after flipping the flow to DENY a new connection is not redirected (counter flat) while its bytes still flow. Production attach (bpfobj + attach managers, MER-57) on Lima 5.15; `make check-gate-skips` 0 skips. |
 | P2.2-BENCH | MER-52 | no | pending | nightly T4 |
 | CP-3 | MER-56 | no | pending | gated on MER-55 |
 
