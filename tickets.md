@@ -32,10 +32,10 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-49 | `docs/PHASE2_TICKETS.md` | **CLOSED `d0125c1`** — P2.1-N permanent SOCKMAP-negative gate armed (CC-5/eBPF R2); 7 armed gates, 0 skips. CC-5 locked in CI. |
 | MER-50 | `docs/PHASE2_TICKETS.md` | **CLOSED `c699887`** — `sk_msg` SOCKHASH redirect (`bpf_msg_redirect_hash`+`BPF_F_INGRESS`) + SK_PASS fall-through; smoke proves redirect-on-hit / fall-through-on-miss. SOCKHASH write+read path complete. |
 | MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
-| MER-51 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** P2.2 gate — runtime SOCKMAP byte-integrity (≥1 MiB) + denied-never-redirected. Unblocked (MER-50 ✅, MER-57 ✅); the runtime half of CC-5 (MER-49 is the static half). |
-| MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (Agent lane). Dep MER-57 ✅. `bpfobj.LoadSockOps`/`LoadSkMsg` already exist (MER-57); MER-58 adds the **restart-survives sockhash-reopen** test + schema-sentinel reconcile. |
-| MER-52 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-51.** P2.2-BENCH (nightly T4 latency). |
-| MER-53 … MER-56 | `docs/PHASE2_TICKETS.md` | **READY** (Platform lane, off the eBPF critical path). MER-53 → MER-54 → MER-55 → MER-56 (CP-3 gate). |
+| MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
+| MER-53 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** CP-1: in-memory `control.Store` + monotonic identity registry (CC-3) + REST skeleton. Head of the Platform lane — now the **critical path** to MER-59 (eBPF lane done). Pure Go, no eBPF dep. |
+| MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
+| MER-54 … MER-56 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-53.** MER-54 (ADS server) → MER-55 (ADS stub) → MER-56 (CP-3 gate, a MER-59 join dep). |
 
 ---
 
@@ -289,3 +289,26 @@ complete via SOCKMAP. `activeticket.md` holds the MER-51 spec. Note for the
 implementer: the `bpftest` (tag `bpf`) helpers are not importable from
 `test/integration` (tag `integration`) — build the suite on `test/harness` + the
 production `bpfobj`/`attach` managers.
+
+## Batch 2026-06-15c — TPM/Auditor run (HEAD f7642c9)
+
+Findings: **MER-51 landed at `f7642c9`** — P2.2 gate armed and green: an eligible
+flow transfers 1 MiB byte-for-byte (sha256) over the SOCKMAP redirect path
+(METRIC_FLOWS_REDIRECTED rises) and a denied flow never redirects (counter flat)
+while its bytes still flow normally. `make check-gate-skips` now reports 0 skips
+across all EIGHT armed gates. With MER-49 (static) + MER-51 (runtime), the CC-5
+invariant / ROADMAP Top-risk #2 is locked in CI from both sides.
+
+**The Phase-2 eBPF SOCKMAP lane (MER-47/48/49/50/51/57) is COMPLETE.** The
+critical path to the Phase-2 exit (MER-59 ← {49 ✅, 51 ✅, 56, 52}) now runs through
+the Platform lane: MER-53 → MER-54 → MER-55 → MER-56 (CP-3 gate).
+
+No new tickets: MER-52 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-53 — CP-1 (memory store + identity registry + REST
+skeleton)**. Head of the now-critical Platform lane and a foundation for the CP-3
+gate (MER-56) that MER-59 needs. Pure-Go T1 (no Lima). Note for the implementer:
+the `control.Store` interface already exists in `internal/control/doc.go` (package
+`control`) — reconcile with it (don't duplicate); include a `Watch()` change-notify
+seam that MER-54's ADS push will consume. `activeticket.md` holds the MER-53 spec.

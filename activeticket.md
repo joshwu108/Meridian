@@ -1,69 +1,72 @@
 # Active Ticket
 
-ID: MER-51
+ID: MER-53
 
-Title: P2.2 GATE — SOCKMAP byte integrity + denied-never-redirected (runtime CC-5 proof)
+Title: CP-1 slice — control-plane memory store + identity registry + REST skeleton
 
 Objective:
-Arm the P2.2 gate: a T3 integration test proving the intra-node SOCKMAP fast path
-(1) moves application bytes correctly and (2) never redirects a denied flow at
-RUNTIME. MER-49 statically proves non-eligible verdicts never enter `sockhash`;
-MER-51 is the complementary *runtime* proof — with the agent's production
-managers (MER-57) actually attached, a real ≥1 MiB transfer over an eligible
-flow arrives byte-for-byte identical to a plain-TCP baseline, and flipping the
-flow's policy to DENY stops it completing via the redirect path. Together they
-close ROADMAP Top-risk #2 / eBPF R2 (silent mTLS/L7/policy bypass) as a standing
-merge blocker.
+Stand up the control-plane core that the ADS lane (MER-54 server → MER-55 stub →
+MER-56 CP-3 gate → MER-59 Phase-2 EXIT) builds on. This is the first
+control-plane ticket beyond the Phase-1 policy compiler (CP-2): an in-memory
+`control.Store`, a monotonic identity registry (CC-3), and a REST surface that
+accepts policy/service definitions and reports status. Pure distributed-systems
+Go — no eBPF, no kernel, no agent internals; it parallels the eBPF lane and is
+verifiable with `go test` (no VM required).
 
-This is a TEST + GATE-ARMING ticket. The datapath is already correct (MER-48/50)
-and attach is already productionized (MER-57); do NOT modify `sock_ops.c`,
-`sk_msg.c`, the attach managers, or any frozen schema. Do not fold in the MER-52
-latency benchmark.
+Stay in scope: store + identity + REST + the `meridian-control` entrypoint and
+their unit tests. Do NOT start the ADS gRPC server (MER-54) or touch the eBPF /
+agent / frozen-schema code. The compiled-policy wire types live in `pkg/wire`
+(reuse them); the policy compiler already exists in `internal/control`.
 
 Dependencies:
-- MER-50 (DONE `c699887`): sk_msg redirect.
-- MER-57 (DONE `014bc2e`): production attach — use `bpfobj.LoadSockOps`/`LoadSkMsg`
-  + `attach.CgroupSockOpsManager`/`SkMsgSockhashManager` to attach (mirror
-  production, not ad-hoc test attach). NOTE: the MER-50/57 bpf-tag helpers live
-  in package `bpftest` (tag `bpf`) and are NOT importable from `test/integration`
-  (tag `integration`); this suite needs its own setup built on `test/harness` +
-  the production loaders/managers.
-- ADR-0007 (CC-5 gated insertion / sole reader). MER-49 is the static half of the
-  same invariant; MER-51 is the runtime half.
+- Phase-2 entry: MER-34 green (SATISFIED). No other open-ticket dependency.
+- Binding contracts: CC-3 (control plane is the SOLE allocator of the cluster
+  uint32 identity space — monotonic, never reused within a process lifetime,
+  ID 0 reserved for unknown). depguard `control-no-dataplane`: `internal/control`
+  must NOT import `bpf/` or `internal/agent/*` — stay control-plane + `pkg/wire`.
+- `control.Store` interface: define it here (with `internal/control/store`) if it
+  does not yet exist; MER-54's `Watch()`-driven push depends on a change-notify
+  hook, so include a `Watch()`/subscription seam in the Store contract now.
 
 Acceptance Criteria:
-1. New `test/integration/sockmap_integrity_test.go` defines a stable
-   `TestSockmapIntegrityGate_MER51` (becomes the MER-44 manifest gate row).
-2. Two-endpoints-same-node topology with distinct identities (reuse the loopback
-   two-IP / netns pattern the MER-50/57 path uses); attach `sock_ops` + `sk_msg`
-   via the **production** bpfobj loaders + attach managers, not inline raw attach.
-3. **Byte integrity:** an eligible (`ALLOW + SOCKMAP_ELIGIBLE`) flow transfers
-   **≥1 MiB**; received bytes are byte-for-byte identical to sent (compare a hash
-   or full buffer). Prove correctness against a baseline plain-TCP transfer of the
-   same payload (no SOCKMAP attach) — no corruption, no truncation, no short read.
-4. **Denied never redirected (runtime):** with the eligible flow redirecting,
-   flip its policy to DENY (and/or evict from `sockhash`); assert subsequent sends
-   do NOT complete via the SOCKMAP redirect path (fall through or fail per stack),
-   and that a flow denied from the start never SOCKMAP-redirects
-   (`METRIC_FLOWS_REDIRECTED` does not move for it).
-5. Runs on the 5.15 target with **zero skips**; flip the P2.2 row in
-   `test/gates/manifest.txt` (`TestSockmapIntegrityGate_MER51`) `armed=no → yes`.
-6. `make check-gate-skips` reports 0 skips / 0 failures across all now-EIGHT armed
-   gates including P2.2.
-7. No regression: `make test-bpf`, `make test-integration` green; `make ebpf`
-   leaves the tree clean (test + manifest only — NO `bpf/*.c`/`.o` change);
-   `git status` clean; `make check-commits` passes (MER-51 ref).
+1. `internal/control/store/memory.go`: in-memory `control.Store` implementing
+   policy + service CRUD (create/get/list/delete) with a `Watch()` change-notify
+   seam (channel or callback) for MER-54. Concurrency-safe; immutable snapshots
+   returned to callers (no shared mutable state).
+2. `internal/control/identity/registry.go`: allocates monotonic `uint32`
+   identities, **never reused within a process lifetime** (CC-3); ID 0 reserved
+   for unknown and never allocated; lookups by name↔ID are stable; allocation is
+   concurrency-safe.
+3. `internal/control/rest/server.go`: serves `POST`/`GET /policies`,
+   `POST`/`GET /services`, and `GET /status`; validates request bodies against a
+   schema and **fails closed** with a 4xx + structured error envelope on bad
+   input; success responses use a consistent envelope.
+4. `cmd/meridian-control/main.go`: starts the REST server on a `--listen` flag
+   (default e.g. `:8080`); clean startup/shutdown; no panics on SIGTERM.
+5. Unit tests (`server_test.go` + registry/store tests): ID-allocation invariants
+   (monotonic, no reuse across allocate/“delete”, ID 0 never handed out,
+   concurrency), REST 4xx on malformed/invalid bodies, and a happy-path CRUD
+   round-trip. Table-driven where natural.
+6. `go build ./...` clean; `go vet ./...` clean; `go test ./internal/control/...`
+   green (the existing CP-2 conformance + compiler tests must stay green);
+   depguard clean (no `bpf/`/agent imports from `internal/control`).
+7. After commit, `git status` is clean and `make check-commits` passes (MER-53 ref).
 
 Files Expected To Change:
-- test/integration/sockmap_integrity_test.go (new — TestSockmapIntegrityGate_MER51)
-- test/gates/manifest.txt                    (P2.2 row armed=no → yes)
-- docs/PHASE2_GATES.md                        (P2.2 armed/green + committed evidence)
+- internal/control/store/store.go        (new — control.Store interface + types, if absent)
+- internal/control/store/memory.go       (new — in-memory Store + Watch seam)
+- internal/control/store/memory_test.go  (new — CRUD + Watch unit tests)
+- internal/control/identity/registry.go  (new — monotonic uint32 allocator, CC-3)
+- internal/control/identity/registry_test.go (new — allocation invariants)
+- internal/control/rest/server.go        (new — REST handlers + validation)
+- internal/control/rest/server_test.go   (new — 4xx + CRUD round-trip)
+- cmd/meridian-control/main.go           (wire REST server + --listen flag)
 
 Required Tests:
-- `make test-integration` → TestSockmapIntegrityGate_MER51 green (1 MiB integrity + DENY-not-redirected)
-- `make check-gate-skips` → 0 skips, 0 failures across all 8 armed gates (incl. P2.2)
-- `make test-bpf`         → P1.1 + MER-48/49/50/57 still green (no regression)
-- `make check-commits`    → MER-51 commit-linkage satisfied
+- `go test ./internal/control/...` → new store/identity/rest tests green; CP-2 still green
+- `go build ./...`                 → meridian-control builds with --listen
+- `go vet ./...`                   → clean (depguard control-no-dataplane satisfied)
+- `make check-commits`             → MER-53 commit-linkage satisfied
 
 Commit Message:
-test(ebpf): MER-51 arm P2.2 gate — SOCKMAP byte integrity + denied-never-redirected
+feat(control): MER-53 CP-1 memory store + identity registry + REST skeleton
