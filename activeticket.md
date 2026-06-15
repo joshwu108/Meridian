@@ -24,9 +24,11 @@ Dependencies:
   uint32 identity space — monotonic, never reused within a process lifetime,
   ID 0 reserved for unknown). depguard `control-no-dataplane`: `internal/control`
   must NOT import `bpf/` or `internal/agent/*` — stay control-plane + `pkg/wire`.
-- `control.Store` interface: define it here (with `internal/control/store`) if it
-  does not yet exist; MER-54's `Watch()`-driven push depends on a change-notify
-  hook, so include a `Watch()`/subscription seam in the Store contract now.
+- `control.Store` interface ALREADY EXISTS in `internal/control/doc.go` (package
+  `control`, identity + policy CRUD over `wire` types). Reconcile with it — do NOT
+  define a second `control.Store`. MER-54's `Watch()`-driven push depends on a
+  change-notify hook, so EXTEND the existing interface with a `Watch()`/subscription
+  seam now; the in-memory impl lives under `internal/control/store`.
 
 Acceptance Criteria:
 1. `internal/control/store/memory.go`: in-memory `control.Store`. **Reconcile with
@@ -56,8 +58,8 @@ Acceptance Criteria:
 7. After commit, `git status` is clean and `make check-commits` passes (MER-53 ref).
 
 Files Expected To Change:
-- internal/control/store/store.go        (new — control.Store interface + types, if absent)
-- internal/control/store/memory.go       (new — in-memory Store + Watch seam)
+- internal/control/doc.go                (extend existing Store with a Watch()/subscription seam — reconcile, don't duplicate)
+- internal/control/store/memory.go       (new — in-memory Store impl + Watch seam)
 - internal/control/store/memory_test.go  (new — CRUD + Watch unit tests)
 - internal/control/identity/registry.go  (new — monotonic uint32 allocator, CC-3)
 - internal/control/identity/registry_test.go (new — allocation invariants)
