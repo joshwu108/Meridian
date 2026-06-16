@@ -1,72 +1,63 @@
 # Active Ticket
 
-ID: MER-59
+ID: MER-68
 
-Title: EXIT GATE — Phase-2 doc reconciliation + Phase-3 entry rule
+Title: Make `check-gate-skips` deterministic — reap kernel state between privileged gates
 
 Objective:
-Close Phase 2. Reconcile the documentation to the as-built state, record a single
-green-evidence run for every Phase-2 gate, declare Phase 2 complete, and state the
-Phase-3 entry rule. This is the EXIT gate: all join deps are now satisfied
-(MER-49 ✅ P2.1-N, MER-51 ✅ P2.2, MER-56 ✅ CP-3, MER-52 ✅ P2.2-BENCH). Pure docs +
-a verification run — no production code. Verify gates are GENUINELY green before
-declaring (cite a real Lima 5.15 / CI run; do not assert green on stale evidence).
+Fix the gate-verification harness so the "0 skips / 0 failures across the 9 armed
+gates" certification is **reproducible** on Lima 5.15. Today `make check-gate-skips`
+is non-deterministic for the `bpf`/`integration` gates: it runs each gate as a
+separate `go test` process but never reaps the kernel state the datapath
+deliberately persists across exit (pinned maps, TC filters, cgroup attachments,
+TPROXY rules — ARCHITECTURE lifecycle "Shutdown deliberately leaves…"), so
+back-to-back gate processes inherit and collide on leftover state. This is the
+**blocker of the truthful MER-59 Phase-2 EXIT**: the exit gate cannot cite a
+reproducible/CI-confirmed green run until the harness is deterministic. The gates
+themselves are genuinely green (canonical isolated targets pass reliably).
 
-Stay in scope: `docs/PHASE2_GATES.md`, `README.md`, `ROADMAP.md`,
-`docs/ARCHITECTURE.md`. Do NOT modify production code, arm/disarm gates, or start
-Phase-3 work. The ADS architecture decision (D21) is tracked separately by MER-67
-(open, off critical path) — reference it as a known follow-up; do NOT block Phase-2
-exit on it.
+Stay in scope: the `checkgateskips` tool (and, if needed, the `check-gate-skips`
+make target / a small harness helper). Do NOT change production datapath/agent
+code — the persist-on-shutdown behavior is intentional (chaos-survival). Do NOT
+weaken skip detection (MER-44 rule). Do NOT start MER-59 or touch its in-flight
+WIP docs (README/ROADMAP/PHASE2_GATES edits in the working tree belong to MER-59).
 
 Dependencies:
-- MER-49 (P2.1-N) `d0125c1`, MER-51 (P2.2) `f7642c9`, MER-56 (CP-3) `2898a75`,
-  MER-52 (P2.2-BENCH) `17bc526` — all CLOSED. All four MER-59 joins satisfied.
-- ADR-0004 (frozen map schema) must be unchanged — the Phase-3 entry rule asserts it.
-- Verification: run the full armed-gate suite on the Lima `meridian` VM (5.15) —
-  `make test-bpf`, `make test-integration`, `make check-gate-skips` (0 skips across
-  the 9 armed gates) — and the nightly `make test-e2e` for the bench. Cite the real
-  result. (Lima recipe: `GOMODCACHE=/Users/joshuawu/go/pkg/mod GOFLAGS=-mod=mod
-  GOPROXY=off`, the VM has no network.)
+- None for the fix (gates are green via canonical targets `make test-bpf` /
+  `make test-integration`, both exit 0 on Lima 5.15 with `-parallel 1`).
+- BLOCKS MER-59 (Phase-2 EXIT). After this lands, MER-59 finalizes citing a clean
+  `check-gate-skips` run + CI link, and references MER-68 by ID.
+- Runtime: verify on the Lima `meridian` VM (5.15), network-off recipe
+  `GOMODCACHE=/Users/joshuawu/go/pkg/mod GOFLAGS=-mod=mod GOPROXY=off`.
 
 Acceptance Criteria:
-1. `docs/PHASE2_GATES.md`: the "Gate status" table lists **every** Phase-2 gate
-   with its real evidence — P2.1-N (MER-49), P2.2 (MER-51), CP-3 (MER-56) all
-   **GREEN, armed=yes, 0 skips** with the Lima 5.15 / CI run cited; P2.2-BENCH
-   (MER-52) recorded as a **nightly non-gate** with its honest result ("no win on
-   5.15.0-179: p50 +6.3%, p99 +281.7%", redirect engaged) — not green-washed.
-2. `README.md`: Status line updated to **"Phase 2 — complete (MER-59 exit)"** with
-   a one-line summary (SOCKMAP redirect + CC-5 fail-closed gates + ADS/CP-3).
-3. `ROADMAP.md`: the week-4 / Phase-2 **exit criteria checked off** — "denied flow
-   never SOCKMAP-redirected" (MER-49 static + MER-51 runtime) and
-   "policy-change-to-stub < 500 ms" (MER-56, measured ~1.3 ms). The Phase 2→3
-   entry-gate row reflects MER-59 green.
-4. `docs/ARCHITECTURE.md`: confirm **D18–D20** are recorded as-built (they are —
-   verify they match shipped behavior); add a one-line pointer that the ADS
-   server's decision (**D21**) is pending under MER-67 (interim xDS encoding,
-   CC-2-pending), so the gap is explicit, not silent. **Also record the as-built
-   SOCKMAP rationale honestly:** MER-52 measured **no intra-node latency win on
-   5.15 (p50 +6.3%, p99 +281.7% — a regression)**, so the SOCKMAP redirect path's
-   justification is **correctness / mTLS-offload-readiness, not latency**; note
-   this reconciles ROADMAP Top-risk #2 / CC-5 framing (a security-gated capability,
-   not a proven perf fast path on this kernel) and flag re-benchmarking on newer
-   kernels as future work.
-5. **Phase-3 entry rule stated** (in ROADMAP and/or PHASE2_GATES): Phase 3 may
-   start when **MER-59 is green AND ADR-0004 frozen schemas are unchanged**;
-   reference the Phase-3 first gates (A-2/A-3).
-6. No production code touched; `go build ./...` / `go vet ./...` unaffected;
-   `make check-commits` passes (MER-59 ref); `git status` clean after commit.
+1. `make check-gate-skips` is **deterministic on Lima 5.15**: green across **≥10
+   consecutive runs** (and when a prior privileged suite has just run), all 9 armed
+   gates reporting 0 skips / 0 failures — no order- or accumulation-dependent flake.
+2. The fix **resets kernel state between privileged (`bpf`/`integration`) gate
+   invocations** — e.g. `checkgateskips` shells the existing `make test-clean`
+   (reap netns + `rm -rf /sys/fs/bpf/meridian-test`) before each privileged gate,
+   and/or serializes privileged gates and pins each under a unique bpffs dir.
+   Pure-Go gates skip the cleanup (no needless work).
+3. Skip-integrity preserved (MER-44): the tool still **fails closed** on a genuine
+   `t.Skip` or a genuine test failure — the cleanup must not mask a real red gate.
+   Add/adjust a unit test for the tool's classification if practical.
+4. No production datapath/agent/eBPF code changed; ADR-0004 frozen schema untouched.
+5. `go build ./...` / `go vet ./...` clean; `make test-bpf` / `make test-integration`
+   still green on Lima; `go mod tidy` no diff.
+6. After commit, `git status` shows only the unrelated MER-59 WIP docs (do NOT
+   commit those here); `make check-commits` passes (MER-68 ref).
 
 Files Expected To Change:
-- docs/PHASE2_GATES.md     (fill the gate-status table: P2.2 + CP-3 GREEN evidence; BENCH as nightly non-gate)
-- README.md               (Status → Phase 2 complete)
-- ROADMAP.md              (check off week-4 exit criteria; Phase 2→3 entry row)
-- docs/ARCHITECTURE.md    (confirm D18–D20 as-built; pointer to D21/MER-67 pending)
+- test/tools/checkgateskips/main.go      (reap state between privileged gates / serialize)
+- test/tools/checkgateskips/*_test.go    (optional — assert fail-closed on real skip/fail)
+- Makefile                                (optional — if cleanup is wired at the target level)
 
 Required Tests:
-- `make test-bpf` / `make test-integration` / `make check-gate-skips` (Lima 5.15) → 9 armed gates green, 0 skips (evidence for PHASE2_GATES.md)
-- `make test-e2e` (Lima 5.15) → bench runs, result recorded (already committed `17bc526`)
-- `go build ./...` / `go vet ./...` → unaffected (docs-only change)
-- `make check-commits` → MER-59 commit-linkage satisfied
+- `for i in $(seq 10); do make check-gate-skips; done` on Lima 5.15 → green every run, 0 skips/0 failures
+- `make test-bpf` / `make test-integration` (Lima) → still green (no regression)
+- `go build ./...` / `go vet ./...` → clean
+- `make check-commits` → MER-68 commit-linkage satisfied
 
 Commit Message:
-docs(phase2): MER-59 Phase-2 EXIT — gate reconciliation + Phase-3 entry rule
+fix(gates): MER-68 deterministic check-gate-skips — reap kernel state between privileged gates
