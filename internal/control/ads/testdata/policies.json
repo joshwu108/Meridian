@@ -1,0 +1,5 @@
+[
+  {"Key":{"SrcIdentity":1,"DstIdentity":2,"DstPort":443,"Protocol":6,"Direction":0},"Verdict":{"Action":0,"Flags":1}},
+  {"Key":{"SrcIdentity":3,"DstIdentity":4,"DstPort":53,"Protocol":17,"Direction":1},"Verdict":{"Action":1,"Flags":0}},
+  {"Key":{"SrcIdentity":5,"DstIdentity":6,"DstPort":8080,"Protocol":6,"Direction":0},"Verdict":{"Action":2,"Flags":2}}
+]
