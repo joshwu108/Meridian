@@ -48,7 +48,9 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
 | MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
 | MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
-| MER-55 … MER-56 | `docs/PHASE2_TICKETS.md` | **MER-55 ACTIVE** (MER-54 ✅ unblocked it): ADS agent stub (in-memory xDS client over loopback gRPC). MER-56 (CP-3 gate, a MER-59 join dep) remains queued behind it. |
+| MER-55 | `docs/PHASE2_TICKETS.md` | **CLOSED `fe453b5`** — ADS agent stub (`StubAgent`): subscribes over loopback gRPC, decodes the Cluster-channel `BytesValue`→JSON `[]wire.PolicyRule` contract, ACKs on success / NACKs on contract violation (version reverted, config not adopted), concurrency-safe `Snapshot()`, reconnect via fresh `Run`. bufconn + decode-table tests green (`-race`); depguard clean. |
+| MER-56 | `docs/PHASE2_TICKETS.md` | **ACTIVE** (MER-55 ✅ unblocked it): **CP-3 GATE** — ADS conformance suite + REST→stub <500 ms propagation; arms manifest `armed=yes` (→9 armed gates). A MER-59 EXIT join dep — the last critical-path item before Phase-2 exit. |
+| MER-67 | this file | **OPEN — P3/LOW, off critical path.** ARCHITECTURE D21 for the MER-54 ADS server + flag interim xDS encoding as CC-2-pending. Dep MER-54 ✅; does not block MER-56/59. |
 
 ---
 
@@ -379,3 +381,35 @@ ACK → reconnect. Pure-Go T1 (no Lima). Note for the implementer: the MER-54 se
 encodes policy as JSON-in-`wrapperspb.BytesValue` on the Cluster channel only — the
 stub must decode that exact contract and NACK on a contract violation (e.g. wrong
 type_url payload or undecodable resource). `activeticket.md` holds the MER-55 spec.
+
+## Batch 2026-06-16b — TPM/Auditor run (HEAD fe453b5)
+
+Findings: **MER-55 landed at `fe453b5`** — ADS agent stub (`StubAgent`): opens one
+`StreamAggregatedResources`, subscribes to all types, decodes the MER-54 contract
+(Cluster-channel `wrapperspb.BytesValue`→JSON `[]wire.PolicyRule`; other channels
+versioned-but-empty), ACKs on success / **NACKs** on a contract violation
+(error_detail set, version reverted to last-accepted, rejected config never
+adopted — CC-5 mirrored client-side), exposes a concurrency-safe deep-copy
+`Snapshot()`, reconnects via a fresh `Run`. Reviewed — bufconn tests cover
+initial+update, reconnect-re-receives-offline-change (clean Run return = no
+goroutine leak), NACK-via-fake-server, and a 7-case `decodeSnapshot` table;
+`go test -race ./internal/control/...` 5/5 green incl MER-53/54/CP-2; depguard
+clean; `go mod tidy` stable (no new deps). **APPROVED.**
+
+**MER-67 (ADS D21 ADR) was generated last interval (`f25aa43`)** and is correctly
+P3/LOW + off critical path — it does not block the CP-3 gate or Phase-2 exit.
+`Next free ID` is now **MER-68**.
+
+Selected next ticket: **MER-56 — CP-3 GATE (ADS conformance + <500 ms
+propagation)**. Highest priority: it is BOTH the next critical-path blocker AND a
+gate ticket (outranks the P3 MER-67 doc and the off-path MER-52/58 leaves). It is
+the final MER-59 EXIT join dep on the Platform lane and the first end-to-end wiring
+of REST (MER-53) → store → ADS server (MER-54) → stub (MER-55). Pure-Go T1 (no
+Lima). `activeticket.md` rewritten to MER-56. Implementer notes: (1) drive the
+MER-55 stub against the MER-54 server over bufconn through initial / add / delete /
+NACK-recovery / out-of-order-nonce-ignore / reconnect; (2) the <500 ms propagation
+must be measured with a polling WaitUntil, NOT time.Sleep; (3) the out-of-order
+nonce sub-case may need a raw client stream (the stub always answers the latest
+push) — assert the server ignores a stale nonce with no state change; (4) flip the
+manifest CP-3 row `no`→`yes` and confirm `make check-gate-skips` = 0 skips across
+all 9 armed gates; the conformance test must never `t.Skip` (pure Go, always runs).

@@ -1,74 +1,72 @@
 # Active Ticket
 
-ID: MER-55
+ID: MER-56
 
-Title: ADS agent stub — in-memory xDS client over loopback gRPC
+Title: CP-3 GATE — ADS conformance suite + REST→stub <500 ms propagation
 
 Objective:
-Build the agent-side ADS client *stub* that speaks the xDS handshake against the
-MER-54 server: connect over loopback gRPC, subscribe to the resource types,
-decode the pushed resources, ACK what it accepts, and NACK on a contract
-violation. This is the counterparty the CP-3 conformance gate (MER-56) drives
-through connect → receive → ACK → reconnect, and the first end-to-end exercise
-of the server's version/nonce loop. Pure distributed-systems Go — no eBPF, no
-kernel, no real agent internals; verifiable with `go test` (no VM).
+Arm the CP-3 gate: a permanent, always-on conformance suite that drives the
+MER-55 stub against the MER-54 ADS server through the full xDS lifecycle, plus an
+end-to-end propagation proof that a REST `POST /policies` reaches the stub as
+updated compiled resources in **under 500 ms**. This is the third Phase-2 gate
+(after P2.1-N and P2.2) and a MER-59 EXIT join dependency — the last critical-path
+item on the Platform lane. It is the first wiring of the whole control-plane
+spine: REST (MER-53) → `control.Store` → ADS server (MER-54) → stub (MER-55).
+Pure distributed-systems Go — no eBPF, no kernel, no VM; runs in plain `go test`.
 
-Stay in scope: the stub client, its decode/ACK/NACK logic, a debug snapshot
-accessor, and unit tests. Do NOT build the CP-3 conformance gate (MER-56), arm
-any manifest gate, or touch the eBPF / agent-datapath / frozen-schema code.
-Reuse the MER-54 server, `internal/control`, and `pkg/wire`; the stub lives
-beside the server in `internal/control/ads` and may use unexported server
-helpers/constants (e.g. the type URLs, the payload contract).
+Stay in scope: the conformance test, its regression seed data, and arming the
+manifest row. Do NOT modify the ADS server/stub/REST production code except a
+minimal, justified seam if the wiring genuinely requires it (prefer using the
+existing public constructors). Do NOT start MER-59 (EXIT) or the MER-67 ADR.
 
 Dependencies:
-- MER-54 (ADS server: version/nonce state machine + ordered push) — CLOSED
-  `0ff966d`. The stub connects to its `StreamAggregatedResources`.
-- Binding contract: the MER-54 server encodes Meridian policy as a
-  JSON-marshalled `[]wire.PolicyRule` packed in a `wrapperspb.BytesValue` Any on
-  the **Cluster** channel only (other channels are versioned-but-empty). The stub
-  MUST decode that exact contract and MUST **NACK** (send `error_detail`, do not
-  advance accepted version) on a contract violation — undecodable resource,
-  wrong/foreign payload, or a resource on a channel it cannot interpret.
-- depguard `control-no-dataplane`: `internal/control/ads` must NOT import `bpf/`
-  or `internal/agent/*` — stay control-plane + `pkg/wire` + grpc/xDS only.
+- MER-55 (ADS agent stub) — CLOSED `fe453b5`. MER-54 (ADS server) — CLOSED
+  `0ff966d`. MER-53 (REST + store) — CLOSED `849f4a6`. All three are wired here.
+- Gate integrity (MER-44): the manifest row may flip to `armed=yes` ONLY when the
+  suite is green with **zero skips**; the conformance test must never `t.Skip`
+  (it is pure Go and always runnable — no root/kernel/VM guard applies).
+- depguard `control-no-dataplane`: the test stays control-plane + `pkg/wire` +
+  grpc/xDS; no `bpf/` or `internal/agent/*`.
 
 Acceptance Criteria:
-1. `internal/control/ads/stub_agent.go`: a `StubAgent` that, given a gRPC
-   `ClientConn` (or an ADS client), opens `StreamAggregatedResources`, subscribes
-   to the resource types (initial empty-nonce requests), and runs a receive loop.
-2. On each received `DiscoveryResponse`: decode the resources per the MER-54
-   contract; on success send a well-formed **ACK** (echo `version_info` +
-   `response_nonce`, no `error_detail`); on a decode/contract failure send a
-   **NACK** (`error_detail` set, `version_info` reverted to last-accepted) and
-   keep the stream alive. ACK/NACK nonce handling mirrors the server's
-   expectations so the server's `classify` settles correctly.
-3. The stub exposes the last-accepted snapshot for inspection (e.g. a
-   concurrency-safe `Snapshot()` returning the decoded `[]wire.PolicyRule` +
-   accepted version) and logs received snapshots for debugging. No data races.
-4. Clean teardown: the receive loop exits on context cancel / stream EOF without
-   leaking goroutines; a `Close()`/cancel path is provided.
-5. Unit tests (`stub_agent_test.go`): drive the stub against a real MER-54 server
-   over `bufconn` through **connect → receive initial → ACK → store change →
-   receive update → ACK**, and a **reconnect** cycle (new stream re-subscribes
-   and re-receives current state). Include at least one **NACK-on-contract-
-   violation** case (server pushes something the stub rejects, or assert the
-   NACK path via a contract-violating payload) and assert the stub surfaces the
-   decoded policy. Table-driven where natural.
+1. `internal/control/ads/conformance_test.go` defines `TestADSConformanceGate_MER56`
+   driving the stub↔server over `bufconn` through, at minimum:
+   a. **initial snapshot** — stub receives + ACKs the seeded policy set;
+   b. **policy add** — `store.PutPolicy` (or REST POST) propagates a new rule;
+   c. **policy delete** — `store.DeletePolicy` propagates removal;
+   d. **NACK recovery** — after a NACK, the server holds last-known-good and a
+      subsequent valid change still propagates (stream stays healthy);
+   e. **out-of-order / stale nonce ignored** — a stale-nonce request causes no
+      server state change (use a raw client stream for this sub-case, since the
+      stub only ever answers the latest push);
+   f. **reconnect with last-known version** — a fresh stream re-subscribes and
+      re-receives current state (including changes made while disconnected).
+2. **<500 ms propagation:** wire the MER-53 `rest.Server` (httptest) + shared
+   `control.Store` + MER-54 ADS server + MER-55 stub; `POST /policies`, then
+   assert the stub's `Snapshot()` reflects the new rule within **500 ms**,
+   measured by polling (a `waitUntil(deadline, cond)` helper), **not** `time.Sleep`.
+3. `test/gates/manifest.txt`: flip the CP-3 row from `armed=no` to `armed=yes`
+   (`yes '' ./internal/control/ads/... TestADSConformanceGate_MER56`).
+4. Regression seed data committed under `internal/control/ads/testdata/` (the
+   policy/identity fixtures the suite loads), referenced by the test.
+5. `make check-gate-skips` reports **0 skips** across all **9** armed gates
+   (the 8 existing + CP-3); the new test contributes no skip.
 6. `go build ./...` clean; `go vet ./...` clean; `go test -race
-   ./internal/control/...` green (MER-53 + MER-54 + CP-2 stay green); `go mod
-   tidy` leaves no diff; depguard clean (no `bpf/`/agent imports).
-7. After commit, `git status` is clean and `make check-commits` passes (MER-55 ref).
+   ./internal/control/...` green (MER-53/54/55 + CP-2 stay green); `go mod tidy`
+   leaves no diff; depguard clean.
+7. After commit, `git status` is clean and `make check-commits` passes (MER-56 ref).
 
 Files Expected To Change:
-- internal/control/ads/stub_agent.go        (new — in-memory ADS client stub)
-- internal/control/ads/stub_agent_test.go   (new — connect/receive/ACK/reconnect + NACK)
+- internal/control/ads/conformance_test.go   (new — CP-3 conformance + <500 ms gate)
+- internal/control/ads/testdata/             (new — committed regression seeds)
+- test/gates/manifest.txt                     (flip CP-3 row armed=no → armed=yes)
 
 Required Tests:
-- `go test -race ./internal/control/ads/...` → stub connect/ACK/reconnect/NACK green
-- `go test -race ./internal/control/...`     → MER-53 + MER-54 + CP-2 stay green
-- `go build ./...`                           → control plane builds
-- `go vet ./...`                             → clean (depguard control-no-dataplane satisfied)
-- `make check-commits`                       → MER-55 commit-linkage satisfied
+- `go test -race ./internal/control/ads/...`        → TestADSConformanceGate_MER56 green, 0 skips
+- `go test -race ./internal/control/...`            → MER-53/54/55 + CP-2 stay green
+- `make check-gate-skips`                           → 0 skips across 9 armed gates
+- `go build ./...` / `go vet ./...`                 → clean (depguard satisfied)
+- `make check-commits`                              → MER-56 commit-linkage satisfied
 
 Commit Message:
-feat(control): MER-55 ADS agent stub — in-memory xDS client over loopback gRPC
+test(control): MER-56 arm CP-3 gate — ADS conformance + REST→stub <500 ms propagation
