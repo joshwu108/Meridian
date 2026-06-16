@@ -9,11 +9,27 @@ Completed backlog tickets (MER-35, MER-36, MER-37, MER-38, MER-39, MER-40,
 MER-41, MER-42, MER-44, MER-45, MER-46, MER-60) are removed from this file;
 see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
 
-Next free ID = **MER-68**.
+Next free ID = **MER-69**.
 
 ---
 
 ## Open backlog tickets
+
+### MER-68 — Make `check-gate-skips` deterministic (reset kernel state between gates) — BLOCKS MER-59 EXIT
+
+- **ID:** MER-68
+- **TITLE:** Fix `checkgateskips` flakiness: reap leaked bpffs pins / netns / TC filters between gate runs
+- **PRIORITY:** P1 / HIGH — **blocks the Phase-2 EXIT (MER-59)**: the EXIT gate must cite a reproducible "0 skips across 9 armed gates" run, which this tool currently cannot provide.
+- **ESTIMATE:** 2–3h
+- **BLOCKS:** MER-59 (cannot honestly declare Phase-2 exit on a flaky gate-integrity tool)
+- **DEPENDENCIES:** none (test-harness fix; gates themselves are green via the canonical targets)
+- **EVIDENCE (Lima 5.15, HEAD `fd882a7`):** `make check-gate-skips` is **non-deterministic** — three consecutive runs gave (1) MER-29 red, (2) all green, (3) MER-{P1.1,29,32,49,51} red. Pure-Go gates (CP-2, conformance, CP-3) **never** flake; only `bpf`/`integration`-tagged gates do. The canonical isolated targets **pass green reliably**: `make test-integration` (MER-21/29/32/51) and `make test-bpf` (P1.1/MER-49) both exit 0 with `-parallel 1`. Root cause: `test/tools/checkgateskips/main.go` runs each gate as a separate `go test -run ^Name$ -exec=sudo` process but performs **no `make test-clean` (bpffs-pin/netns reap) between gates**, and the datapath *deliberately persists* pinned maps / TC filters / cgroup attachments / TPROXY rules across process exit (ARCHITECTURE lifecycle "Shutdown deliberately leaves…"), so back-to-back gate processes inherit and collide on leftover kernel state.
+- **ACCEPTANCE CRITERIA:**
+  1. `make check-gate-skips` is **deterministic on Lima 5.15**: green across **≥10 consecutive runs** with the 9 armed gates reporting 0 skips / 0 failures (no order- or accumulation-dependent flakes).
+  2. The fix resets kernel state **between** gate invocations — e.g. `checkgateskips` invokes the existing `make test-clean` (reap netns + `rm -rf /sys/fs/bpf/meridian-test`) before each privileged (`bpf`/`integration`) gate, and/or serializes privileged gates and pins each under a unique bpffs dir. No change that weakens skip-detection (MER-44 rule intact).
+  3. Pure-Go gates remain unaffected (no needless cleanup); the tool still fails closed on a genuine skip or genuine test failure.
+  4. No production datapath/agent code changed (the persist-on-shutdown behavior is intentional; the fix lives in the test harness). `make check-commits` passes (MER-68 ref); `git status` clean.
+- **Note:** the underlying gates are **genuinely green** — this is purely a gate-verification-harness integrity defect, but it is load-bearing for the MER-59 exit certification and the MER-44 0-skip rule.
 
 ### MER-67 — Record the ADS server architecture decision (D21) + interim xDS resource-encoding note (CC-2-pending)
 
