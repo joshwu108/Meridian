@@ -46,10 +46,11 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
 | MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
-| MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
+| MER-52 | `docs/PHASE2_TICKETS.md` | **ACTIVE** (MER-51 ✅). P2.2-BENCH intra-node SOCKMAP latency benchmark (nightly T4, `e2e` tag, **not a PR gate**). Now the **sole remaining MER-59 EXIT dependency** — the last item before Phase-2 exit. Linux/Lima 5.15. |
+| MER-58 | `docs/PHASE2_TICKETS.md` | **READY** off critical path. Agent `bpfobj` sock_ops/sk_msg + sockhash re-open restart test (dep MER-47/57 ✅). NOT a MER-59 dep — does not block Phase-2 exit. |
 | MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
 | MER-55 | `docs/PHASE2_TICKETS.md` | **CLOSED `fe453b5`** — ADS agent stub (`StubAgent`): subscribes over loopback gRPC, decodes the Cluster-channel `BytesValue`→JSON `[]wire.PolicyRule` contract, ACKs on success / NACKs on contract violation (version reverted, config not adopted), concurrency-safe `Snapshot()`, reconnect via fresh `Run`. bufconn + decode-table tests green (`-race`); depguard clean. |
-| MER-56 | `docs/PHASE2_TICKETS.md` | **ACTIVE** (MER-55 ✅ unblocked it): **CP-3 GATE** — ADS conformance suite + REST→stub <500 ms propagation; arms manifest `armed=yes` (→9 armed gates). A MER-59 EXIT join dep — the last critical-path item before Phase-2 exit. |
+| MER-56 | `docs/PHASE2_TICKETS.md` | **CLOSED `2898a75`** — **CP-3 GATE** armed/green: ADS conformance (initial/add/delete/NACK-recovery/stale-nonce-ignore/reconnect) + REST→stub propagation measured ~1.3 ms (<500 ms budget). Manifest `armed=yes` → **9 armed gates, 0 skips**. Seed fixture committed. |
 | MER-67 | this file | **OPEN — P3/LOW, off critical path.** ARCHITECTURE D21 for the MER-54 ADS server + flag interim xDS encoding as CC-2-pending. Dep MER-54 ✅; does not block MER-56/59. |
 
 ---
@@ -413,3 +414,32 @@ nonce sub-case may need a raw client stream (the stub always answers the latest
 push) — assert the server ignores a stale nonce with no state change; (4) flip the
 manifest CP-3 row `no`→`yes` and confirm `make check-gate-skips` = 0 skips across
 all 9 armed gates; the conformance test must never `t.Skip` (pure Go, always runs).
+
+## Batch 2026-06-16c — TPM/Auditor run (HEAD 2898a75)
+
+Findings: **MER-56 landed at `2898a75`** — CP-3 GATE armed and green:
+`TestADSConformanceGate_MER56` drives the MER-55 stub + raw xDS clients against the
+MER-54 server through initial snapshot / policy add / policy delete / NACK recovery
+(server holds last-known-good, later valid change still propagates) / stale-nonce
+ignored (no state change, raw-stream asserted) / reconnect re-receives offline
+changes; plus the end-to-end spine REST `POST /policies` → shared `control.Store` →
+ADS server → stub `Snapshot()` measured at ~1.3 ms (<500 ms budget) via polling
+`waitUntil` (not sleep). Regression seed `testdata/conformance_seed.json` committed;
+manifest CP-3 flipped `armed=yes` → **9 armed gates, 0 skips**. Reviewed —
+`go test -race ./internal/control/...` green incl MER-53/54/55 + CP-2; depguard
+clean; tidy stable; the gate never `t.Skip`s. **APPROVED.**
+
+**The Platform/ADS lane (MER-53→54→55→56) is COMPLETE.** Phase-2 EXIT (MER-59)
+join `{49 ✅, 51 ✅, 56 ✅, 52}` now has exactly ONE open dependency: **MER-52**.
+No new tickets. `Next free ID` stays **MER-68**.
+
+Selected next ticket: **MER-52 — P2.2-BENCH (intra-node SOCKMAP latency
+benchmark)**. It is the sole remaining MER-59 EXIT dependency = the critical-path
+blocker for Phase-2 exit (outranks the off-path MER-58 Agent leaf and the P3
+MER-67 ADS-ADR). ⚠️ Unlike MER-53…56 (pure-Go T1), MER-52 is a **T4 `e2e`-tagged**
+Linux benchmark — the implementer must run it on the **Lima `meridian` VM** (5.15,
+root); it is NOT a PR merge gate and arms NO manifest row. Reuse the MER-51
+integrity harness (production `bpfobj`/`attach` + `test/harness`). Report honestly:
+a measured win with numbers OR "no win on <kernel>" with the numbers — do not
+green-wash. Commit results to `test/integration/testdata/sockmap_bench.json`.
+`activeticket.md` holds the MER-52 spec.
