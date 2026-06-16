@@ -9,10 +9,15 @@ xDS-compatible control plane pushes configuration to per-node agents over gRPC.
 ## Status
 
 **Phase 0 — complete (MER-35 sign-off).** **Phase 1 — complete (MER-34 exit
-gate).** Map schemas and cross-boundary structs are frozen in
-[ADR-0004](docs/adr/0004-map-schema-freeze.md); Phase 2 implementation
-(MER-47+) may proceed once [PHASE2_GATES.md](docs/PHASE2_GATES.md) entry
-criteria are met.
+gate).** **Phase 2 — complete (MER-59 exit).** Map schemas and cross-boundary
+structs are frozen in [ADR-0004](docs/adr/0004-map-schema-freeze.md). Phase 2
+delivered the verdict-gated SOCKMAP redirect fast path with the CC-5 fail-closed
+invariant locked in CI (P2.1-N static + P2.2 runtime), the control-plane core
+(in-memory store, identity registry, REST), and the ADS server + agent stub with
+the CP-3 conformance gate (REST→stub < 500 ms). All Phase-2 gates are green on
+Lima 5.15 ([PHASE2_GATES.md](docs/PHASE2_GATES.md)); the nightly SOCKMAP benchmark
+(MER-52) found no small-flow latency win on 5.15 — the redirect path is justified
+by correctness/mTLS-offload-readiness, not latency.
 
 Gate evidence: [PHASE0_GATE_EVIDENCE.log](docs/PHASE0_GATE_EVIDENCE.log) ·
 [PHASE1_GATE_EVIDENCE.log](docs/PHASE1_GATE_EVIDENCE.log) ·

@@ -69,11 +69,20 @@ the prior phase's exit gate is green:
 |---|---|---|---|
 | Phase 0 → 1 | Phase-0 exit (MER-7/8/10) + MER-11/12/13 | MER-35 sign-off | [PHASE0_TICKETS.md](docs/PHASE0_TICKETS.md) |
 | Phase 1 → 2 | **MER-34 green** (all five Phase-1 gates + ADR-0004) | MER-59 | [PHASE2_PLAN.md](docs/PHASE2_PLAN.md) · [PHASE2_TICKETS.md](docs/PHASE2_TICKETS.md) · [PHASE2_GATES.md](docs/PHASE2_GATES.md) |
-| Phase 2 → 3 | MER-59 green (P2.1-N, P2.2, CP-3) | A-2/A-3 gates (Phase 3) | [PHASE2_GATES.md](docs/PHASE2_GATES.md) |
+| Phase 2 → 3 | **MER-59 green ✅** (P2.1-N, P2.2, CP-3 all green on Lima 5.15) + ADR-0004 schemas unchanged | A-2/A-3 gates (Phase 3) | [PHASE2_GATES.md](docs/PHASE2_GATES.md) |
 | Phase 3 → 4 | CC-1 echo prototype (ADR-0006) | P4.1 no-TLS redirect proof | [ADR-0006](docs/adr/0006-original-destination-recovery.md) |
 
 Phase-2 **planning** (MER-46) has no dependency and may land while Phase-1
 gates are still open; **implementation** (MER-47+) stays gated on MER-34.
+
+**Phase 2 — COMPLETE (MER-59 exit).** Week-4 exit criteria both met: *denied flow
+never SOCKMAP-redirected* (P2.1-N static MER-49 + P2.2 runtime MER-51) and
+*policy-change-to-stub < 500 ms* (CP-3 MER-56, measured ~1.3 ms). The nightly
+P2.2-BENCH (MER-52) measured **no intra-node latency win on 5.15** (p50 +6.3%,
+p99 +281.7%) — the SOCKMAP redirect path is justified by correctness /
+mTLS-offload-readiness, not latency; re-benchmark on newer kernels is future work.
+Phase 3 (A-2 agent netlink lifecycle, A-3 ADS client + translation; PKI-1/2) may
+now begin.
 
 ## Cross-cutting decisions (resolve early; each warrants an ADR)
 
