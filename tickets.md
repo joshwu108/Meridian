@@ -9,13 +9,25 @@ Completed backlog tickets (MER-35, MER-36, MER-37, MER-38, MER-39, MER-40,
 MER-41, MER-42, MER-44, MER-45, MER-46, MER-60) are removed from this file;
 see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
 
-Next free ID = **MER-67**.
+Next free ID = **MER-68**.
 
 ---
 
 ## Open backlog tickets
 
-_(none)_
+### MER-67 — Record the ADS server architecture decision (D21) + interim xDS resource-encoding note (CC-2-pending)
+
+- **ID:** MER-67
+- **TITLE:** ARCHITECTURE D21 for the MER-54 ADS server + flag the interim xDS resource encoding as CC-2-pending
+- **PRIORITY:** P3 / LOW (documentation / architecture-compliance; **off critical path** — does not block MER-55/56/59)
+- **ESTIMATE:** 1h
+- **BLOCKS:** nothing directly; prevents the MER-54 interim resource encoding from silently becoming the permanent CC-2 contract
+- **DEPENDENCIES:** MER-54 (CLOSED `0ff966d`); coordinates with the deferred CC-2 wire-contract ADR (Phase-3)
+- **RATIONALE:** MER-54 introduced an architecturally-significant boundary — the gRPC + `go-control-plane` dependency (per D11, deps are recorded by the phase that first imports them), the per-(stream,type_url) version/nonce protocol, and a **new cross-boundary xDS resource encoding** (JSON `[]wire.PolicyRule` packed in a `wrapperspb.BytesValue` Any on the Cluster channel only; other channels versioned-but-empty). The decision log stops at **D20** and no ADR covers ADS, yet this encoding is now load-bearing across MER-54/55/56 and documented only in code comments + `activeticket.md`. The project deliberately defers the real CC-2 compiled-policy wire contract to Phase-3, so the interim encoding must be **explicitly tracked as a placeholder**, not left implicit.
+- **ACCEPTANCE CRITERIA:**
+  1. `docs/ARCHITECTURE.md` gains a **D21** decision-log entry recording: the ADS server package (`internal/control/ads`), the `grpc`/`go-control-plane` dependency addition, the version/nonce ACK-advances / NACK-holds-last-good / stale-ignored state machine, the `Store.Watch()`-driven CDS→EDS / LDS→RDS ordered push, and the **interim** resource encoding — with an explicit "superseded by the CC-2 wire-contract freeze (Phase-3)" caveat.
+  2. The entry cross-references the existing ARCHITECTURE "xDS apply pipeline" / CC-2 text and ROADMAP CC-2, so the interim-vs-frozen boundary is unambiguous.
+  3. No production code changes; `make check-commits` passes (MER-67 ref); `git status` clean after commit.
 
 ---
 
