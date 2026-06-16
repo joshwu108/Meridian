@@ -17,10 +17,12 @@ reproducible/CI-confirmed green run until the harness is deterministic. The gate
 themselves are genuinely green (canonical isolated targets pass reliably).
 
 Stay in scope: the `checkgateskips` tool (and, if needed, the `check-gate-skips`
-make target / a small harness helper). Do NOT change production datapath/agent
-code — the persist-on-shutdown behavior is intentional (chaos-survival). Do NOT
-weaken skip detection (MER-44 rule). Do NOT start MER-59 or touch its in-flight
-WIP docs (README/ROADMAP/PHASE2_GATES edits in the working tree belong to MER-59).
+make target / a small harness helper) plus the one MER-59 doc that this fix
+resolves (see AC #7). Do NOT change production datapath/agent code — the
+persist-on-shutdown behavior is intentional (chaos-survival). Do NOT weaken skip
+detection (MER-44 rule). NOTE: **MER-59 is already committed (`d8c7612`,
+committed-but-provisional)** and the tree is clean — there is no MER-59 WIP to
+avoid; MER-68 makes that EXIT certification reproducible and reconciles its caveat.
 
 Dependencies:
 - None for the fix (gates are green via canonical targets `make test-bpf` /
@@ -45,13 +47,17 @@ Acceptance Criteria:
 4. No production datapath/agent/eBPF code changed; ADR-0004 frozen schema untouched.
 5. `go build ./...` / `go vet ./...` clean; `make test-bpf` / `make test-integration`
    still green on Lima; `go mod tidy` no diff.
-6. After commit, `git status` shows only the unrelated MER-59 WIP docs (do NOT
-   commit those here); `make check-commits` passes (MER-68 ref).
+6. After commit, `git status` is clean; `make check-commits` passes (MER-68 ref).
+7. `docs/PHASE2_GATES.md`: replace the "known harness caveat / flakes
+   non-deterministically" note (added by MER-59 `d8c7612`) with the deterministic
+   result (≥10 clean consecutive runs on Lima 5.15), so the MER-59 EXIT
+   certification is reproducible, not caveated.
 
 Files Expected To Change:
 - test/tools/checkgateskips/main.go      (reap state between privileged gates / serialize)
 - test/tools/checkgateskips/*_test.go    (optional — assert fail-closed on real skip/fail)
 - Makefile                                (optional — if cleanup is wired at the target level)
+- docs/PHASE2_GATES.md                    (replace the flakiness caveat with the deterministic result — AC #7)
 
 Required Tests:
 - `for i in $(seq 10); do make check-gate-skips; done` on Lima 5.15 → green every run, 0 skips/0 failures
