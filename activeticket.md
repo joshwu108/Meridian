@@ -1,73 +1,74 @@
 # Active Ticket
 
-ID: MER-54
+ID: MER-55
 
-Title: ADS server — version/nonce state machine + ordered xDS push
+Title: ADS agent stub — in-memory xDS client over loopback gRPC
 
 Objective:
-Stand up the control-plane ADS (Aggregated Discovery Service) server that pushes
-compiled policy/identity state to agents over a single bidirectional xDS stream.
-This is the consumer of the MER-53 `control.Store` `Watch()` seam: a store change
-triggers recompute + an ordered push, and the server tracks per-(node, type_url)
-`version_info`/`nonce` so ACKs advance the accepted version and NACKs hold
-last-known-good (CC-5 fail-closed: a NACK or partial config never widens allows).
-Pure distributed-systems Go — no eBPF, no kernel, no agent internals; verifiable
-with `go test` (no VM).
+Build the agent-side ADS client *stub* that speaks the xDS handshake against the
+MER-54 server: connect over loopback gRPC, subscribe to the resource types,
+decode the pushed resources, ACK what it accepts, and NACK on a contract
+violation. This is the counterparty the CP-3 conformance gate (MER-56) drives
+through connect → receive → ACK → reconnect, and the first end-to-end exercise
+of the server's version/nonce loop. Pure distributed-systems Go — no eBPF, no
+kernel, no real agent internals; verifiable with `go test` (no VM).
 
-Stay in scope: the ADS gRPC server, its version/nonce bookkeeping, and the
-`Watch()`-driven push, plus their unit tests. Do NOT build the agent-side stub
-(MER-55) or the CP-3 conformance gate (MER-56). Reuse `internal/control` (Store,
-Compile) and `pkg/wire`; depend on the Store via its interface.
+Stay in scope: the stub client, its decode/ACK/NACK logic, a debug snapshot
+accessor, and unit tests. Do NOT build the CP-3 conformance gate (MER-56), arm
+any manifest gate, or touch the eBPF / agent-datapath / frozen-schema code.
+Reuse the MER-54 server, `internal/control`, and `pkg/wire`; the stub lives
+beside the server in `internal/control/ads` and may use unexported server
+helpers/constants (e.g. the type URLs, the payload contract).
 
 Dependencies:
-- MER-53 (CP-1 store + identity registry + REST) — CLOSED `849f4a6`. The Store
-  `Watch()` seam this server consumes now exists.
-- Binding contracts: CC-5 (NACK/partial config never widens allows; hold
-  last-known-good on a bad push). depguard `control-no-dataplane`:
-  `internal/control/ads` must NOT import `bpf/` or `internal/agent/*` — stay
-  control-plane + `pkg/wire` + third-party (gRPC/xDS) only.
-- Research-and-reuse (mandatory): before hand-rolling the xDS state machine,
-  evaluate `github.com/envoyproxy/go-control-plane` (battle-tested ADS server
-  + version/nonce + snapshot cache). Adopt or port it rather than writing
-  net-new if it meets the contract; record the choice in a short note.
+- MER-54 (ADS server: version/nonce state machine + ordered push) — CLOSED
+  `0ff966d`. The stub connects to its `StreamAggregatedResources`.
+- Binding contract: the MER-54 server encodes Meridian policy as a
+  JSON-marshalled `[]wire.PolicyRule` packed in a `wrapperspb.BytesValue` Any on
+  the **Cluster** channel only (other channels are versioned-but-empty). The stub
+  MUST decode that exact contract and MUST **NACK** (send `error_detail`, do not
+  advance accepted version) on a contract violation — undecodable resource,
+  wrong/foreign payload, or a resource on a channel it cannot interpret.
+- depguard `control-no-dataplane`: `internal/control/ads` must NOT import `bpf/`
+  or `internal/agent/*` — stay control-plane + `pkg/wire` + grpc/xDS only.
 
 Acceptance Criteria:
-1. `internal/control/ads/versioning.go`: per-(node, type_url) `version_info` +
-   `nonce` bookkeeping. ACK (request nonce == last sent, no error_detail)
-   advances the accepted version; NACK (error_detail present) holds the prior
-   accepted version; a stale/unknown nonce is ignored (no state change). Pure,
-   concurrency-safe, table-test-friendly.
-2. `internal/control/ads/server.go`: `StreamAggregatedResources` bidirectional
-   handler. Subscribes to the Store `Watch()`; on change, recompiles and pushes.
-   Push ordering: CDS before EDS, LDS before RDS. A malformed/unresolvable
-   resource yields a NACK path with `error_detail`; the server never pushes a
-   config that widens allows on partial input (CC-5).
-3. `go.mod`/`go.sum`: add the gRPC + xDS dependencies actually used (e.g.
-   `google.golang.org/grpc`, `github.com/envoyproxy/go-control-plane`), pinned;
-   `go mod tidy` clean.
-4. Unit tests (`server_test.go` + versioning tests): T1 state-machine coverage of
-   ACK-advances, NACK-holds-last-good, stale-nonce-ignored, and resubscribe;
-   plus a `Watch()`-triggered push test (store mutation → ordered resources on
-   the stream). Use an in-process / `bufconn` gRPC dialer — no real network.
-   Table-driven where natural.
-5. `go build ./...` clean (modulo the pre-existing `bpf/` C-source notice);
-   `go vet ./...` clean; `go test -race ./internal/control/...` green (MER-53 +
-   CP-2 conformance stay green); depguard clean (no `bpf/`/agent imports from
-   `internal/control`).
-6. After commit, `git status` is clean and `make check-commits` passes (MER-54 ref).
+1. `internal/control/ads/stub_agent.go`: a `StubAgent` that, given a gRPC
+   `ClientConn` (or an ADS client), opens `StreamAggregatedResources`, subscribes
+   to the resource types (initial empty-nonce requests), and runs a receive loop.
+2. On each received `DiscoveryResponse`: decode the resources per the MER-54
+   contract; on success send a well-formed **ACK** (echo `version_info` +
+   `response_nonce`, no `error_detail`); on a decode/contract failure send a
+   **NACK** (`error_detail` set, `version_info` reverted to last-accepted) and
+   keep the stream alive. ACK/NACK nonce handling mirrors the server's
+   expectations so the server's `classify` settles correctly.
+3. The stub exposes the last-accepted snapshot for inspection (e.g. a
+   concurrency-safe `Snapshot()` returning the decoded `[]wire.PolicyRule` +
+   accepted version) and logs received snapshots for debugging. No data races.
+4. Clean teardown: the receive loop exits on context cancel / stream EOF without
+   leaking goroutines; a `Close()`/cancel path is provided.
+5. Unit tests (`stub_agent_test.go`): drive the stub against a real MER-54 server
+   over `bufconn` through **connect → receive initial → ACK → store change →
+   receive update → ACK**, and a **reconnect** cycle (new stream re-subscribes
+   and re-receives current state). Include at least one **NACK-on-contract-
+   violation** case (server pushes something the stub rejects, or assert the
+   NACK path via a contract-violating payload) and assert the stub surfaces the
+   decoded policy. Table-driven where natural.
+6. `go build ./...` clean; `go vet ./...` clean; `go test -race
+   ./internal/control/...` green (MER-53 + MER-54 + CP-2 stay green); `go mod
+   tidy` leaves no diff; depguard clean (no `bpf/`/agent imports).
+7. After commit, `git status` is clean and `make check-commits` passes (MER-55 ref).
 
 Files Expected To Change:
-- internal/control/ads/versioning.go        (new — version/nonce state machine)
-- internal/control/ads/versioning_test.go   (new — ACK/NACK/stale-nonce table tests)
-- internal/control/ads/server.go            (new — StreamAggregatedResources + Watch push)
-- internal/control/ads/server_test.go       (new — bufconn stream + ordered push)
-- go.mod / go.sum                           (add pinned gRPC + xDS deps)
+- internal/control/ads/stub_agent.go        (new — in-memory ADS client stub)
+- internal/control/ads/stub_agent_test.go   (new — connect/receive/ACK/reconnect + NACK)
 
 Required Tests:
-- `go test -race ./internal/control/...` → new ads tests green; MER-53 + CP-2 stay green
-- `go build ./...`                       → control plane + meridian-control build
-- `go vet ./...`                         → clean (depguard control-no-dataplane satisfied)
-- `make check-commits`                   → MER-54 commit-linkage satisfied
+- `go test -race ./internal/control/ads/...` → stub connect/ACK/reconnect/NACK green
+- `go test -race ./internal/control/...`     → MER-53 + MER-54 + CP-2 stay green
+- `go build ./...`                           → control plane builds
+- `go vet ./...`                             → clean (depguard control-no-dataplane satisfied)
+- `make check-commits`                       → MER-55 commit-linkage satisfied
 
 Commit Message:
-feat(control): MER-54 ADS server — version/nonce state machine + ordered push
+feat(control): MER-55 ADS agent stub — in-memory xDS client over loopback gRPC

@@ -35,7 +35,8 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
 | MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
 | MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
-| MER-54 … MER-56 | `docs/PHASE2_TICKETS.md` | **MER-54 ACTIVE** (MER-53 ✅ unblocked it): ADS server version/nonce state machine + Watch-driven ordered push. MER-55 (ADS stub) → MER-56 (CP-3 gate, a MER-59 join dep) remain queued behind it. |
+| MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
+| MER-55 … MER-56 | `docs/PHASE2_TICKETS.md` | **MER-55 ACTIVE** (MER-54 ✅ unblocked it): ADS agent stub (in-memory xDS client over loopback gRPC). MER-56 (CP-3 gate, a MER-59 join dep) remains queued behind it. |
 
 ---
 
@@ -338,3 +339,31 @@ gate (MER-56) that MER-59 needs. Pure-Go T1 (no Lima). Note for the implementer:
 the `control.Store` interface already exists in `internal/control/doc.go` (package
 `control`) — reconcile with it (don't duplicate); include a `Watch()` change-notify
 seam that MER-54's ADS push will consume. `activeticket.md` holds the MER-53 spec.
+
+## Batch 2026-06-16a — TPM/Auditor run (HEAD 0ff966d)
+
+Findings: **MER-54 landed at `0ff966d`** — control-plane ADS server: per-(stream,
+type_url) version/nonce state machine (ACK advances accepted version, NACK holds
+last-known-good per CC-5, stale nonce ignored), `StreamAggregatedResources` with a
+`Store.Watch()`-driven ordered re-push in canonical make-before-break order
+(CDS→EDS, LDS→RDS). Reuses the go-control-plane xDS wire types (`discovery/v3`,
+`pkg/resource/v3`) + grpc transport but implements its own thin handler + state
+machine to keep CC-5 fail-closed explicit; policy rides the Cluster channel as a
+JSON-in-`wrapperspb.BytesValue` Any (documented internal server↔stub contract,
+real model deferred to CC-2). Reviewed — bufconn gRPC + pure table tests cover
+ACK/NACK/stale/initial/resubscribe + ordered Watch re-push; `go test -race
+./internal/control/...` 5/5 green incl MER-53 + CP-2; depguard clean; `go mod tidy`
+idempotent. **APPROVED.** (Note: MER-54 was authored but left stranded uncommitted
+for a full cycle by a peer loop, and its go.mod was un-tidied — both fixed before
+the commit.)
+
+No new tickets: MER-55 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-55 — ADS agent stub (in-memory xDS client)**. The next
+critical-path blocker (MER-55 → MER-56 CP-3 gate → MER-59 EXIT); the conformance
+gate (MER-56) needs a stub agent to drive the server through connect → receive →
+ACK → reconnect. Pure-Go T1 (no Lima). Note for the implementer: the MER-54 server
+encodes policy as JSON-in-`wrapperspb.BytesValue` on the Cluster channel only — the
+stub must decode that exact contract and NACK on a contract violation (e.g. wrong
+type_url payload or undecodable resource). `activeticket.md` holds the MER-55 spec.
