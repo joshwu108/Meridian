@@ -43,7 +43,13 @@ Acceptance Criteria:
 4. `docs/ARCHITECTURE.md`: confirm **D18–D20** are recorded as-built (they are —
    verify they match shipped behavior); add a one-line pointer that the ADS
    server's decision (**D21**) is pending under MER-67 (interim xDS encoding,
-   CC-2-pending), so the gap is explicit, not silent.
+   CC-2-pending), so the gap is explicit, not silent. **Also record the as-built
+   SOCKMAP rationale honestly:** MER-52 measured **no intra-node latency win on
+   5.15 (p50 +6.3%, p99 +281.7% — a regression)**, so the SOCKMAP redirect path's
+   justification is **correctness / mTLS-offload-readiness, not latency**; note
+   this reconciles ROADMAP Top-risk #2 / CC-5 framing (a security-gated capability,
+   not a proven perf fast path on this kernel) and flag re-benchmarking on newer
+   kernels as future work.
 5. **Phase-3 entry rule stated** (in ROADMAP and/or PHASE2_GATES): Phase 3 may
    start when **MER-59 is green AND ADR-0004 frozen schemas are unchanged**;
    reference the Phase-3 first gates (A-2/A-3).
