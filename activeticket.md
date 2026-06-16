@@ -1,68 +1,66 @@
 # Active Ticket
 
-ID: MER-52
+ID: MER-59
 
-Title: P2.2-BENCH — intra-node SOCKMAP latency benchmark (nightly T4)
+Title: EXIT GATE — Phase-2 doc reconciliation + Phase-3 entry rule
 
 Objective:
-Measure the actual latency benefit of the SOCKMAP redirect fast path: a same-node
-eligible flow with SOCKMAP redirect vs the same flow without it, reporting p50/p99
-connect + first-byte latency. This is the last open dependency of the Phase-2 EXIT
-gate (MER-59 ← {49 ✅, 51 ✅, 56 ✅, **52**}); it does not gate PRs but its results
-must exist and be committed before MER-59 can declare Phase 2 complete. Report
-honestly: a measurable win with numbers, OR explicitly flag "no win on
-<kernel>" with the numbers that show it. Do NOT green-wash a win that isn't there.
+Close Phase 2. Reconcile the documentation to the as-built state, record a single
+green-evidence run for every Phase-2 gate, declare Phase 2 complete, and state the
+Phase-3 entry rule. This is the EXIT gate: all join deps are now satisfied
+(MER-49 ✅ P2.1-N, MER-51 ✅ P2.2, MER-56 ✅ CP-3, MER-52 ✅ P2.2-BENCH). Pure docs +
+a verification run — no production code. Verify gates are GENUINELY green before
+declaring (cite a real Lima 5.15 / CI run; do not assert green on stale evidence).
 
-Stay in scope: the benchmark test, its committed result fixture, and (if needed) a
-nightly invocation hook. This is a **T4 `e2e`-tagged** test — it must NOT run in
-the PR `integration`/`bpf` suites and must NOT arm a manifest gate row (it is not a
-merge gate). Do NOT start MER-59 (EXIT) or MER-58. Reuse the MER-51 integrity
-harness (production `bpfobj` loaders + `attach` managers + `test/harness`) to build
-the redirect path — do not hand-roll SOCKMAP attach.
+Stay in scope: `docs/PHASE2_GATES.md`, `README.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`. Do NOT modify production code, arm/disarm gates, or start
+Phase-3 work. The ADS architecture decision (D21) is tracked separately by MER-67
+(open, off critical path) — reference it as a known follow-up; do NOT block Phase-2
+exit on it.
 
 Dependencies:
-- MER-51 (P2.2 integrity gate) — CLOSED `f7642c9`. Provides the same-node SOCKMAP
-  redirect harness (production `bpfobj`/`attach` + `test/harness`) this benchmark
-  reuses to establish an eligible redirected flow.
-- Runtime: Linux + root + a 5.15 kernel (SOCKMAP/sock_ops/sk_msg). **Verify on the
-  Lima `meridian` VM** (`MERIDIAN_IN_LIMA=1` or `go test -tags e2e -exec sudo`),
-  not on the darwin host. This is NOT a pure-Go ticket.
-- depguard `wire-bpf-bridge`: tests are exempt; reuse `bpfobj`/`attach`/`harness`
-  as MER-51 does — do not import `bpf/` outside the allowed test seams.
+- MER-49 (P2.1-N) `d0125c1`, MER-51 (P2.2) `f7642c9`, MER-56 (CP-3) `2898a75`,
+  MER-52 (P2.2-BENCH) `17bc526` — all CLOSED. All four MER-59 joins satisfied.
+- ADR-0004 (frozen map schema) must be unchanged — the Phase-3 entry rule asserts it.
+- Verification: run the full armed-gate suite on the Lima `meridian` VM (5.15) —
+  `make test-bpf`, `make test-integration`, `make check-gate-skips` (0 skips across
+  the 9 armed gates) — and the nightly `make test-e2e` for the bench. Cite the real
+  result. (Lima recipe: `GOMODCACHE=/Users/joshuawu/go/pkg/mod GOFLAGS=-mod=mod
+  GOPROXY=off`, the VM has no network.)
 
 Acceptance Criteria:
-1. `test/integration/sockmap_bench_test.go` with `//go:build e2e` — a benchmark
-   (or `-run`-able measurement test) that, on a same-node loopback flow:
-   a. establishes an **eligible** (SOCKMAP-redirected) flow via the production
-      attach path and measures connect + first-byte latency over N iterations;
-   b. measures the **baseline** (no SOCKMAP redirect) same-node flow identically;
-   c. computes **p50 and p99** for both and the delta.
-2. **Honest verdict:** the test emits both distributions and a verdict —
-   "SOCKMAP win: p50 −X%, p99 −Y%" OR "no measurable win on <kernel>: <numbers>".
-   It must not assert a hard win (the result is data, not a pass/fail gate); it
-   fails only on harness/measurement error, never on "win too small".
-3. Results committed to `test/integration/testdata/sockmap_bench.json` (schema:
-   kernel/uname, iterations, sockmap p50/p99, baseline p50/p99, delta, verdict,
-   timestamp), regenerated from a real Lima 5.15 run.
-4. The `e2e` tag is excluded from the PR suites: `make test-integration`
-   (`-tags=integration`) and `make test-bpf` (`-tags=bpf`) do NOT compile or run
-   this file; `make check-gate-skips` is unaffected (no new armed row). Optionally
-   add a `make bench-sockmap`/`test-e2e` target or document the nightly invocation.
-5. `go build ./...` clean; `go vet ./...` clean; PR suites stay green and skip-free
-   (the e2e file is tag-excluded, so it cannot contribute a PR-suite skip);
-   `go mod tidy` leaves no diff.
-6. After commit, `git status` is clean and `make check-commits` passes (MER-52 ref).
+1. `docs/PHASE2_GATES.md`: the "Gate status" table lists **every** Phase-2 gate
+   with its real evidence — P2.1-N (MER-49), P2.2 (MER-51), CP-3 (MER-56) all
+   **GREEN, armed=yes, 0 skips** with the Lima 5.15 / CI run cited; P2.2-BENCH
+   (MER-52) recorded as a **nightly non-gate** with its honest result ("no win on
+   5.15.0-179: p50 +6.3%, p99 +281.7%", redirect engaged) — not green-washed.
+2. `README.md`: Status line updated to **"Phase 2 — complete (MER-59 exit)"** with
+   a one-line summary (SOCKMAP redirect + CC-5 fail-closed gates + ADS/CP-3).
+3. `ROADMAP.md`: the week-4 / Phase-2 **exit criteria checked off** — "denied flow
+   never SOCKMAP-redirected" (MER-49 static + MER-51 runtime) and
+   "policy-change-to-stub < 500 ms" (MER-56, measured ~1.3 ms). The Phase 2→3
+   entry-gate row reflects MER-59 green.
+4. `docs/ARCHITECTURE.md`: confirm **D18–D20** are recorded as-built (they are —
+   verify they match shipped behavior); add a one-line pointer that the ADS
+   server's decision (**D21**) is pending under MER-67 (interim xDS encoding,
+   CC-2-pending), so the gap is explicit, not silent.
+5. **Phase-3 entry rule stated** (in ROADMAP and/or PHASE2_GATES): Phase 3 may
+   start when **MER-59 is green AND ADR-0004 frozen schemas are unchanged**;
+   reference the Phase-3 first gates (A-2/A-3).
+6. No production code touched; `go build ./...` / `go vet ./...` unaffected;
+   `make check-commits` passes (MER-59 ref); `git status` clean after commit.
 
 Files Expected To Change:
-- test/integration/sockmap_bench_test.go         (new — //go:build e2e benchmark)
-- test/integration/testdata/sockmap_bench.json   (new — committed real Lima 5.15 result)
-- Makefile                                        (optional — nightly bench-sockmap/test-e2e target)
+- docs/PHASE2_GATES.md     (fill the gate-status table: P2.2 + CP-3 GREEN evidence; BENCH as nightly non-gate)
+- README.md               (Status → Phase 2 complete)
+- ROADMAP.md              (check off week-4 exit criteria; Phase 2→3 entry row)
+- docs/ARCHITECTURE.md    (confirm D18–D20 as-built; pointer to D21/MER-67 pending)
 
 Required Tests:
-- `go test -tags e2e -exec sudo -run TestSockmapBench ./test/integration/...` (Lima 5.15) → measures p50/p99, writes result JSON
-- `go test -tags=integration ./test/integration/...` (PR suite) → unaffected; e2e file tag-excluded
-- `go build ./...` / `go vet ./...`               → clean
-- `make check-commits`                            → MER-52 commit-linkage satisfied
+- `make test-bpf` / `make test-integration` / `make check-gate-skips` (Lima 5.15) → 9 armed gates green, 0 skips (evidence for PHASE2_GATES.md)
+- `make test-e2e` (Lima 5.15) → bench runs, result recorded (already committed `17bc526`)
+- `go build ./...` / `go vet ./...` → unaffected (docs-only change)
+- `make check-commits` → MER-59 commit-linkage satisfied
 
 Commit Message:
-test(ebpf): MER-52 P2.2-BENCH intra-node SOCKMAP latency benchmark (nightly e2e)
+docs(phase2): MER-59 Phase-2 EXIT — gate reconciliation + Phase-3 entry rule

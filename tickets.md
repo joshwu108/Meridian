@@ -46,7 +46,8 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
 | MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
-| MER-52 | `docs/PHASE2_TICKETS.md` | **ACTIVE** (MER-51 ✅). P2.2-BENCH intra-node SOCKMAP latency benchmark (nightly T4, `e2e` tag, **not a PR gate**). Now the **sole remaining MER-59 EXIT dependency** — the last item before Phase-2 exit. Linux/Lima 5.15. |
+| MER-52 | `docs/PHASE2_TICKETS.md` | **CLOSED `17bc526`** — P2.2-BENCH (`e2e` tag, nightly, not a PR gate). Ran on Lima 5.15.0-179: **honest "no win" for short flows** — p50 within noise, p99 ~+280% regression, redirect engaged (+4400). SOCKMAP value is bulk-transfer correctness (MER-51), not small-flow latency. Result committed; `make test-e2e` added. |
+| MER-59 | `docs/PHASE2_TICKETS.md` | **ACTIVE** — Phase-2 EXIT gate (all joins {49✅,51✅,56✅,52✅} satisfied). Pure-docs reconciliation: PHASE2_GATES all-green evidence, README Phase-2-complete, ROADMAP week-4 checkoff, ARCHITECTURE D18–D20 as-built + D21/MER-67 pointer, Phase-3 entry rule. |
 | MER-58 | `docs/PHASE2_TICKETS.md` | **READY** off critical path. Agent `bpfobj` sock_ops/sk_msg + sockhash re-open restart test (dep MER-47/57 ✅). NOT a MER-59 dep — does not block Phase-2 exit. |
 | MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
 | MER-55 | `docs/PHASE2_TICKETS.md` | **CLOSED `fe453b5`** — ADS agent stub (`StubAgent`): subscribes over loopback gRPC, decodes the Cluster-channel `BytesValue`→JSON `[]wire.PolicyRule` contract, ACKs on success / NACKs on contract violation (version reverted, config not adopted), concurrency-safe `Snapshot()`, reconnect via fresh `Run`. bufconn + decode-table tests green (`-race`); depguard clean. |
@@ -443,3 +444,30 @@ integrity harness (production `bpfobj`/`attach` + `test/harness`). Report honest
 a measured win with numbers OR "no win on <kernel>" with the numbers — do not
 green-wash. Commit results to `test/integration/testdata/sockmap_bench.json`.
 `activeticket.md` holds the MER-52 spec.
+
+## Batch 2026-06-16d — TPM/Auditor run (HEAD 17bc526)
+
+Findings: **MER-52 landed at `17bc526`** — P2.2-BENCH intra-node SOCKMAP latency
+benchmark (`//go:build e2e`, T4 nightly, NOT a PR gate, arms no manifest row).
+Ran on the Lima `meridian` VM (kernel 5.15.0-179, n=2000) via the production attach
+path (bpfobj + cgroup sock_ops + sockhash sk_msg). **Honest result: no latency win
+for short connect+first-byte flows** — p50 within run-to-run noise (~±6%), a
+consistent p99 regression (~+280–377%), redirect confirmed engaged
+(METRIC_FLOWS_REDIRECTED +4400). Verdict requires BOTH p50 and p99 to improve for a
+"win" (a p50-only gain is reported "mixed/no-win", never green-washed). Result →
+`test/integration/testdata/sockmap_bench.json`; `make test-e2e` target added.
+Reviewed — PR suites unaffected (e2e tag-excluded), host build/vet clean, tidy
+stable, manifest unchanged (9 armed gates). **APPROVED.** Useful finding: SOCKMAP's
+value is bulk-transfer correctness (MER-51), not small-flow latency on 5.15.
+
+**Phase-2 implementation is COMPLETE.** All MER-59 EXIT joins {49 ✅, 51 ✅, 56 ✅,
+52 ✅} are satisfied. No new tickets. `Next free ID` stays **MER-68**.
+
+Selected next ticket: **MER-59 — Phase-2 EXIT gate** (doc reconciliation + Phase-3
+entry rule). The final Phase-2 ticket — pure docs (PHASE2_GATES all-green evidence,
+README Phase-2-complete, ROADMAP week-4 exit checkoff, ARCHITECTURE D18–D20 as-built
++ a pointer to the pending D21/MER-67 ADS decision, Phase-3 entry rule = MER-59
+green + ADR-0004 unchanged). T1, but the implementer MUST cite a REAL Lima-5.15
+green-gate run (`make test-bpf`/`test-integration`/`check-gate-skips`, 0 skips) — no
+stale/asserted green. MER-58 (Agent leaf) + MER-67 (ADS D21 ADR) remain open
+off-path and do NOT block Phase-2 exit. `activeticket.md` holds the MER-59 spec.
