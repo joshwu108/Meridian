@@ -12,7 +12,8 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-70**.
+Next free ID = **MER-77**. (MER-70…76 reserved for Phase 3 — see
+`docs/PHASE3_TICKETS.md`.)
 
 ---
 
