@@ -1,69 +1,58 @@
 # Active Ticket
 
-ID: MER-68
+ID: MER-67
 
-Title: Make `check-gate-skips` deterministic — reap kernel state between privileged gates
+Title: ARCHITECTURE D21 — record the ADS server decision + flag interim xDS encoding (CC-2-pending)
 
 Objective:
-Fix the gate-verification harness so the "0 skips / 0 failures across the 9 armed
-gates" certification is **reproducible** on Lima 5.15. Today `make check-gate-skips`
-is non-deterministic for the `bpf`/`integration` gates: it runs each gate as a
-separate `go test` process but never reaps the kernel state the datapath
-deliberately persists across exit (pinned maps, TC filters, cgroup attachments,
-TPROXY rules — ARCHITECTURE lifecycle "Shutdown deliberately leaves…"), so
-back-to-back gate processes inherit and collide on leftover state. This is the
-**blocker of the truthful MER-59 Phase-2 EXIT**: the exit gate cannot cite a
-reproducible/CI-confirmed green run until the harness is deterministic. The gates
-themselves are genuinely green (canonical isolated targets pass reliably).
+Formalize the Phase-2 ADS server (MER-54/55/56) as a numbered decision-log entry
+(**D21**) in `docs/ARCHITECTURE.md`. The decision is architecturally significant —
+it added the gRPC + `go-control-plane` dependency, the per-(stream, type_url)
+version/nonce state machine, the `Store.Watch()`-driven ordered push, and a **new
+cross-boundary xDS resource encoding** — yet the decision log stops at D20 and the
+encoding lives only in code comments + the prose "Pending — D21" pointer MER-59
+(`d8c7612`) added. The project deliberately defers the real CC-2 compiled-policy
+wire contract to Phase 3, so the interim encoding must be **explicitly tracked as a
+placeholder**, not left implicit. Pure-docs — no Lima, no production code.
 
-Stay in scope: the `checkgateskips` tool (and, if needed, the `check-gate-skips`
-make target / a small harness helper) plus the one MER-59 doc that this fix
-resolves (see AC #7). Do NOT change production datapath/agent code — the
-persist-on-shutdown behavior is intentional (chaos-survival). Do NOT weaken skip
-detection (MER-44 rule). NOTE: **MER-59 is already committed (`d8c7612`,
-committed-but-provisional)** and the tree is clean — there is no MER-59 WIP to
-avoid; MER-68 makes that EXIT certification reproducible and reconciles its caveat.
+Stay in scope: `docs/ARCHITECTURE.md` only (the D21 decision-log entry + reconcile
+the existing prose pointer). Do NOT change production code, the frozen ADR-0004
+schema, or start MER-58 / Phase-3 work. Do NOT author a separate ADR file (D21 is a
+decision-log row; the CC-2 wire-contract ADR is a distinct Phase-3 deliverable).
 
 Dependencies:
-- None for the fix (gates are green via canonical targets `make test-bpf` /
-  `make test-integration`, both exit 0 on Lima 5.15 with `-parallel 1`).
-- BLOCKS MER-59 (Phase-2 EXIT). After this lands, MER-59 finalizes citing a clean
-  `check-gate-skips` run + CI link, and references MER-68 by ID.
-- Runtime: verify on the Lima `meridian` VM (5.15), network-off recipe
-  `GOMODCACHE=/Users/joshuawu/go/pkg/mod GOFLAGS=-mod=mod GOPROXY=off`.
+- MER-54 (ADS server) CLOSED `0ff966d`, MER-55 `fe453b5`, MER-56 `2898a75` — the
+  as-built behavior D21 records. Coordinates with the deferred CC-2 wire-contract
+  ADR (Phase-3) — D21 explicitly marks the interim encoding as superseded by it.
+- Off critical path (P3/LOW); blocks nothing. Phase 2 is already complete (MER-59
+  `d8c7612` + MER-68 `1b5bdf3`).
 
 Acceptance Criteria:
-1. `make check-gate-skips` is **deterministic on Lima 5.15**: green across **≥10
-   consecutive runs** (and when a prior privileged suite has just run), all 9 armed
-   gates reporting 0 skips / 0 failures — no order- or accumulation-dependent flake.
-2. The fix **resets kernel state between privileged (`bpf`/`integration`) gate
-   invocations** — e.g. `checkgateskips` shells the existing `make test-clean`
-   (reap netns + `rm -rf /sys/fs/bpf/meridian-test`) before each privileged gate,
-   and/or serializes privileged gates and pins each under a unique bpffs dir.
-   Pure-Go gates skip the cleanup (no needless work).
-3. Skip-integrity preserved (MER-44): the tool still **fails closed** on a genuine
-   `t.Skip` or a genuine test failure — the cleanup must not mask a real red gate.
-   Add/adjust a unit test for the tool's classification if practical.
-4. No production datapath/agent/eBPF code changed; ADR-0004 frozen schema untouched.
-5. `go build ./...` / `go vet ./...` clean; `make test-bpf` / `make test-integration`
-   still green on Lima; `go mod tidy` no diff.
-6. After commit, `git status` is clean; `make check-commits` passes (MER-68 ref).
-7. `docs/PHASE2_GATES.md`: replace the "known harness caveat / flakes
-   non-deterministically" note (added by MER-59 `d8c7612`) with the deterministic
-   result (≥10 clean consecutive runs on Lima 5.15), so the MER-59 EXIT
-   certification is reproducible, not caveated.
+1. `docs/ARCHITECTURE.md` gains a **D21** entry in the decision-log **table** (the
+   D1…D20 table) recording, as-built: the ADS server package
+   (`internal/control/ads`); the gRPC + `go-control-plane` dependency addition
+   (per D11 — deps recorded by the phase that first imports them); the
+   per-(stream, type_url) version/nonce protocol (ACK advances accepted version,
+   NACK holds last-known-good per CC-5, stale nonce ignored); the `Store.Watch()`-
+   driven CDS→EDS / LDS→RDS ordered push; and the **interim** resource encoding
+   (JSON `[]wire.PolicyRule` in a `wrapperspb.BytesValue` Any on the Cluster
+   channel only; other channels versioned-but-empty) with an explicit "**superseded
+   by the CC-2 wire-contract freeze (Phase-3)**" caveat.
+2. The existing prose "**Pending — D21 (ADS server, tracked by MER-67)**" pointer
+   is reconciled — updated to reference the now-formal D21 entry (no longer
+   "pending"/"not yet a numbered entry"), so there is one source of truth.
+3. The entry cross-references the relevant ARCHITECTURE CC-2 / xDS text and ROADMAP
+   CC-2, so the interim-vs-frozen boundary is unambiguous.
+4. No production code changes; `go build ./...` / `go vet ./...` unaffected;
+   `make check-commits` passes (MER-67 ref); `git status` clean after commit.
 
 Files Expected To Change:
-- test/tools/checkgateskips/main.go      (reap state between privileged gates / serialize)
-- test/tools/checkgateskips/*_test.go    (optional — assert fail-closed on real skip/fail)
-- Makefile                                (optional — if cleanup is wired at the target level)
-- docs/PHASE2_GATES.md                    (replace the flakiness caveat with the deterministic result — AC #7)
+- docs/ARCHITECTURE.md     (add D21 decision-log row; reconcile the prose pointer)
 
 Required Tests:
-- `for i in $(seq 10); do make check-gate-skips; done` on Lima 5.15 → green every run, 0 skips/0 failures
-- `make test-bpf` / `make test-integration` (Lima) → still green (no regression)
-- `go build ./...` / `go vet ./...` → clean
-- `make check-commits` → MER-68 commit-linkage satisfied
+- `go build ./...` / `go vet ./...` → unaffected (docs-only)
+- `make check-commits`             → MER-67 commit-linkage satisfied
+- visual: D21 row present in the decision-log table; prose pointer reconciled; CC-2 cross-reference present
 
 Commit Message:
-fix(gates): MER-68 deterministic check-gate-skips — reap kernel state between privileged gates
+docs(arch): MER-67 record ADS server decision D21 — interim xDS encoding CC-2-pending

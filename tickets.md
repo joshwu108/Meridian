@@ -6,30 +6,16 @@ MER-47 … MER-59 live in `docs/PHASE2_TICKETS.md`. **This file lists only open
 backlog tickets (MER-35+) that are not yet implemented.**
 
 Completed backlog tickets (MER-35, MER-36, MER-37, MER-38, MER-39, MER-40,
-MER-41, MER-42, MER-44, MER-45, MER-46, MER-60) are removed from this file;
-see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
+MER-41, MER-42, MER-44, MER-45, MER-46, MER-60, MER-68) are removed from this
+file; see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
+MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between gates;
+10/10 green on Lima 5.15).
 
 Next free ID = **MER-69**.
 
 ---
 
 ## Open backlog tickets
-
-### MER-68 — Make `check-gate-skips` deterministic (reset kernel state between gates) — BLOCKS MER-59 EXIT
-
-- **ID:** MER-68
-- **TITLE:** Fix `checkgateskips` flakiness: reap leaked bpffs pins / netns / TC filters between gate runs
-- **PRIORITY:** P1 / HIGH — **blocks the Phase-2 EXIT (MER-59)**: the EXIT gate must cite a reproducible "0 skips across 9 armed gates" run, which this tool currently cannot provide.
-- **ESTIMATE:** 2–3h
-- **BLOCKS:** MER-59 (cannot honestly declare Phase-2 exit on a flaky gate-integrity tool)
-- **DEPENDENCIES:** none (test-harness fix; gates themselves are green via the canonical targets)
-- **EVIDENCE (Lima 5.15, HEAD `fd882a7`):** `make check-gate-skips` is **non-deterministic** — three consecutive runs gave (1) MER-29 red, (2) all green, (3) MER-{P1.1,29,32,49,51} red. Pure-Go gates (CP-2, conformance, CP-3) **never** flake; only `bpf`/`integration`-tagged gates do. The canonical isolated targets **pass green reliably**: `make test-integration` (MER-21/29/32/51) and `make test-bpf` (P1.1/MER-49) both exit 0 with `-parallel 1`. Root cause: `test/tools/checkgateskips/main.go` runs each gate as a separate `go test -run ^Name$ -exec=sudo` process but performs **no `make test-clean` (bpffs-pin/netns reap) between gates**, and the datapath *deliberately persists* pinned maps / TC filters / cgroup attachments / TPROXY rules across process exit (ARCHITECTURE lifecycle "Shutdown deliberately leaves…"), so back-to-back gate processes inherit and collide on leftover kernel state.
-- **ACCEPTANCE CRITERIA:**
-  1. `make check-gate-skips` is **deterministic on Lima 5.15**: green across **≥10 consecutive runs** with the 9 armed gates reporting 0 skips / 0 failures (no order- or accumulation-dependent flakes).
-  2. The fix resets kernel state **between** gate invocations — e.g. `checkgateskips` invokes the existing `make test-clean` (reap netns + `rm -rf /sys/fs/bpf/meridian-test`) before each privileged (`bpf`/`integration`) gate, and/or serializes privileged gates and pins each under a unique bpffs dir. No change that weakens skip-detection (MER-44 rule intact).
-  3. Pure-Go gates remain unaffected (no needless cleanup); the tool still fails closed on a genuine skip or genuine test failure.
-  4. No production datapath/agent code changed (the persist-on-shutdown behavior is intentional; the fix lives in the test harness). `make check-commits` passes (MER-68 ref); `git status` clean.
-- **Note:** the underlying gates are **genuinely green** — this is purely a gate-verification-harness integrity defect, but it is load-bearing for the MER-59 exit certification and the MER-44 0-skip rule.
 
 ### MER-67 — Record the ADS server architecture decision (D21) + interim xDS resource-encoding note (CC-2-pending)
 
@@ -63,13 +49,13 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
 | MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
 | MER-52 | `docs/PHASE2_TICKETS.md` | **CLOSED `17bc526`** — P2.2-BENCH (`e2e` tag, nightly, not a PR gate). Ran on Lima 5.15.0-179: **honest "no win" for short flows** — p50 within noise, p99 ~+280% regression, redirect engaged (+4400). SOCKMAP value is bulk-transfer correctness (MER-51), not small-flow latency. Result committed; `make test-e2e` added. |
-| MER-59 | `docs/PHASE2_TICKETS.md` | **COMMITTED `d8c7612` — exit PROVISIONAL pending MER-68.** Phase-2 EXIT docs landed (joins {49✅,51✅,56✅,52✅}); gate evidence is honest (CP-3 green, bench no-win recorded) and **openly discloses** the `check-gate-skips` flake (gates green in isolation/canonical targets; harness leaks kernel state; CI confirmation pending). The "all gates green in CI / Phase-3 may start" claim is **not reproducible until MER-68** makes the harness deterministic and a CI link is recorded. Follow-up: cite MER-68 by ID in the exit doc. |
-| MER-68 | this file | **ACTIVE** — make `check-gate-skips` deterministic (reap bpffs/netns/cgroup state between privileged gates). Finalizes the MER-59 exit (reproducible CI-green); gates themselves are already green. |
+| MER-59 | `docs/PHASE2_TICKETS.md` | **CLOSED `d8c7612` (+ MER-68 `1b5bdf3` finalizes).** Phase-2 EXIT: docs reconciled (CP-3 green, bench no-win recorded honestly, Phase-3 entry rule). The `check-gate-skips` flake that made the exit provisional is **RESOLVED by MER-68** — now deterministic (10/10 green on Lima 5.15). **Phase 2 is COMPLETE.** Remaining: CI confirmation on branch push (commits not yet on `origin`). |
+| MER-68 | (closed) | **CLOSED `1b5bdf3`** — deterministic `check-gate-skips`: reap netns/bpffs before each privileged gate; fail-closed classifier preserved (unit-tested); 10/10 green on Lima 5.15. Only residual flake = a *second* gate runner sharing the VM (dual-loop), which a per-gate reap cannot isolate → run one gate runner per machine. |
 | MER-58 | `docs/PHASE2_TICKETS.md` | **READY** off critical path. Agent `bpfobj` sock_ops/sk_msg + sockhash re-open restart test (dep MER-47/57 ✅). NOT a MER-59 dep — does not block Phase-2 exit. |
 | MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
 | MER-55 | `docs/PHASE2_TICKETS.md` | **CLOSED `fe453b5`** — ADS agent stub (`StubAgent`): subscribes over loopback gRPC, decodes the Cluster-channel `BytesValue`→JSON `[]wire.PolicyRule` contract, ACKs on success / NACKs on contract violation (version reverted, config not adopted), concurrency-safe `Snapshot()`, reconnect via fresh `Run`. bufconn + decode-table tests green (`-race`); depguard clean. |
 | MER-56 | `docs/PHASE2_TICKETS.md` | **CLOSED `2898a75`** — **CP-3 GATE** armed/green: ADS conformance (initial/add/delete/NACK-recovery/stale-nonce-ignore/reconnect) + REST→stub propagation measured ~1.3 ms (<500 ms budget). Manifest `armed=yes` → **9 armed gates, 0 skips**. Seed fixture committed. |
-| MER-67 | this file | **OPEN — P3/LOW, off critical path.** ARCHITECTURE D21 for the MER-54 ADS server + flag interim xDS encoding as CC-2-pending. Dep MER-54 ✅; does not block MER-56/59. |
+| MER-67 | this file | **ACTIVE** — ARCHITECTURE D21 for the MER-54 ADS server + flag interim xDS encoding as CC-2-pending. Dep MER-54 ✅. Pure-docs (no Lima); formalizes the D21 pointer MER-59 (`d8c7612`) added into a full decision-log entry. |
 
 ---
 
@@ -488,3 +474,34 @@ green + ADR-0004 unchanged). T1, but the implementer MUST cite a REAL Lima-5.15
 green-gate run (`make test-bpf`/`test-integration`/`check-gate-skips`, 0 skips) — no
 stale/asserted green. MER-58 (Agent leaf) + MER-67 (ADS D21 ADR) remain open
 off-path and do NOT block Phase-2 exit. `activeticket.md` holds the MER-59 spec.
+
+## Batch 2026-06-16e — TPM/Auditor run (HEAD 1b5bdf3)
+
+Findings: **MER-68 landed at `1b5bdf3`** — `check-gate-skips` is now deterministic:
+`checkgateskips` reaps leaked `mrdn-*` netns + `/sys/fs/bpf/meridian-test` before
+each privileged (`bpf`/`integration`) gate (pure-Go gates skip the reap); the
+skip/fail classifier was extracted (`classifyEvents`) and unit-tested so the reap
+cannot mask a red gate (MER-44 fail-closed intact). **Verified 10/10 consecutive
+green on Lima 5.15.0-179** when it is the sole gate runner. Key diagnostic note:
+the verification was nearly derailed by the dual-loop collision — a *second* loop
+running gate tests in the same VM made the fix look broken (9/10) until an
+instrumented competing-process guard isolated a clean window; **a per-gate reap
+cannot defend against a concurrent root gate-runner.** PHASE2_GATES caveat replaced
+with the deterministic result. **This finalizes the MER-59 Phase-2 EXIT — Phase 2
+is COMPLETE.** No production code touched.
+
+No new tickets. Open: MER-67 (selected), MER-58. `Next free ID` stays **MER-69**.
+
+Selected next ticket: **MER-67 — ARCHITECTURE D21 (ADS server) + interim
+xDS-encoding CC-2-pending note.** With Phase 2 substantively done and all gates
+green, the highest-value ready item is closing the architecture-compliance gap:
+the ADS decision (gRPC/go-control-plane dep, version/nonce state machine,
+Watch-driven CDS→EDS/LDS→RDS push, interim JSON-in-BytesValue encoding) is
+load-bearing across MER-54/55/56 but recorded only in code comments + the pending-
+D21 pointer MER-59 added. **Pure-docs (no Lima)** — deliberately chosen over MER-58
+(agent restart, Lima T2) because MER-68 just proved the dual-loop collision
+CORRUPTS Lima verification; MER-58 should wait until one gate runner per VM is
+enforced. MER-67 formalizes the D21 pointer into a full decision-log entry,
+cross-references CC-2, and flags the interim encoding as superseded-by-Phase-3.
+`activeticket.md` holds the MER-67 spec. (Operator: push the branch — 40+ Phase-2
+commits have NEVER hit CI.)
