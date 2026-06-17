@@ -12,14 +12,35 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-69**.
+Next free ID = **MER-70**.
 
 ---
 
 ## Open backlog tickets
 
-_(none — MER-67 closed `9d1790a`; MER-58 is the last open Phase-2 ticket, tracked
-in the table below)_
+### MER-69 — Phase-3 planning: decompose A-2 / A-3 / PKI-1/2 into tickets + gates + CC-2 ADR
+
+- **ID:** MER-69
+- **TITLE:** Plan Phase 3 (agent netlink lifecycle, ADS client + translation, CA/bootstrap) — mirror the MER-46 Phase-2 planning artifact
+- **PRIORITY:** P2 / MEDIUM — **the forward critical-path enabler.** Phase 2 EXIT (MER-59) is green, so Phase 3 is unblocked; it has **no tickets yet**. Like MER-46 (Phase-2 planning), this has no dependency and may land in parallel with the last Phase-2 item (MER-58).
+- **ESTIMATE:** 2–3h
+- **BLOCKS:** all Phase-3 implementation (A-2/A-3/PKI) — they need specced tickets + gate definitions first.
+- **DEPENDENCIES:** none (planning only; MER-59 green already unblocks Phase 3). Planning artifacts are not Phase-3 *implementation*, so they may land before MER-58 closes.
+- **SCOPE (per ROADMAP week 5–6, PRD phase 3):**
+  - **A-2** — agent netlink lifecycle (veth scan-before-subscribe, INTERFACE_RECONCILE, link watch).
+  - **A-3** — ADS client + xDS→`CommitPlan` translation (consumes the MER-54 server; replaces the MER-55 stub on the agent side; the interim JSON-in-BytesValue encoding is **CC-2-pending**, D21).
+  - **PKI-1/2** — CA primitives + node bootstrap credential (CC-4).
+  - **CC-2** — the compiled-policy + xDS resource **wire-contract ADR** (ROADMAP: "freeze before Phase 3 completes"; supersedes the MER-54 interim encoding flagged in D21/MER-67).
+- **ACCEPTANCE CRITERIA:**
+  1. `docs/PHASE3_PLAN.md`, `docs/PHASE3_TICKETS.md`, `docs/PHASE3_GATES.md` created (mirroring the Phase-2 set), decomposing A-2 / A-3 / PKI-1/2 into ticket-sized units with dependencies + a dependency graph.
+  2. Phase-3 **exit gate** defined: ROADMAP week-5/6 criterion **"REST → kernel map < 500 ms measured end-to-end"** (the agent A-3 translation lands real policy in the kernel), plus the A-2/A-3 entry gates named in PHASE2_GATES.
+  3. The **CC-2 wire-contract ADR** is scheduled as a Phase-3 deliverable and cross-referenced to D21 / MER-67 (interim encoding to be superseded).
+  4. ROADMAP "Phase entry gates" table updated so Phase 2→3 reflects MER-59 green; tickets reserved from MER-70+.
+  5. No production code; `make check-commits` passes (MER-69 ref); `git status` clean.
+
+---
+
+_(MER-58 — the last open Phase-2 ticket — is tracked in the table below.)_
 
 ---
 
