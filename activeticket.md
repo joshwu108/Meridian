@@ -1,58 +1,63 @@
 # Active Ticket
 
-ID: MER-67
+ID: MER-58
 
-Title: ARCHITECTURE D21 — record the ADS server decision + flag interim xDS encoding (CC-2-pending)
+Title: bpfobj loader — re-open pinned sockhash on restart (pin reuse, not recreate) + T2 restart test
 
 Objective:
-Formalize the Phase-2 ADS server (MER-54/55/56) as a numbered decision-log entry
-(**D21**) in `docs/ARCHITECTURE.md`. The decision is architecturally significant —
-it added the gRPC + `go-control-plane` dependency, the per-(stream, type_url)
-version/nonce state machine, the `Store.Watch()`-driven ordered push, and a **new
-cross-boundary xDS resource encoding** — yet the decision log stops at D20 and the
-encoding lives only in code comments + the prose "Pending — D21" pointer MER-59
-(`d8c7612`) added. The project deliberately defers the real CC-2 compiled-policy
-wire contract to Phase 3, so the interim encoding must be **explicitly tracked as a
-placeholder**, not left implicit. Pure-docs — no Lima, no production code.
+Make the agent survive a restart without dropping live SOCKMAP redirect state. On
+(re)start the `bpfobj` loader must **re-open the existing pinned `sockhash`** by its
+bpffs pin — reusing it, not recreating it — so socket entries that `sock_ops`
+inserted for established eligible flows persist across an agent restart (the
+datapath deliberately leaves pins in place on shutdown, ARCHITECTURE lifecycle).
+This is the LAST open Phase-2 ticket (Agent-lane robustness); it closes Phase 2.
 
-Stay in scope: `docs/ARCHITECTURE.md` only (the D21 decision-log entry + reconcile
-the existing prose pointer). Do NOT change production code, the frozen ADR-0004
-schema, or start MER-58 / Phase-3 work. Do NOT author a separate ADR file (D21 is a
-decision-log row; the CC-2 wire-contract ADR is a distinct Phase-3 deliverable).
+Stay in scope: the `bpfobj` loader's sockhash open/reopen path and a T2 restart
+test. Do NOT change the eBPF programs, the frozen ADR-0004 schema, the agent
+attach managers (MER-57), or the control plane. The primary `LoadCounter`/
+`LoadTcIngress` owns the schema-sentinel reconcile (D20) — the sockhash reopen must
+not duplicate or fight that.
 
 Dependencies:
-- MER-54 (ADS server) CLOSED `0ff966d`, MER-55 `fe453b5`, MER-56 `2898a75` — the
-  as-built behavior D21 records. Coordinates with the deferred CC-2 wire-contract
-  ADR (Phase-3) — D21 explicitly marks the interim encoding as superseded by it.
-- Off critical path (P3/LOW); blocks nothing. Phase 2 is already complete (MER-59
-  `d8c7612` + MER-68 `1b5bdf3`).
+- MER-47 (`sockhash` map) CLOSED `70c52ad`; MER-57 (`LoadSockOps`/`LoadSkMsg`
+  secondary loaders + attach managers) CLOSED `014bc2e`. The reopen builds on those.
+- Runtime: Linux + root + 5.15 (bpffs pins). **Verify on the Lima `meridian` VM.**
+  ⚠️ MER-68 proved the dual-loop collision CORRUPTS Lima runs — **verify in an
+  ISOLATED window**: instrument competing-process detection (as MER-68 did) and
+  only trust a clean-window result (`GOMODCACHE=/Users/joshuawu/go/pkg/mod
+  GOFLAGS=-mod=mod GOPROXY=off`, VM has no network).
+- depguard `wire-bpf-bridge`: `bpfobj` is the sole `bpf/` opener — keep the load
+  there; tests may use the bpftest harness.
 
 Acceptance Criteria:
-1. `docs/ARCHITECTURE.md` gains a **D21** entry in the decision-log **table** (the
-   D1…D20 table) recording, as-built: the ADS server package
-   (`internal/control/ads`); the gRPC + `go-control-plane` dependency addition
-   (per D11 — deps recorded by the phase that first imports them); the
-   per-(stream, type_url) version/nonce protocol (ACK advances accepted version,
-   NACK holds last-known-good per CC-5, stale nonce ignored); the `Store.Watch()`-
-   driven CDS→EDS / LDS→RDS ordered push; and the **interim** resource encoding
-   (JSON `[]wire.PolicyRule` in a `wrapperspb.BytesValue` Any on the Cluster
-   channel only; other channels versioned-but-empty) with an explicit "**superseded
-   by the CC-2 wire-contract freeze (Phase-3)**" caveat.
-2. The existing prose "**Pending — D21 (ADS server, tracked by MER-67)**" pointer
-   is reconciled — updated to reference the now-formal D21 entry (no longer
-   "pending"/"not yet a numbered entry"), so there is one source of truth.
-3. The entry cross-references the relevant ARCHITECTURE CC-2 / xDS text and ROADMAP
-   CC-2, so the interim-vs-frozen boundary is unambiguous.
-4. No production code changes; `go build ./...` / `go vet ./...` unaffected;
-   `make check-commits` passes (MER-67 ref); `git status` clean after commit.
+1. `internal/agent/bpfobj/loader_linux.go`: the sockhash load path uses
+   **pin-or-reuse** semantics — if the `sockhash` pin already exists at the bpffs
+   path, the loader RE-OPENS it (e.g. `ebpf.LoadPinnedMap` / `LoadPinOptions`)
+   rather than creating a fresh map; if absent, it creates and pins it. Idempotent:
+   a second `LoadSockOps`/`LoadSkMsg` against an existing pin reuses the SAME map
+   (same entries), it does not clear or replace it.
+2. `internal/agent/bpfobj/loader_test.go` (T2, build tag `bpf`): a **restart test**
+   — load the sockhash, insert a known `sock_key`→value entry, then simulate an
+   agent restart by closing the loader's handles and **re-loading via a fresh
+   loader**; assert the inserted entry is **still present** (pin re-opened, not
+   recreated). A complementary assertion: the re-opened map has the same map ID /
+   info (same kernel object), not a new one. Must not `t.Skip` under root on 5.15.
+3. ADR/architecture compliance: no change to the frozen schema; the reopen reuses
+   the D18 `sockhash` shape; the schema-sentinel reconcile stays owned by the
+   primary loader (D20) — sockhash reopen does not re-run it.
+4. `go build ./...` / `go vet ./...` clean; `make test-bpf` green on Lima
+   (including the new restart test); `go mod tidy` no diff; depguard clean.
+5. After commit, `git status` is clean; `make check-commits` passes (MER-58 ref).
 
 Files Expected To Change:
-- docs/ARCHITECTURE.md     (add D21 decision-log row; reconcile the prose pointer)
+- internal/agent/bpfobj/loader_linux.go    (sockhash pin-or-reuse on (re)load)
+- internal/agent/bpfobj/loader_test.go     (T2 restart test: entry survives reload)
 
 Required Tests:
-- `go build ./...` / `go vet ./...` → unaffected (docs-only)
-- `make check-commits`             → MER-67 commit-linkage satisfied
-- visual: D21 row present in the decision-log table; prose pointer reconciled; CC-2 cross-reference present
+- `make test-bpf` (Lima 5.15, ISOLATED window) → restart test green; sockhash entry survives reload; 0 skips
+- `go build ./...` / `go vet ./...`          → clean
+- `go mod tidy`                              → no diff
+- `make check-commits`                       → MER-58 commit-linkage satisfied
 
 Commit Message:
-docs(arch): MER-67 record ADS server decision D21 — interim xDS encoding CC-2-pending
+feat(agent): MER-58 bpfobj re-open pinned sockhash on restart — entries survive agent restart
