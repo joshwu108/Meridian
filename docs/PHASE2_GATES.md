@@ -68,14 +68,18 @@ non-eligible verdict class enter `sockhash` fails P2.1-N.
 **Whole-suite evidence (MER-59 exit):** `make check-gate-skips` reports **0 skips
 and 0 failures across all nine armed gates** (P1.1, P1.2, P1.3, CP-2 ×2, O-2,
 P2.1-N, P2.2, CP-3) on the Lima `meridian` VM (kernel 5.15.0-179), and is now
-**deterministic — 10/10 consecutive green runs** (MER-68): `checkgateskips` reaps
-leaked netns + bpffs pins before each privileged (`bpf`/`integration`) gate, so a
-gate no longer inherits an earlier gate's residual kernel state (which the datapath
-deliberately persists across exit). The only remaining flake source is running a
-**second gate runner concurrently in the same VM** — two root processes sharing
-`/sys/fs/bpf` and netns cannot be isolated by a per-gate reap; run one gate runner
-per machine (CI does). Not a production-code regression. CI confirmation follows on
-branch push (these Phase-2 commits are not yet on `origin`).
+**deterministic — 10/10 consecutive green runs** (MER-68): `checkgateskips` now
+runs each package's armed gates together in a **single `go test -parallel 1`
+process** — exactly as the canonical `make test-bpf` / `make test-integration`
+targets do — instead of respawning a separate privileged process per gate. Each
+test's own `t.Cleanup` tears down its netns/bpffs state before the next test runs,
+so no gate inherits an earlier gate's residual kernel state (which the datapath
+deliberately persists across process exit). A `-run`-filtered per-gate subset was
+measured **non-deterministic (0–8/10 fail)**; the whole-package run is what makes
+it reliable. The only remaining flake source is running a **second gate runner
+concurrently in the same VM** — two root processes sharing `/sys/fs/bpf` and netns;
+run one gate runner per machine (CI does). Not a production-code regression. CI
+confirmation follows on branch push (these Phase-2 commits are not yet on `origin`).
 
 ## Skip-integrity rule
 
