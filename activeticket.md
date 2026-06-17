@@ -1,63 +1,60 @@
 # Active Ticket
 
-ID: MER-69
+ID: MER-70
 
-Title: Phase-3 planning — decompose A-2 / A-3 / PKI-1/2 into tickets, gates, and the CC-2 ADR
+Title: CC-2 ADR — compiled-policy + xDS resource wire contract (supersedes MER-54 interim encoding)
 
 Objective:
-Phase 2 is COMPLETE (MER-59 EXIT green; all 9 gates deterministic; Agent SOCKMAP
-lane closed by MER-58 `a8cf82a`). Plan Phase 3 the way MER-46 planned Phase 2:
-produce the Phase-3 planning artifacts, decompose the ROADMAP week-5/6 scope into
-ticket-sized units with a dependency graph and gate definitions, and schedule the
-CC-2 wire-contract ADR. Pure planning docs — no production code, no Phase-3
-implementation (that is gated on these artifacts landing).
+Freeze the CC-2 cross-cutting decision the whole Phase-3 agent translation lane
+(A-3 / MER-72) compiles against: the byte/message contract between control plane,
+agent, and kernel for xDS resources. Today the MER-54 ADS server ships an
+**interim** placeholder — a JSON-marshalled `[]wire.PolicyRule` packed in a
+`wrapperspb.BytesValue` Any on the Cluster channel only (D21/MER-67). This ADR
+records the real contract — which `type_url` carries which Meridian construct,
+the resource message shape, and the write-ordering rules — and explicitly marks
+the interim encoding as superseded. Pure docs/ADR; no code (the A-3 implementation
+that adopts it is MER-72).
 
-Stay in scope: the three Phase-3 planning docs + the ROADMAP phase-gate row + ID
-reservations. Do NOT implement A-2/A-3/PKI, do NOT write the CC-2 ADR body here
-(only schedule it), and do NOT touch Phase-2 code or the frozen schema.
+Stay in scope: the ADR + decision-log entry + ADR index. Do NOT change the MER-54
+server encoding, the agent, or any code — MER-72 (A-3) implements against this
+contract next. Do NOT start MER-71/72.
 
 Dependencies:
-- MER-59 (Phase-2 EXIT) green — Phase 3 is unblocked. Planning has **no** other
-  dependency and may proceed now (mirrors MER-46, which planned Phase 2 while
-  Phase-1 gates were still open).
-- Inputs: ROADMAP.md (week 5–6 / PRD phase 3: A-2 agent netlink lifecycle, A-3 ADS
-  client + xDS→CommitPlan translation, PKI-1/2 CA primitives + node bootstrap);
-  ARCHITECTURE.md xDS-apply-pipeline + D20/D21; the MER-54 interim encoding flagged
-  CC-2-pending (D21/MER-67); cross-cutting CC-2 (wire contract) and CC-4 (bootstrap
-  credential).
+- MER-54 (ADS server, interim encoding) `0ff966d`, D21/MER-67 `9d1790a` — the
+  interim contract this supersedes. No other dependency (ADR is pure analysis).
+- Soft prerequisite for MER-72 (A-3 translation) — should land before A-3
+  completes so A-3 targets the frozen contract, not the placeholder.
+- ROADMAP CC-2 ("freeze before Phase 3 completes"); ARCHITECTURE "xDS apply
+  pipeline" + D17 (wire↔kernel translation boundary, the sole `datapath` writer).
 
 Acceptance Criteria:
-1. `docs/PHASE3_PLAN.md` — Phase-3 scope, workstream split (A kernel/agent vs B
-   PKI), build order, top risks, and the dependency graph (text), mirroring
-   `PHASE2_PLAN.md`.
-2. `docs/PHASE3_TICKETS.md` — A-2 / A-3 / PKI-1/2 decomposed into ticket-sized
-   units (IDs reserved from MER-70+), each with scope, dependencies, and the files
-   it will touch; A-3 explicitly consumes the MER-54 ADS server and replaces the
-   MER-55 stub on the agent side.
-3. `docs/PHASE3_GATES.md` — Phase-3 gate inventory + the **exit gate**: ROADMAP
-   week-5/6 criterion **"REST → kernel map < 500 ms measured end-to-end"** (real
-   policy lands in the kernel via the agent A-3 translation), plus the A-2/A-3
-   entry gates referenced from PHASE2_GATES.
-4. The **CC-2 compiled-policy + xDS resource wire-contract ADR** is scheduled as a
-   Phase-3 deliverable (its own reserved ticket), cross-referenced to D21 / MER-67
-   (interim JSON-in-BytesValue encoding to be superseded). Note CC-4 (single node
-   bootstrap credential) as the PKI bootstrap input.
-5. `ROADMAP.md` "Phase entry gates" table updated so Phase 2→3 reflects MER-59
-   green; `tickets.md` "Next free ID" advanced past the reserved Phase-3 IDs.
-6. No production code; `go build ./...` unaffected; `make check-commits` passes
-   (MER-69 ref); `git status` clean after commit.
+1. `docs/adr/0008-xds-wire-contract.md` (Status: Accepted) records:
+   a. the `type_url`→Meridian mapping — CDS = compiled L4 policy / cluster, EDS =
+      identity/endpoint metadata, LDS/RDS = L7 rules — with the rationale;
+   b. the resource **message shape** for each channel (what proto/encoding carries
+      `wire.PolicyRule` / `wire.Identity` / L7 rules), replacing the interim
+      JSON-in-`BytesValue`-on-Cluster placeholder;
+   c. the apply **write-ordering** contract (identities before referencing
+      policies; remove-allow before add on shrink — never transiently widen);
+   d. the **rejected alternatives** (e.g. keep JSON-in-BytesValue; custom non-xDS
+      protocol) and why.
+2. The ADR cross-references **D21 / MER-67** (interim encoding to be superseded)
+   and the MER-72 (A-3) consumer; ARCHITECTURE decision log gains a one-line
+   pointer entry (continue from D21).
+3. `docs/adr/README.md` index updated; ADR numbering-gap check passes (0008 is
+   the next free number).
+4. No production code; `go build ./...` unaffected; `make check-commits` passes
+   (MER-70 ref); `git status` clean after commit.
 
 Files Expected To Change:
-- docs/PHASE3_PLAN.md      (new — Phase-3 plan, mirrors PHASE2_PLAN.md)
-- docs/PHASE3_TICKETS.md   (new — A-2/A-3/PKI-1/2 decomposed, IDs MER-70+)
-- docs/PHASE3_GATES.md     (new — gate inventory + REST→kernel <500 ms exit gate)
-- ROADMAP.md               (Phase 2→3 entry-gate row; CC-2 scheduled)
-- tickets.md               (reserve Phase-3 IDs; advance Next free ID)
+- docs/adr/0008-xds-wire-contract.md   (new — the CC-2 wire-contract ADR)
+- docs/adr/README.md                   (index + numbering-gap entry)
+- docs/ARCHITECTURE.md                 (one-line decision-log pointer to the ADR)
 
 Required Tests:
-- `make check-commits`   → MER-69 commit-linkage satisfied
+- `make check-commits`   → MER-70 commit-linkage satisfied
 - `go build ./...`       → unaffected (docs-only change)
-- internal consistency: every Phase-3 ticket ID is unique, dependency graph is acyclic, exit gate is measurable
+- ADR index numbering-gap check passes; cross-refs to D21/MER-67/MER-72 resolve
 
 Commit Message:
-docs(phase3): MER-69 Phase-3 plan — A-2/A-3/PKI decomposition, gates, CC-2 ADR scheduled
+docs(adr): MER-70 ADR-0008 CC-2 xDS wire contract — supersede MER-54 interim encoding
