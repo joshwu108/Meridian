@@ -32,21 +32,20 @@ tracked here.
   Meridian-native resource protos (frozen field numbers), commit ordering
   (identity→policy adds, policy→identity removes, never transiently widen), ACK-after-commit.
   Supersedes the MER-54 interim JSON-in-`BytesValue` (D21→D22); ADR index → next free 0009.
-- **MER-77 — Revise ADR-0008: CC-2 encoding without protoc** — **ACTIVE.** Blocker
-  found: ADR-0008 §2 mandated protoc-generated `meridian.config.v1` messages, but
-  **no protoc/protoc-gen-go/buf exists on the host OR Lima** (and protoc isn't a
-  `go install` tool); a protoc build dep also cuts against D11. Revise §2 to a
-  no-protoc, **versioned, field-stable** encoding (versioned JSON w/ DisallowUnknownFields
-  + explicit int widths, or a hand-rolled fixed-layout codec) carried in the resource
-  `Any`; §1 type_url map + §3 commit ordering unchanged. Pure-docs; unblocks MER-72.
-  *(Reversible — if protoc is provisioned later, revisit.)*
-- **MER-72 — A-3 ADS client + xDS→CommitPlan translation** — **BLOCKED on MER-77**
-  (re-scoped). Critical path: adopt the CC-2 **versioned encoding** (ADR-0008, revised
-  by MER-77 — NOT protoc), swap the MER-54 server resource builder + stub decode off
-  the opaque interim blob onto it, land the `internal/agent/xds` ADS client +
-  `internal/agent/datapath` translation in ADR-0008 commit order. Keeps MER-56 (CP-3)
-  green. → MER-73 exit gate. Dep MER-77, MER-54 ✅. MER-71 (A-2) + MER-74 (PKI-1) remain
-  parallel-startable (no encoding dep).
+- **MER-77 — Revise ADR-0008: CC-2 encoding without protoc** — **CLOSED `d7f232a`.**
+  ADR-0008 §2 changed from protoc-generated `meridian.config.v1` messages to a
+  **no-protoc versioned JSON** payload (each resource = `Any`→`BytesValue`→versioned
+  JSON doc; `DisallowUnknownFields` + explicit int-width validation + version-gated
+  additive evolution). §1 type_url map + §3 commit ordering unchanged; reversible if
+  protoc is later provisioned. **Unblocks MER-72** (now pure-Go, host-testable). D22
+  updated. Pure-docs.
+- **MER-72 — A-3 ADS client + xDS→CommitPlan translation** — **ACTIVE** (unblocked by
+  MER-77). Critical path: adopt the CC-2 **versioned JSON codec** (ADR-0008 §2,
+  stdlib `encoding/json` — NOT protoc), swap the MER-54 server resource builder + the
+  MER-55 stub decode off the opaque interim blob onto the frozen schema, land the
+  `internal/agent/xds` ADS client + `internal/agent/datapath` translation in ADR-0008
+  commit order. Keeps MER-56 (CP-3) green. → MER-73 exit gate. Dep MER-77 ✅, MER-54 ✅.
+  MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable.
 
 ---
 

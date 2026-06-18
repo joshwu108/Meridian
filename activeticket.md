@@ -1,56 +1,80 @@
 # Active Ticket
 
-ID: MER-77
+ID: MER-72
 
-Title: Revise ADR-0008 — CC-2 resource encoding without a protoc toolchain dependency
+Title: A-3 — ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec; land policy in the kernel)
 
 Objective:
-ADR-0008 §2 (MER-70) froze the CC-2 resource payload as protoc-generated
-`meridian.config.v1` messages — but the build environment has **no protoc**
-(`protoc`/`protoc-gen-go`/`buf` absent on the host AND the Lima 5.15 VM; protoc is
-not a `go install` tool), and a protoc build dependency cuts against D11 (minimal
-deps, none ahead of need). MER-72 (A-3, the Phase-3 critical path) is blocked on
-this. Revise ADR-0008 to specify a **no-protoc, deterministic, versioned** wire
-encoding that meets the CC-2 goals — frozen field set, schema-versioned,
-evolvable, decodable, superseding the opaque interim blob — without codegen.
-Pure-docs ADR amendment; no code (MER-72 implements against the revised ADR).
+Make the agent consume real control-plane config: a live ADS client that streams
+from `meridian-control`, decodes the **CC-2 wire contract** (ADR-0008 §2, the
+**versioned-JSON codec** — revised by MER-77, NO protoc), and translates xDS
+resources into `identity_map`/`policy_map` writes — replacing the MER-55 in-memory
+stub on the agent side. Critical-path item toward the MER-73 exit gate (REST→kernel
+< 500 ms). It also freezes the codec and swaps the MER-54 server's resource builder
+off the opaque interim `[]wire.PolicyRule`-in-`BytesValue` blob (D21) onto the
+frozen ADR-0008 versioned-JSON schema (D22).
 
-Stay in scope: the ADR-0008 amendment + the matching ARCHITECTURE D22 update. Do
-NOT implement the encoding or the agent client (that is the re-scoped MER-72), and
-do NOT change the §1 type_url mapping or §3 commit-ordering decisions.
+Stay in scope: the CC-2 codec (encode+decode of the ADR-0008 §2 JSON resources),
+the server resource-builder swap, the agent ADS client (`internal/agent/xds`), and
+the xDS→CommitPlan translation (`internal/agent/datapath`) + their tests. Do NOT
+add protoc/proto (ADR-0008 §2 is stdlib `encoding/json` now). Do NOT start MER-73
+(the end-to-end gate), MER-71 (A-2 netlink), or PKI. Do NOT change the ADS
+version/nonce transport (MER-54) or the frozen kernel schema (ADR-0004).
 
 Dependencies:
-- Amends ADR-0008 (MER-70 `0054b5f`). No protoc. No other dependency.
-- Unblocks MER-72 (A-3). The §1 (CDS=policy/EDS=identity) and §3 (identity→policy
-  commit ordering, ACK-after-commit, never transiently widen) decisions stand.
+- MER-77 (ADR-0008 §2 revised to no-protoc versioned JSON) `d7f232a`; MER-70/ADR-0008
+  `0054b5f`. MER-54 (ADS server) `0ff966d`, MER-55 (stub, decode reference) `fe453b5`.
+- Binding contracts: ADR-0008 (type_url mapping CDS=policy/EDS=identity; the §2
+  versioned-JSON `PolicyRule`/`Identity` schemas; fail-closed decode —
+  `DisallowUnknownFields` + integer-width validation mirroring ADR-0004; **commit
+  ordering** identity-adds → policy-adds → policy-removes → identity-deletes, ACK
+  after commit, never transiently widen). D17 (`datapath` is the **sole**
+  `wire`↔`bpf` translator); depguard `wire-bpf-bridge` (`internal/agent/xds` must
+  NOT import `bpf/`).
+- Runtime: the translation/commit path is Linux/Lima (real maps); the ADS client +
+  codec are unit-testable on any host (bufconn, as MER-54/55 do). **No protoc.**
 
 Acceptance Criteria:
-1. ADR-0008 §2 revised: replace the protoc proto schema with a **no-protoc
-   encoding spec** for the resource `Any` payload — a frozen, versioned,
-   field-stable representation of `wire.PolicyRule` / `wire.Identity` (either a
-   documented JSON schema decoded with `DisallowUnknownFields` + explicit integer
-   widths + a `schema_version` field, OR a hand-rolled fixed-layout binary codec
-   mirroring the ADR-0004 kernel structs). Field contract + evolution rules
-   (additive only; reject unknown/over-range → NACK) frozen.
-2. Record **why** (no protoc toolchain in host/Lima/CI; D11 minimal-deps) and that
-   this supersedes the interim encoding by **freezing + versioning** it, not by
-   adding codegen. The decision is reversible if protoc is later provisioned (note
-   that explicitly).
-3. ADR-0008 header carries a `Revised: <date> (MER-77)` line (Status stays
-   Accepted); ARCHITECTURE **D22** updated to describe the no-protoc encoding;
-   ADR index note unchanged (still 0008, no new number).
-4. No production code; `go build ./...` unaffected; `make check-commits` passes
-   (MER-77 ref); `git status` clean after commit.
+1. A CC-2 **codec** implementing ADR-0008 §2 (encode + decode of the versioned-JSON
+   `PolicyRule` (CDS) / `Identity` (EDS) resources wrapped in `Any`→`BytesValue`),
+   with the fail-closed decode rules (`DisallowUnknownFields`, integer-width checks,
+   version gate). The MER-54 ADS server resource builder is swapped from the opaque
+   interim blob onto this codec on the CDS (policy) + EDS (identity) channels; the
+   MER-55 stub decode is updated to match. **MER-56 (CP-3) conformance stays green**
+   (handshake unchanged; only the resource encoding changes).
+2. `internal/agent/xds`: an ADS client — single bidi `StreamAggregatedResources` to
+   `meridian-control`, subscribes to the resource types, decodes per CC-2, **ACKs
+   only after the snapshot is applied**, **NACKs (holds last-known-good)** on a
+   decode/contract/range violation; enforces last-known-good on control-plane
+   disconnect (jittered reconnect). No `bpf/` import (depguard).
+3. `internal/agent/datapath`: xDS resources → `wire` → `CommitPlan` → kernel map
+   writes in the **ADR-0008 commit order** (identities before referencing policies;
+   remove-allow before add on shrink — never transiently widen). `datapath` is the
+   sole importer of both `pkg/wire` and generated `bpf/` types (D17).
+4. Tests: T1 codec + translate unit tests (JSON→wire→CommitPlan, ordering,
+   unknown-field/range-violation→NACK) on any host; a T3 Lima test that a pushed
+   snapshot lands in the kernel `policy_map`/`identity_map` (the MER-73 gate arms the
+   < 500 ms end-to-end assertion separately — here just prove the write is correct).
+   Verify the Lima T3 in an **isolated window** (instrument competing-proc detection;
+   the dual-loop collision corrupts shared Lima runs).
+5. `go build ./...` clean; `go vet ./...` clean; `go test -race ./internal/...` green
+   (MER-54/55/56 stay green); `make test-integration` green on Lima; `go mod tidy`
+   no diff; depguard clean.
+6. After commit, `git status` clean; `make check-commits` passes (MER-72 ref).
 
 Files Expected To Change:
-- docs/adr/0008-xds-wire-contract.md   (§2 encoding spec → no-protoc; header Revised line)
-- docs/ARCHITECTURE.md                 (D22 → no-protoc encoding)
+- internal/control/ads/codec.go (new — CC-2 versioned-JSON encode/decode, ADR-0008 §2)
+- internal/control/ads/server.go        (resource builder → CC-2 codec)
+- internal/control/ads/stub_agent.go     (decode → CC-2 codec; keep CP-3 green)
+- internal/agent/xds/*.go                (ADS client + decode)
+- internal/agent/datapath/*.go           (xDS→CommitPlan→map writes, commit order)
+- internal/control/ads/*_test.go, internal/agent/{xds,datapath}/*_test.go
 
 Required Tests:
-- `make check-commits`   → MER-77 commit-linkage satisfied
-- `go build ./...`       → unaffected (docs-only)
-- the revised §2 is concrete enough for MER-72 to implement with the stdlib +
-  existing deps only (no protoc)
+- `go test -race ./internal/...`                    → agent xds/datapath + control ads green
+- `limactl shell meridian -- make test-integration` → snapshot lands in kernel maps (isolated window)
+- `go build ./...` / `go vet ./...` / `go mod tidy` → clean
+- `make check-commits`                              → MER-72 commit-linkage satisfied
 
 Commit Message:
-docs(adr): MER-77 revise ADR-0008 CC-2 encoding — no protoc dependency (versioned codec)
+feat(agent): MER-72 A-3 ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec)
