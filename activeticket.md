@@ -1,77 +1,80 @@
 # Active Ticket
 
-ID: MER-53
+ID: MER-72
 
-Title: CP-1 slice — control-plane memory store + identity registry + REST skeleton
+Title: A-3 — ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec; land policy in the kernel)
 
 Objective:
-Stand up the control-plane core that the ADS lane (MER-54 server → MER-55 stub →
-MER-56 CP-3 gate → MER-59 Phase-2 EXIT) builds on. This is the first
-control-plane ticket beyond the Phase-1 policy compiler (CP-2): an in-memory
-`control.Store`, a monotonic identity registry (CC-3), and a REST surface that
-accepts policy/service definitions and reports status. Pure distributed-systems
-Go — no eBPF, no kernel, no agent internals; it parallels the eBPF lane and is
-verifiable with `go test` (no VM required).
+Make the agent consume real control-plane config: a live ADS client that streams
+from `meridian-control`, decodes the **CC-2 wire contract** (ADR-0008 §2, the
+**versioned-JSON codec** — revised by MER-77, NO protoc), and translates xDS
+resources into `identity_map`/`policy_map` writes — replacing the MER-55 in-memory
+stub on the agent side. Critical-path item toward the MER-73 exit gate (REST→kernel
+< 500 ms). It also freezes the codec and swaps the MER-54 server's resource builder
+off the opaque interim `[]wire.PolicyRule`-in-`BytesValue` blob (D21) onto the
+frozen ADR-0008 versioned-JSON schema (D22).
 
-Stay in scope: store + identity + REST + the `meridian-control` entrypoint and
-their unit tests. Do NOT start the ADS gRPC server (MER-54) or touch the eBPF /
-agent / frozen-schema code. The compiled-policy wire types live in `pkg/wire`
-(reuse them); the policy compiler already exists in `internal/control`.
+Stay in scope: the CC-2 codec (encode+decode of the ADR-0008 §2 JSON resources),
+the server resource-builder swap, the agent ADS client (`internal/agent/xds`), and
+the xDS→CommitPlan translation (`internal/agent/datapath`) + their tests. Do NOT
+add protoc/proto (ADR-0008 §2 is stdlib `encoding/json` now). Do NOT start MER-73
+(the end-to-end gate), MER-71 (A-2 netlink), or PKI. Do NOT change the ADS
+version/nonce transport (MER-54) or the frozen kernel schema (ADR-0004).
 
 Dependencies:
-- Phase-2 entry: MER-34 green (SATISFIED). No other open-ticket dependency.
-- Binding contracts: CC-3 (control plane is the SOLE allocator of the cluster
-  uint32 identity space — monotonic, never reused within a process lifetime,
-  ID 0 reserved for unknown). depguard `control-no-dataplane`: `internal/control`
-  must NOT import `bpf/` or `internal/agent/*` — stay control-plane + `pkg/wire`.
-- `control.Store` interface ALREADY EXISTS in `internal/control/doc.go` (package
-  `control`, identity + policy CRUD over `wire` types). Reconcile with it — do NOT
-  define a second `control.Store`. MER-54's `Watch()`-driven push depends on a
-  change-notify hook, so EXTEND the existing interface with a `Watch()`/subscription
-  seam now; the in-memory impl lives under `internal/control/store`.
+- MER-77 (ADR-0008 §2 revised to no-protoc versioned JSON) `d7f232a`; MER-70/ADR-0008
+  `0054b5f`. MER-54 (ADS server) `0ff966d`, MER-55 (stub, decode reference) `fe453b5`.
+- Binding contracts: ADR-0008 (type_url mapping CDS=policy/EDS=identity; the §2
+  versioned-JSON `PolicyRule`/`Identity` schemas; fail-closed decode —
+  `DisallowUnknownFields` + integer-width validation mirroring ADR-0004; **commit
+  ordering** identity-adds → policy-adds → policy-removes → identity-deletes, ACK
+  after commit, never transiently widen). D17 (`datapath` is the **sole**
+  `wire`↔`bpf` translator); depguard `wire-bpf-bridge` (`internal/agent/xds` must
+  NOT import `bpf/`).
+- Runtime: the translation/commit path is Linux/Lima (real maps); the ADS client +
+  codec are unit-testable on any host (bufconn, as MER-54/55 do). **No protoc.**
 
 Acceptance Criteria:
-1. `internal/control/store/memory.go`: in-memory `control.Store`. **Reconcile with
-   the EXISTING `control.Store` interface in `internal/control/doc.go`** (identity +
-   policy CRUD over `wire.Identity`/`wire.PolicyRule`/`wire.PolicyRuleKey`) — extend
-   that interface with the `Watch()` change-notify seam (channel or callback) for
-   MER-54; do NOT author a parallel divergent Store. ("service" in the REST surface
-   maps onto `wire.Identity`, which already carries `Name`.) Concurrency-safe;
-   immutable snapshots returned to callers (no shared mutable state).
-2. `internal/control/identity/registry.go`: allocates monotonic `uint32`
-   identities, **never reused within a process lifetime** (CC-3); ID 0 reserved
-   for unknown and never allocated; lookups by name↔ID are stable; allocation is
-   concurrency-safe.
-3. `internal/control/rest/server.go`: serves `POST`/`GET /policies`,
-   `POST`/`GET /services`, and `GET /status`; validates request bodies against a
-   schema and **fails closed** with a 4xx + structured error envelope on bad
-   input; success responses use a consistent envelope.
-4. `cmd/meridian-control/main.go`: starts the REST server on a `--listen` flag
-   (default e.g. `:8080`); clean startup/shutdown; no panics on SIGTERM.
-5. Unit tests (`server_test.go` + registry/store tests): ID-allocation invariants
-   (monotonic, no reuse across allocate/“delete”, ID 0 never handed out,
-   concurrency), REST 4xx on malformed/invalid bodies, and a happy-path CRUD
-   round-trip. Table-driven where natural.
-6. `go build ./...` clean; `go vet ./...` clean; `go test ./internal/control/...`
-   green (the existing CP-2 conformance + compiler tests must stay green);
-   depguard clean (no `bpf/`/agent imports from `internal/control`).
-7. After commit, `git status` is clean and `make check-commits` passes (MER-53 ref).
+1. A CC-2 **codec** implementing ADR-0008 §2 (encode + decode of the versioned-JSON
+   `PolicyRule` (CDS) / `Identity` (EDS) resources wrapped in `Any`→`BytesValue`),
+   with the fail-closed decode rules (`DisallowUnknownFields`, integer-width checks,
+   version gate). The MER-54 ADS server resource builder is swapped from the opaque
+   interim blob onto this codec on the CDS (policy) + EDS (identity) channels; the
+   MER-55 stub decode is updated to match. **MER-56 (CP-3) conformance stays green**
+   (handshake unchanged; only the resource encoding changes).
+2. `internal/agent/xds`: an ADS client — single bidi `StreamAggregatedResources` to
+   `meridian-control`, subscribes to the resource types, decodes per CC-2, **ACKs
+   only after the snapshot is applied**, **NACKs (holds last-known-good)** on a
+   decode/contract/range violation; enforces last-known-good on control-plane
+   disconnect (jittered reconnect). No `bpf/` import (depguard).
+3. `internal/agent/datapath`: xDS resources → `wire` → `CommitPlan` → kernel map
+   writes in the **ADR-0008 commit order** (identities before referencing policies;
+   remove-allow before add on shrink — never transiently widen). `datapath` is the
+   sole importer of both `pkg/wire` and generated `bpf/` types (D17).
+4. Tests: T1 codec + translate unit tests (JSON→wire→CommitPlan, ordering,
+   unknown-field/range-violation→NACK) on any host; a T3 Lima test that a pushed
+   snapshot lands in the kernel `policy_map`/`identity_map` (the MER-73 gate arms the
+   < 500 ms end-to-end assertion separately — here just prove the write is correct).
+   Verify the Lima T3 in an **isolated window** (instrument competing-proc detection;
+   the dual-loop collision corrupts shared Lima runs).
+5. `go build ./...` clean; `go vet ./...` clean; `go test -race ./internal/...` green
+   (MER-54/55/56 stay green); `make test-integration` green on Lima; `go mod tidy`
+   no diff; depguard clean.
+6. After commit, `git status` clean; `make check-commits` passes (MER-72 ref).
 
 Files Expected To Change:
-- internal/control/doc.go                (extend existing Store with a Watch()/subscription seam — reconcile, don't duplicate)
-- internal/control/store/memory.go       (new — in-memory Store impl + Watch seam)
-- internal/control/store/memory_test.go  (new — CRUD + Watch unit tests)
-- internal/control/identity/registry.go  (new — monotonic uint32 allocator, CC-3)
-- internal/control/identity/registry_test.go (new — allocation invariants)
-- internal/control/rest/server.go        (new — REST handlers + validation)
-- internal/control/rest/server_test.go   (new — 4xx + CRUD round-trip)
-- cmd/meridian-control/main.go           (wire REST server + --listen flag)
+- internal/control/ads/codec.go (new — CC-2 versioned-JSON encode/decode, ADR-0008 §2)
+- internal/control/ads/server.go        (resource builder → CC-2 codec)
+- internal/control/ads/stub_agent.go     (decode → CC-2 codec; keep CP-3 green)
+- internal/agent/xds/*.go                (ADS client + decode)
+- internal/agent/datapath/*.go           (xDS→CommitPlan→map writes, commit order)
+- internal/control/ads/*_test.go, internal/agent/{xds,datapath}/*_test.go
 
 Required Tests:
-- `go test ./internal/control/...` → new store/identity/rest tests green; CP-2 still green
-- `go build ./...`                 → meridian-control builds with --listen
-- `go vet ./...`                   → clean (depguard control-no-dataplane satisfied)
-- `make check-commits`             → MER-53 commit-linkage satisfied
+- `go test -race ./internal/...`                    → agent xds/datapath + control ads green
+- `limactl shell meridian -- make test-integration` → snapshot lands in kernel maps (isolated window)
+- `go build ./...` / `go vet ./...` / `go mod tidy` → clean
+- `make check-commits`                              → MER-72 commit-linkage satisfied
 
 Commit Message:
-feat(control): MER-53 CP-1 memory store + identity registry + REST skeleton
+feat(agent): MER-72 A-3 ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec)

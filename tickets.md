@@ -6,16 +6,46 @@ MER-47 … MER-59 live in `docs/PHASE2_TICKETS.md`. **This file lists only open
 backlog tickets (MER-35+) that are not yet implemented.**
 
 Completed backlog tickets (MER-35, MER-36, MER-37, MER-38, MER-39, MER-40,
-MER-41, MER-42, MER-44, MER-45, MER-46, MER-60) are removed from this file;
-see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure SHAs.
+MER-41, MER-42, MER-44, MER-45, MER-46, MER-60, MER-67, MER-68) are removed from
+this file; see git history and `docs/PHASE0_REVIEW.md` for sign-off and closure
+SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
+gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
+server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-67**.
+Next free ID = **MER-78**. (MER-70…76 reserved for Phase 3 — see
+`docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision, below.)
 
 ---
 
 ## Open backlog tickets
 
-_(none)_
+Phase-3 tickets **MER-70 … MER-76** are specced in
+[docs/PHASE3_TICKETS.md](docs/PHASE3_TICKETS.md); only their selection/closure is
+tracked here.
+
+- **MER-69 — Phase-3 planning** — **CLOSED `e773586`.** PHASE3_PLAN/TICKETS/GATES
+  created; A-2/A-3/PKI-1/2 decomposed (MER-70…76); REST→kernel < 500 ms exit gate
+  defined; CC-2 ADR scheduled; ROADMAP Phase 2→3 row updated; `Next free ID` →
+  MER-77. Verified: IDs unique, dependency graph acyclic, exit gate measurable.
+- **MER-70 — CC-2 wire-contract ADR** — **CLOSED `0054b5f`.** ADR-0008 freezes the
+  xDS transport half of CC-2: type_url mapping (CDS=policy, EDS=identity, LDS/RDS=L7),
+  Meridian-native resource protos (frozen field numbers), commit ordering
+  (identity→policy adds, policy→identity removes, never transiently widen), ACK-after-commit.
+  Supersedes the MER-54 interim JSON-in-`BytesValue` (D21→D22); ADR index → next free 0009.
+- **MER-77 — Revise ADR-0008: CC-2 encoding without protoc** — **CLOSED `d7f232a`.**
+  ADR-0008 §2 changed from protoc-generated `meridian.config.v1` messages to a
+  **no-protoc versioned JSON** payload (each resource = `Any`→`BytesValue`→versioned
+  JSON doc; `DisallowUnknownFields` + explicit int-width validation + version-gated
+  additive evolution). §1 type_url map + §3 commit ordering unchanged; reversible if
+  protoc is later provisioned. **Unblocks MER-72** (now pure-Go, host-testable). D22
+  updated. Pure-docs.
+- **MER-72 — A-3 ADS client + xDS→CommitPlan translation** — **ACTIVE** (unblocked by
+  MER-77). Critical path: adopt the CC-2 **versioned JSON codec** (ADR-0008 §2,
+  stdlib `encoding/json` — NOT protoc), swap the MER-54 server resource builder + the
+  MER-55 stub decode off the opaque interim blob onto the frozen schema, land the
+  `internal/agent/xds` ADS client + `internal/agent/datapath` translation in ADR-0008
+  commit order. Keeps MER-56 (CP-3) green. → MER-73 exit gate. Dep MER-77 ✅, MER-54 ✅.
+  MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable.
 
 ---
 
@@ -33,13 +63,45 @@ These are **not** duplicated here; see the phase ticket files:
 | MER-50 | `docs/PHASE2_TICKETS.md` | **CLOSED `c699887`** — `sk_msg` SOCKHASH redirect (`bpf_msg_redirect_hash`+`BPF_F_INGRESS`) + SK_PASS fall-through; smoke proves redirect-on-hit / fall-through-on-miss. SOCKHASH write+read path complete. |
 | MER-57 | `docs/PHASE2_TICKETS.md` | **CLOSED `014bc2e`** — agent cgroup `sock_ops` + sockhash `sk_msg` attach (`CgroupSockOpsManager`/`SkMsgSockhashManager`, `--cgroup` opt-in), `bpfobj` secondary loaders, ARCHITECTURE D20; depguard-clean; production-path smoke green. |
 | MER-51 | `docs/PHASE2_TICKETS.md` | **CLOSED `f7642c9`** — P2.2 gate armed/green: 1 MiB byte-exact over redirect + denied-never-redirected; **8 armed gates, 0 skips**. eBPF SOCKMAP lane (47–51,57) COMPLETE; CC-5 locked static (49) + runtime (51). |
-| MER-53 | `docs/PHASE2_TICKETS.md` | **ACTIVE.** CP-1: in-memory `control.Store` + monotonic identity registry (CC-3) + REST skeleton. Head of the Platform lane — now the **critical path** to MER-59 (eBPF lane done). Pure Go, no eBPF dep. |
-| MER-52, MER-58 | `docs/PHASE2_TICKETS.md` | **READY** (parallel branches). MER-52 (P2.2-BENCH, nightly T4) dep MER-51 ✅; MER-58 (agent restart/sockhash-reopen) dep MER-57 ✅. Neither is on the longest path to MER-59. |
-| MER-54 … MER-56 | `docs/PHASE2_TICKETS.md` | **BLOCKED on MER-53.** MER-54 (ADS server) → MER-55 (ADS stub) → MER-56 (CP-3 gate, a MER-59 join dep). |
+| MER-53 | `docs/PHASE2_TICKETS.md` | **CLOSED `849f4a6`** — CP-1: in-memory `control.Store` (Watch seam) + monotonic identity registry (CC-3) + fail-closed REST skeleton + `meridian-control --listen`. `go test -race ./internal/control/...` green incl. CP-2; depguard clean. |
+| MER-52 | `docs/PHASE2_TICKETS.md` | **CLOSED `17bc526`** — P2.2-BENCH (`e2e` tag, nightly, not a PR gate). Ran on Lima 5.15.0-179: **honest "no win" for short flows** — p50 within noise, p99 ~+280% regression, redirect engaged (+4400). SOCKMAP value is bulk-transfer correctness (MER-51), not small-flow latency. Result committed; `make test-e2e` added. |
+| MER-59 | `docs/PHASE2_TICKETS.md` | **CLOSED `d8c7612` (+ MER-68 `1b5bdf3` finalizes).** Phase-2 EXIT: docs reconciled (CP-3 green, bench no-win recorded honestly, Phase-3 entry rule). The `check-gate-skips` flake that made the exit provisional is **RESOLVED by MER-68** — now deterministic (10/10 green on Lima 5.15). **Phase 2 is COMPLETE.** Remaining: CI confirmation on branch push (commits not yet on `origin`). |
+| MER-68 | (closed) | **CLOSED `1b5bdf3`** — deterministic `check-gate-skips`: runs each package's armed gates in ONE `go test -parallel 1` process (like the canonical `make test-bpf`/`test-integration`), so each test's `t.Cleanup` reaps before the next — NOT a per-gate reap (a `-run`-filtered per-gate subset measured 0–8/10 flaky). Fail-closed classifier preserved (unit-tested); 10/10 green on Lima 5.15. Only residual flake = a *second* gate runner sharing the VM (dual-loop) → run one runner per machine. |
+| MER-58 | `docs/PHASE2_TICKETS.md` | **CLOSED `a8cf82a`** — T2 restart test proves the pinned `sockhash` is RE-OPENED (same kernel map ID + a pre-restart established-socket entry both survive) via the existing `PinPath`/LIBBPF_PIN_BY_NAME loader — re-open, not recreate. Verified green on Lima 5.15 (isolated window). **Phase-2 Agent lane COMPLETE → all Phase-2 tickets closed.** |
+| MER-54 | `docs/PHASE2_TICKETS.md` | **CLOSED `0ff966d`** — ADS server: per-(stream, type_url) version/nonce state machine (ACK advances, NACK holds last-known-good per CC-5, stale ignored), `StreamAggregatedResources` + `Store.Watch()`-driven ordered re-push (CDS→EDS, LDS→RDS). Reuses go-control-plane xDS wire types + grpc; own thin handler. bufconn + table tests green; depguard clean; `go mod tidy` stable. |
+| MER-55 | `docs/PHASE2_TICKETS.md` | **CLOSED `fe453b5`** — ADS agent stub (`StubAgent`): subscribes over loopback gRPC, decodes the Cluster-channel `BytesValue`→JSON `[]wire.PolicyRule` contract, ACKs on success / NACKs on contract violation (version reverted, config not adopted), concurrency-safe `Snapshot()`, reconnect via fresh `Run`. bufconn + decode-table tests green (`-race`); depguard clean. |
+| MER-56 | `docs/PHASE2_TICKETS.md` | **CLOSED `2898a75`** — **CP-3 GATE** armed/green: ADS conformance (initial/add/delete/NACK-recovery/stale-nonce-ignore/reconnect) + REST→stub propagation measured ~1.3 ms (<500 ms budget). Manifest `armed=yes` → **9 armed gates, 0 skips**. Seed fixture committed. |
+| MER-67 | this file | **CLOSED `9d1790a`** — ARCHITECTURE D21 added to the decision-log table (ADS server: grpc/go-control-plane dep, version/nonce state machine, Watch-driven ordered push, interim JSON-in-BytesValue encoding flagged superseded-by-CC-2). Prose pointer reconciled to a single source of truth. Pure-docs. |
 
 ---
 
 <!-- Future Backlog Manager runs append new dated batches below this line. -->
+
+## Batch 2026-06-15d — TPM/Auditor run (HEAD 849f4a6)
+
+Findings: **MER-53 landed at `849f4a6`** — CP-1 control-plane core: `control.Store`
+extended with a coalescing `Watch()` seam (`internal/control/doc.go`); in-memory
+`store.Memory` (concurrency-safe, immutable value-copy snapshots, Watch teardown
+closes under the write lock so a send never races a close); `identity.Registry`
+(CC-3 monotonic uint32 allocator — ID 0 never handed out, idempotent by name, no
+reuse across Release); fail-closed `rest.Server` (`DisallowUnknownFields` +
+trailing-data rejection, 4xx structured envelope, server-side ID allocation, Go
+1.22 method-routed mux → auto-405); `meridian-control --listen` with graceful
+SIGINT/SIGTERM shutdown. `go test -race ./internal/control/...` green (incl. CP-2
+conformance); gofmt/vet clean; depguard `control-no-dataplane` satisfied
+(`pkg/wire` + stdlib + `internal/control` only). The **eBPF SOCKMAP lane and CP-1
+are both complete**; the critical path to MER-59 now runs MER-54 → MER-55 →
+MER-56 (CP-3 gate).
+
+No new tickets: MER-54 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-54 — ADS server (version/nonce state machine +
+ordered push)**, the next critical-path blocker and sole consumer of the MER-53
+`Watch()` seam. `activeticket.md` rewritten to MER-54. Note for the implementer:
+per the research-and-reuse rule, evaluate `github.com/envoyproxy/go-control-plane`
+before hand-rolling the xDS state machine; depguard still forbids `bpf/`/agent
+imports from `internal/control/ads`.
 
 ## Batch 2026-06-13 — Backlog Manager run (HEAD 36c0c5a)
 
@@ -312,3 +374,175 @@ gate (MER-56) that MER-59 needs. Pure-Go T1 (no Lima). Note for the implementer:
 the `control.Store` interface already exists in `internal/control/doc.go` (package
 `control`) — reconcile with it (don't duplicate); include a `Watch()` change-notify
 seam that MER-54's ADS push will consume. `activeticket.md` holds the MER-53 spec.
+
+## Batch 2026-06-16a — TPM/Auditor run (HEAD 0ff966d)
+
+Findings: **MER-54 landed at `0ff966d`** — control-plane ADS server: per-(stream,
+type_url) version/nonce state machine (ACK advances accepted version, NACK holds
+last-known-good per CC-5, stale nonce ignored), `StreamAggregatedResources` with a
+`Store.Watch()`-driven ordered re-push in canonical make-before-break order
+(CDS→EDS, LDS→RDS). Reuses the go-control-plane xDS wire types (`discovery/v3`,
+`pkg/resource/v3`) + grpc transport but implements its own thin handler + state
+machine to keep CC-5 fail-closed explicit; policy rides the Cluster channel as a
+JSON-in-`wrapperspb.BytesValue` Any (documented internal server↔stub contract,
+real model deferred to CC-2). Reviewed — bufconn gRPC + pure table tests cover
+ACK/NACK/stale/initial/resubscribe + ordered Watch re-push; `go test -race
+./internal/control/...` 5/5 green incl MER-53 + CP-2; depguard clean; `go mod tidy`
+idempotent. **APPROVED.** (Note: MER-54 was authored but left stranded uncommitted
+for a full cycle by a peer loop, and its go.mod was un-tidied — both fixed before
+the commit.)
+
+No new tickets: MER-55 … MER-59 already exist in `docs/PHASE2_TICKETS.md`.
+`Next free ID` stays **MER-67**.
+
+Selected next ticket: **MER-55 — ADS agent stub (in-memory xDS client)**. The next
+critical-path blocker (MER-55 → MER-56 CP-3 gate → MER-59 EXIT); the conformance
+gate (MER-56) needs a stub agent to drive the server through connect → receive →
+ACK → reconnect. Pure-Go T1 (no Lima). Note for the implementer: the MER-54 server
+encodes policy as JSON-in-`wrapperspb.BytesValue` on the Cluster channel only — the
+stub must decode that exact contract and NACK on a contract violation (e.g. wrong
+type_url payload or undecodable resource). `activeticket.md` holds the MER-55 spec.
+
+## Batch 2026-06-16b — TPM/Auditor run (HEAD fe453b5)
+
+Findings: **MER-55 landed at `fe453b5`** — ADS agent stub (`StubAgent`): opens one
+`StreamAggregatedResources`, subscribes to all types, decodes the MER-54 contract
+(Cluster-channel `wrapperspb.BytesValue`→JSON `[]wire.PolicyRule`; other channels
+versioned-but-empty), ACKs on success / **NACKs** on a contract violation
+(error_detail set, version reverted to last-accepted, rejected config never
+adopted — CC-5 mirrored client-side), exposes a concurrency-safe deep-copy
+`Snapshot()`, reconnects via a fresh `Run`. Reviewed — bufconn tests cover
+initial+update, reconnect-re-receives-offline-change (clean Run return = no
+goroutine leak), NACK-via-fake-server, and a 7-case `decodeSnapshot` table;
+`go test -race ./internal/control/...` 5/5 green incl MER-53/54/CP-2; depguard
+clean; `go mod tidy` stable (no new deps). **APPROVED.**
+
+**MER-67 (ADS D21 ADR) was generated last interval (`f25aa43`)** and is correctly
+P3/LOW + off critical path — it does not block the CP-3 gate or Phase-2 exit.
+`Next free ID` is now **MER-68**.
+
+Selected next ticket: **MER-56 — CP-3 GATE (ADS conformance + <500 ms
+propagation)**. Highest priority: it is BOTH the next critical-path blocker AND a
+gate ticket (outranks the P3 MER-67 doc and the off-path MER-52/58 leaves). It is
+the final MER-59 EXIT join dep on the Platform lane and the first end-to-end wiring
+of REST (MER-53) → store → ADS server (MER-54) → stub (MER-55). Pure-Go T1 (no
+Lima). `activeticket.md` rewritten to MER-56. Implementer notes: (1) drive the
+MER-55 stub against the MER-54 server over bufconn through initial / add / delete /
+NACK-recovery / out-of-order-nonce-ignore / reconnect; (2) the <500 ms propagation
+must be measured with a polling WaitUntil, NOT time.Sleep; (3) the out-of-order
+nonce sub-case may need a raw client stream (the stub always answers the latest
+push) — assert the server ignores a stale nonce with no state change; (4) flip the
+manifest CP-3 row `no`→`yes` and confirm `make check-gate-skips` = 0 skips across
+all 9 armed gates; the conformance test must never `t.Skip` (pure Go, always runs).
+
+## Batch 2026-06-16c — TPM/Auditor run (HEAD 2898a75)
+
+Findings: **MER-56 landed at `2898a75`** — CP-3 GATE armed and green:
+`TestADSConformanceGate_MER56` drives the MER-55 stub + raw xDS clients against the
+MER-54 server through initial snapshot / policy add / policy delete / NACK recovery
+(server holds last-known-good, later valid change still propagates) / stale-nonce
+ignored (no state change, raw-stream asserted) / reconnect re-receives offline
+changes; plus the end-to-end spine REST `POST /policies` → shared `control.Store` →
+ADS server → stub `Snapshot()` measured at ~1.3 ms (<500 ms budget) via polling
+`waitUntil` (not sleep). Regression seed `testdata/conformance_seed.json` committed;
+manifest CP-3 flipped `armed=yes` → **9 armed gates, 0 skips**. Reviewed —
+`go test -race ./internal/control/...` green incl MER-53/54/55 + CP-2; depguard
+clean; tidy stable; the gate never `t.Skip`s. **APPROVED.**
+
+**The Platform/ADS lane (MER-53→54→55→56) is COMPLETE.** Phase-2 EXIT (MER-59)
+join `{49 ✅, 51 ✅, 56 ✅, 52}` now has exactly ONE open dependency: **MER-52**.
+No new tickets. `Next free ID` stays **MER-68**.
+
+Selected next ticket: **MER-52 — P2.2-BENCH (intra-node SOCKMAP latency
+benchmark)**. It is the sole remaining MER-59 EXIT dependency = the critical-path
+blocker for Phase-2 exit (outranks the off-path MER-58 Agent leaf and the P3
+MER-67 ADS-ADR). ⚠️ Unlike MER-53…56 (pure-Go T1), MER-52 is a **T4 `e2e`-tagged**
+Linux benchmark — the implementer must run it on the **Lima `meridian` VM** (5.15,
+root); it is NOT a PR merge gate and arms NO manifest row. Reuse the MER-51
+integrity harness (production `bpfobj`/`attach` + `test/harness`). Report honestly:
+a measured win with numbers OR "no win on <kernel>" with the numbers — do not
+green-wash. Commit results to `test/integration/testdata/sockmap_bench.json`.
+`activeticket.md` holds the MER-52 spec.
+
+## Batch 2026-06-16d — TPM/Auditor run (HEAD 17bc526)
+
+Findings: **MER-52 landed at `17bc526`** — P2.2-BENCH intra-node SOCKMAP latency
+benchmark (`//go:build e2e`, T4 nightly, NOT a PR gate, arms no manifest row).
+Ran on the Lima `meridian` VM (kernel 5.15.0-179, n=2000) via the production attach
+path (bpfobj + cgroup sock_ops + sockhash sk_msg). **Honest result: no latency win
+for short connect+first-byte flows** — p50 within run-to-run noise (~±6%), a
+consistent p99 regression (~+280–377%), redirect confirmed engaged
+(METRIC_FLOWS_REDIRECTED +4400). Verdict requires BOTH p50 and p99 to improve for a
+"win" (a p50-only gain is reported "mixed/no-win", never green-washed). Result →
+`test/integration/testdata/sockmap_bench.json`; `make test-e2e` target added.
+Reviewed — PR suites unaffected (e2e tag-excluded), host build/vet clean, tidy
+stable, manifest unchanged (9 armed gates). **APPROVED.** Useful finding: SOCKMAP's
+value is bulk-transfer correctness (MER-51), not small-flow latency on 5.15.
+
+**Phase-2 implementation is COMPLETE.** All MER-59 EXIT joins {49 ✅, 51 ✅, 56 ✅,
+52 ✅} are satisfied. No new tickets. `Next free ID` stays **MER-68**.
+
+Selected next ticket: **MER-59 — Phase-2 EXIT gate** (doc reconciliation + Phase-3
+entry rule). The final Phase-2 ticket — pure docs (PHASE2_GATES all-green evidence,
+README Phase-2-complete, ROADMAP week-4 exit checkoff, ARCHITECTURE D18–D20 as-built
++ a pointer to the pending D21/MER-67 ADS decision, Phase-3 entry rule = MER-59
+green + ADR-0004 unchanged). T1, but the implementer MUST cite a REAL Lima-5.15
+green-gate run (`make test-bpf`/`test-integration`/`check-gate-skips`, 0 skips) — no
+stale/asserted green. MER-58 (Agent leaf) + MER-67 (ADS D21 ADR) remain open
+off-path and do NOT block Phase-2 exit. `activeticket.md` holds the MER-59 spec.
+
+## Batch 2026-06-16e — TPM/Auditor run (HEAD 1b5bdf3)
+
+Findings: **MER-68 landed at `1b5bdf3`** — `check-gate-skips` is now deterministic:
+`checkgateskips` reaps leaked `mrdn-*` netns + `/sys/fs/bpf/meridian-test` before
+each privileged (`bpf`/`integration`) gate (pure-Go gates skip the reap); the
+skip/fail classifier was extracted (`classifyEvents`) and unit-tested so the reap
+cannot mask a red gate (MER-44 fail-closed intact). **Verified 10/10 consecutive
+green on Lima 5.15.0-179** when it is the sole gate runner. Key diagnostic note:
+the verification was nearly derailed by the dual-loop collision — a *second* loop
+running gate tests in the same VM made the fix look broken (9/10) until an
+instrumented competing-process guard isolated a clean window; **a per-gate reap
+cannot defend against a concurrent root gate-runner.** PHASE2_GATES caveat replaced
+with the deterministic result. **This finalizes the MER-59 Phase-2 EXIT — Phase 2
+is COMPLETE.** No production code touched.
+
+No new tickets. Open: MER-67 (selected), MER-58. `Next free ID` stays **MER-69**.
+
+Selected next ticket: **MER-67 — ARCHITECTURE D21 (ADS server) + interim
+xDS-encoding CC-2-pending note.** With Phase 2 substantively done and all gates
+green, the highest-value ready item is closing the architecture-compliance gap:
+the ADS decision (gRPC/go-control-plane dep, version/nonce state machine,
+Watch-driven CDS→EDS/LDS→RDS push, interim JSON-in-BytesValue encoding) is
+load-bearing across MER-54/55/56 but recorded only in code comments + the pending-
+D21 pointer MER-59 added. **Pure-docs (no Lima)** — deliberately chosen over MER-58
+(agent restart, Lima T2) because MER-68 just proved the dual-loop collision
+CORRUPTS Lima verification; MER-58 should wait until one gate runner per VM is
+enforced. MER-67 formalizes the D21 pointer into a full decision-log entry,
+cross-references CC-2, and flags the interim encoding as superseded-by-Phase-3.
+`activeticket.md` holds the MER-67 spec. (Operator: push the branch — 40+ Phase-2
+commits have NEVER hit CI.)
+
+## Batch 2026-06-16f — TPM/Auditor run (HEAD 9d1790a)
+
+Findings: **MER-67 landed at `9d1790a`** — ARCHITECTURE D21 now a formal
+decision-log row (ADS server MER-54/55/56: grpc + go-control-plane dep per D11,
+per-(stream,type_url) version/nonce handshake, `Store.Watch()`-driven
+CDS→EDS/LDS→RDS push, **interim** JSON-in-`BytesValue` Cluster-channel encoding
+flagged **superseded by the CC-2 wire-contract freeze (Phase 3)**). The prior prose
+"Pending — D21" pointer was reconciled into a single CC-2-boundary note. Pure-docs,
+no production code. **APPROVED.**
+
+No new tickets. The "Open backlog tickets" section is now empty. `Next free ID`
+stays **MER-69**.
+
+Selected next ticket: **MER-58 — `bpfobj` sockhash re-open on restart + T2 restart
+test.** It is the **LAST open Phase-2 ticket** (an Agent-lane robustness deliverable:
+on agent restart the loader must RE-OPEN the pinned `sockhash` — pin reuse, not
+recreate — so live SOCKMAP redirect state survives a restart). Deps MER-47/57 ✅.
+Chosen because it is the only ready ticket and closes Phase 2 fully; Phase-3
+planning (A-2/A-3/PKI — no PHASE3 docs exist yet) is the next major effort after it.
+⚠️ **Lima T2** — the implementer MUST verify in an ISOLATED window: MER-68 proved
+the dual-loop collision corrupts Lima runs, so instrument competing-process
+detection (as MER-68 did) and only trust a clean-window result. `activeticket.md`
+holds the MER-58 spec. (Operator: still no push — 40+ Phase-2 commits have never
+hit CI; and the collision remains unresolved.)

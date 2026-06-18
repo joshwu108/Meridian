@@ -119,6 +119,11 @@ test-integration: ## T3: netns integration tests (tag 'integration'); needs root
 	$(require_linux)
 	$(GO) test -tags=integration -exec sudo -count=1 -parallel 1 -timeout=10m ./test/integration/...
 
+.PHONY: test-e2e
+test-e2e: ## T4: nightly/self-hosted e2e benchmarks (tag 'e2e'); needs root, Linux 5.15. NOT a PR gate.
+	$(require_linux)
+	$(GO) test -tags=e2e -exec sudo -count=1 -parallel 1 -timeout=10m -run TestSockmapBench ./test/integration/...
+
 .PHONY: check-gate-skips
 check-gate-skips: ## MER-44: fail if any armed Phase-1 gate test reports skips
 	$(require_linux)
