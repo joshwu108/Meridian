@@ -47,19 +47,18 @@ tracked here.
   (`bfe0c58`). **Canonical = `internal/cc2`** (neutral; agent can consume it without
   importing `internal/control/ads`); the `ads/codec.go` copy is unused dead code and
   is **removed by MER-78**. Remaining A-3 work split → MER-78 + MER-79.
-- **MER-78 — CC-2 server/stub adoption (+ dedupe codec)** — **ACTIVE.** Critical path,
-  host-testable (no Lima): canonicalize on `internal/cc2`, **delete the duplicate
-  `internal/control/ads/codec.go` + test**; swap `ads/server.go` `resourcesFor` and
-  `ads/stub_agent.go` decode onto `internal/cc2` (per-resource `Any`; emit CDS policy
-  **and** EDS identity); update the 3 ADS test files (`server_test`/`stub_agent_test`/
-  `conformance_test`) off the old blob format; **keep MER-56 (CP-3) green**. Dep MER-72
-  codec ✅, MER-54 ✅.
-- **MER-79 — agent A-3 ADS client + datapath translation** — **BLOCKED on MER-78.**
+- **MER-78 — CC-2 server/stub adoption (+ dedupe codec)** — **CLOSED `343bc59`.**
+  Deleted the duplicate `ads/codec.go`; `ads/server.go` emits per-resource cc2 Anys
+  on CDS (policy) + EDS (identity); `ads/stub_agent.go` decodes via `internal/cc2`
+  per channel; 2 ADS test files migrated off the blob format (per-resource ⇒
+  multi-resource valid, kind-mismatch the new error). `go test -race ./internal/control/...`
+  green incl. **CP-3 (MER-56)**; build/vet/tidy clean. Unblocks MER-79.
+- **MER-79 — agent A-3 ADS client + datapath translation** — **ACTIVE** (MER-78 ✅).
   `internal/agent/xds` production ADS client (reuses the MER-55 stream/ACK-NACK/
   reconnect shape; decodes via `internal/cc2`; **applies** via the existing
   `datapath.Writer` — its `Apply` order already matches ADR-0008) + snapshot→`CommitPlan`
   diff. Host-testable (bufconn) + a Lima T3 kernel-write proof (isolated window).
-  → MER-73 exit gate.
+  → MER-73 exit gate. Dep MER-78 ✅, MER-54 ✅, cc2 ✅.
 
 ---
 
