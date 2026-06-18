@@ -12,8 +12,9 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-78**. (MER-70…76 reserved for Phase 3 — see
-`docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision, below.)
+Next free ID = **MER-80**. (MER-70…76 reserved for Phase 3 — see
+`docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision; MER-78/79 = the A-3
+split of the oversized MER-72; all below.)
 
 ---
 
@@ -39,13 +40,26 @@ tracked here.
   additive evolution). §1 type_url map + §3 commit ordering unchanged; reversible if
   protoc is later provisioned. **Unblocks MER-72** (now pure-Go, host-testable). D22
   updated. Pure-docs.
-- **MER-72 — A-3 ADS client + xDS→CommitPlan translation** — **ACTIVE** (unblocked by
-  MER-77). Critical path: adopt the CC-2 **versioned JSON codec** (ADR-0008 §2,
-  stdlib `encoding/json` — NOT protoc), swap the MER-54 server resource builder + the
-  MER-55 stub decode off the opaque interim blob onto the frozen schema, land the
-  `internal/agent/xds` ADS client + `internal/agent/datapath` translation in ADR-0008
-  commit order. Keeps MER-56 (CP-3) green. → MER-73 exit gate. Dep MER-77 ✅, MER-54 ✅.
-  MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable.
+- **MER-72 — A-3 (umbrella)** — **SPLIT (oversized).** The CC-2 **codec** is DONE:
+  `internal/cc2` (`04ba285`) — frozen ADR-0008 §2 versioned-JSON Encode/Decode,
+  fail-closed, depguard-safe, host-green. ⚠️ **DUPLICATE from the dual-loop collision:**
+  a concurrent loop also committed a codec at `internal/control/ads/codec.go`
+  (`bfe0c58`). **Canonical = `internal/cc2`** (neutral; agent can consume it without
+  importing `internal/control/ads`); the `ads/codec.go` copy is unused dead code and
+  is **removed by MER-78**. Remaining A-3 work split → MER-78 + MER-79.
+- **MER-78 — CC-2 server/stub adoption (+ dedupe codec)** — **ACTIVE.** Critical path,
+  host-testable (no Lima): canonicalize on `internal/cc2`, **delete the duplicate
+  `internal/control/ads/codec.go` + test**; swap `ads/server.go` `resourcesFor` and
+  `ads/stub_agent.go` decode onto `internal/cc2` (per-resource `Any`; emit CDS policy
+  **and** EDS identity); update the 3 ADS test files (`server_test`/`stub_agent_test`/
+  `conformance_test`) off the old blob format; **keep MER-56 (CP-3) green**. Dep MER-72
+  codec ✅, MER-54 ✅.
+- **MER-79 — agent A-3 ADS client + datapath translation** — **BLOCKED on MER-78.**
+  `internal/agent/xds` production ADS client (reuses the MER-55 stream/ACK-NACK/
+  reconnect shape; decodes via `internal/cc2`; **applies** via the existing
+  `datapath.Writer` — its `Apply` order already matches ADR-0008) + snapshot→`CommitPlan`
+  diff. Host-testable (bufconn) + a Lima T3 kernel-write proof (isolated window).
+  → MER-73 exit gate.
 
 ---
 
@@ -546,3 +560,28 @@ the dual-loop collision corrupts Lima runs, so instrument competing-process
 detection (as MER-68 did) and only trust a clean-window result. `activeticket.md`
 holds the MER-58 spec. (Operator: still no push — 40+ Phase-2 commits have never
 hit CI; and the collision remains unresolved.)
+
+## Batch 2026-06-18a — TPM/Auditor run (HEAD 04ba285)
+
+Findings: **MER-72 (A-3) is oversized and was SPLIT.** Its CC-2 **codec** landed at
+`internal/cc2` (`04ba285`) — frozen ADR-0008 §2 versioned-JSON Encode/Decode,
+fail-closed (DisallowUnknownFields + int-width + version/kind gate), depguard-safe,
+host-green. ⚠️ **DUPLICATE PRODUCTION CODE from the dual-loop collision:** a concurrent
+loop committed a second codec at `internal/control/ads/codec.go` (`bfe0c58`). Both
+compile/test independently (different packages, no symbol clash) but are redundant.
+**Canonical = `internal/cc2`** (neutral — the agent consumes it without importing the
+control-plane `ads` package); `ads/codec.go` is currently unused dead code.
+
+This is the collision's worst manifestation so far: it has progressed from
+duplicated TPM cycles → duplicated docs → **duplicated production implementations.**
+Re-escalating the standing fix: **one gate-runner/impl-loop per worktree+VM, or
+retire one cron.** No `git status` damage (different packages) but real wasted work.
+
+Split: **MER-78** (CC-2 server/stub adoption + delete the `ads/codec.go` duplicate;
+host-testable; keep CP-3 green) and **MER-79** (agent A-3 ADS client + datapath
+translation; host + Lima T3). `Next free ID` → MER-80.
+
+Selected: **MER-78** — the critical-path next step (server must emit CC-2 before the
+agent decodes it), host-testable (collision-safe verification), and it RESOLVES the
+duplicate-codec hazard. `activeticket.md` holds the MER-78 spec. MER-79 blocks on it;
+MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable.

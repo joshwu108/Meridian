@@ -1,80 +1,66 @@
 # Active Ticket
 
-ID: MER-72
+ID: MER-78
 
-Title: A-3 — ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec; land policy in the kernel)
+Title: CC-2 server/stub adoption — wire ADS server + stub onto internal/cc2 (dedupe codec; emit CDS+EDS)
 
 Objective:
-Make the agent consume real control-plane config: a live ADS client that streams
-from `meridian-control`, decodes the **CC-2 wire contract** (ADR-0008 §2, the
-**versioned-JSON codec** — revised by MER-77, NO protoc), and translates xDS
-resources into `identity_map`/`policy_map` writes — replacing the MER-55 in-memory
-stub on the agent side. Critical-path item toward the MER-73 exit gate (REST→kernel
-< 500 ms). It also freezes the codec and swaps the MER-54 server's resource builder
-off the opaque interim `[]wire.PolicyRule`-in-`BytesValue` blob (D21) onto the
-frozen ADR-0008 versioned-JSON schema (D22).
+Make the ADS server and the MER-55 stub speak the frozen CC-2 codec (ADR-0008 §2)
+already implemented in `internal/cc2` (`04ba285`). Swap the MER-54 server's
+resource builder off the opaque interim `[]wire.PolicyRule`-in-`BytesValue` blob
+onto per-resource CC-2 `Any`s — emitting policy on the **CDS** channel **and**
+identity on the **EDS** channel — and update the stub decode to match. This is the
+control-plane half of A-3; it is fully host-testable (no Lima) and unblocks the
+agent client (MER-79). It also **removes the duplicate codec** the dual-loop
+collision left at `internal/control/ads/codec.go`.
 
-Stay in scope: the CC-2 codec (encode+decode of the ADR-0008 §2 JSON resources),
-the server resource-builder swap, the agent ADS client (`internal/agent/xds`), and
-the xDS→CommitPlan translation (`internal/agent/datapath`) + their tests. Do NOT
-add protoc/proto (ADR-0008 §2 is stdlib `encoding/json` now). Do NOT start MER-73
-(the end-to-end gate), MER-71 (A-2 netlink), or PKI. Do NOT change the ADS
-version/nonce transport (MER-54) or the frozen kernel schema (ADR-0004).
+Stay in scope: canonicalize on `internal/cc2`; the server resource builder; the
+stub decode; the three ADS test files; the duplicate-codec removal. Do NOT build
+the agent ADS client / datapath translation (MER-79), MER-71 (A-2), or PKI. Do NOT
+change the ADS version/nonce transport (MER-54) or `internal/cc2`'s API.
 
 Dependencies:
-- MER-77 (ADR-0008 §2 revised to no-protoc versioned JSON) `d7f232a`; MER-70/ADR-0008
-  `0054b5f`. MER-54 (ADS server) `0ff966d`, MER-55 (stub, decode reference) `fe453b5`.
-- Binding contracts: ADR-0008 (type_url mapping CDS=policy/EDS=identity; the §2
-  versioned-JSON `PolicyRule`/`Identity` schemas; fail-closed decode —
-  `DisallowUnknownFields` + integer-width validation mirroring ADR-0004; **commit
-  ordering** identity-adds → policy-adds → policy-removes → identity-deletes, ACK
-  after commit, never transiently widen). D17 (`datapath` is the **sole**
-  `wire`↔`bpf` translator); depguard `wire-bpf-bridge` (`internal/agent/xds` must
-  NOT import `bpf/`).
-- Runtime: the translation/commit path is Linux/Lima (real maps); the ADS client +
-  codec are unit-testable on any host (bufconn, as MER-54/55 do). **No protoc.**
+- MER-72 CC-2 codec (`internal/cc2`) — DONE `04ba285`. MER-54 (ADS server) `0ff966d`,
+  MER-55 (stub) `fe453b5`, MER-56 (CP-3 gate) `2898a75`.
+- Binding contract: ADR-0008 (per-resource `Any`; envelope `{schema_version,kind,
+  spec}`; CDS=PolicyRule, EDS=Identity; LDS/RDS reserved versioned-but-empty, the
+  agent/stub must tolerate empty L7 channels without NACK). depguard
+  `control-no-dataplane` (internal/control may import `internal/cc2` + `pkg/wire`;
+  not `bpf/`/agent).
 
 Acceptance Criteria:
-1. A CC-2 **codec** implementing ADR-0008 §2 (encode + decode of the versioned-JSON
-   `PolicyRule` (CDS) / `Identity` (EDS) resources wrapped in `Any`→`BytesValue`),
-   with the fail-closed decode rules (`DisallowUnknownFields`, integer-width checks,
-   version gate). The MER-54 ADS server resource builder is swapped from the opaque
-   interim blob onto this codec on the CDS (policy) + EDS (identity) channels; the
-   MER-55 stub decode is updated to match. **MER-56 (CP-3) conformance stays green**
-   (handshake unchanged; only the resource encoding changes).
-2. `internal/agent/xds`: an ADS client — single bidi `StreamAggregatedResources` to
-   `meridian-control`, subscribes to the resource types, decodes per CC-2, **ACKs
-   only after the snapshot is applied**, **NACKs (holds last-known-good)** on a
-   decode/contract/range violation; enforces last-known-good on control-plane
-   disconnect (jittered reconnect). No `bpf/` import (depguard).
-3. `internal/agent/datapath`: xDS resources → `wire` → `CommitPlan` → kernel map
-   writes in the **ADR-0008 commit order** (identities before referencing policies;
-   remove-allow before add on shrink — never transiently widen). `datapath` is the
-   sole importer of both `pkg/wire` and generated `bpf/` types (D17).
-4. Tests: T1 codec + translate unit tests (JSON→wire→CommitPlan, ordering,
-   unknown-field/range-violation→NACK) on any host; a T3 Lima test that a pushed
-   snapshot lands in the kernel `policy_map`/`identity_map` (the MER-73 gate arms the
-   < 500 ms end-to-end assertion separately — here just prove the write is correct).
-   Verify the Lima T3 in an **isolated window** (instrument competing-proc detection;
-   the dual-loop collision corrupts shared Lima runs).
-5. `go build ./...` clean; `go vet ./...` clean; `go test -race ./internal/...` green
-   (MER-54/55/56 stay green); `make test-integration` green on Lima; `go mod tidy`
-   no diff; depguard clean.
-6. After commit, `git status` clean; `make check-commits` passes (MER-72 ref).
+1. **Dedupe:** delete `internal/control/ads/codec.go` + `internal/control/ads/codec_test.go`
+   (the `bfe0c58` duplicate); `internal/cc2` is the single CC-2 codec. `go build`/`go vet`
+   clean; no dangling references.
+2. `internal/control/ads/server.go` `resourcesFor`: emit **one CC-2 `Any` per
+   resource** via `cc2.EncodePolicyRule` on `ClusterType` (CDS, from `ListPolicies`)
+   and `cc2.EncodeIdentity` on `EndpointType` (EDS, from `ListIdentities`); other
+   channels stay empty. No more bare-JSON blob.
+3. `internal/control/ads/stub_agent.go`: decode each resource via `cc2.Decode*`
+   per channel (policies on CDS, identities on EDS — validate identities even though
+   the stub need not store them), NACK on any decode/contract violation; ACK
+   otherwise. The stub keeps surfacing `Snapshot().Policies` for CP-3.
+4. Update `server_test.go`, `stub_agent_test.go`, `conformance_test.go` off the old
+   blob format onto the CC-2 codec (e.g. build expected resources via `cc2.Encode*`,
+   decode via `cc2.Decode*`). **MER-56 (CP-3) `TestADSConformanceGate_MER56` stays
+   green**, incl. the REST→stub < 500 ms propagation and NACK/stale-nonce paths.
+5. `go build ./...` clean; `go vet ./...` clean; `go test -race ./internal/control/...`
+   green (MER-53/54/55/56 + CP-2 stay green); `go mod tidy` no diff; depguard clean.
+6. After commit, `git status` clean; `make check-commits` passes (MER-78 ref).
 
 Files Expected To Change:
-- internal/control/ads/codec.go (new — CC-2 versioned-JSON encode/decode, ADR-0008 §2)
-- internal/control/ads/server.go        (resource builder → CC-2 codec)
-- internal/control/ads/stub_agent.go     (decode → CC-2 codec; keep CP-3 green)
-- internal/agent/xds/*.go                (ADS client + decode)
-- internal/agent/datapath/*.go           (xDS→CommitPlan→map writes, commit order)
-- internal/control/ads/*_test.go, internal/agent/{xds,datapath}/*_test.go
+- internal/control/ads/codec.go          (DELETE — duplicate of internal/cc2)
+- internal/control/ads/codec_test.go     (DELETE — duplicate)
+- internal/control/ads/server.go         (resourcesFor → cc2, CDS policy + EDS identity)
+- internal/control/ads/stub_agent.go     (decode → cc2 per channel)
+- internal/control/ads/server_test.go    (expected resources via cc2)
+- internal/control/ads/stub_agent_test.go (decode-table → cc2)
+- internal/control/ads/conformance_test.go (raw-stream payloads → cc2)
 
 Required Tests:
-- `go test -race ./internal/...`                    → agent xds/datapath + control ads green
-- `limactl shell meridian -- make test-integration` → snapshot lands in kernel maps (isolated window)
+- `go test -race ./internal/control/...`  → ADS suite + CP-3 green on the cc2 codec
 - `go build ./...` / `go vet ./...` / `go mod tidy` → clean
-- `make check-commits`                              → MER-72 commit-linkage satisfied
+- `make check-commits`                    → MER-78 commit-linkage satisfied
 
 Commit Message:
-feat(agent): MER-72 A-3 ADS client + xDS→CommitPlan translation (adopt CC-2 versioned-JSON codec)
+feat(control): MER-78 CC-2 server/stub adoption — emit CDS+EDS via internal/cc2; dedupe codec
