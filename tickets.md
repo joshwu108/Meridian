@@ -27,10 +27,16 @@ tracked here.
   created; A-2/A-3/PKI-1/2 decomposed (MER-70…76); REST→kernel < 500 ms exit gate
   defined; CC-2 ADR scheduled; ROADMAP Phase 2→3 row updated; `Next free ID` →
   MER-77. Verified: IDs unique, dependency graph acyclic, exit gate measurable.
-- **MER-70 — CC-2 wire-contract ADR** — **ACTIVE.** Author `docs/adr/0008-xds-wire-contract.md`
-  freezing the `type_url`→Meridian mapping + resource message shape + write-ordering,
-  superseding the MER-54 interim JSON-in-`BytesValue` encoding (D21/MER-67). Wave-0
-  foundational: unblocks A-3 (MER-72) on the critical path. Pure docs; dep MER-54 ✅.
+- **MER-70 — CC-2 wire-contract ADR** — **CLOSED `0054b5f`.** ADR-0008 freezes the
+  xDS transport half of CC-2: type_url mapping (CDS=policy, EDS=identity, LDS/RDS=L7),
+  Meridian-native resource protos (frozen field numbers), commit ordering
+  (identity→policy adds, policy→identity removes, never transiently widen), ACK-after-commit.
+  Supersedes the MER-54 interim JSON-in-`BytesValue` (D21→D22); ADR index → next free 0009.
+- **MER-72 — A-3 ADS client + xDS→CommitPlan translation** — **ACTIVE.** Critical path
+  (CC-2 frozen unblocks it): land the `meridian.config.v1` protos + server resource-builder
+  swap, the `internal/agent/xds` ADS client, and `internal/agent/datapath` translation to
+  kernel maps in ADR-0008 commit order. Keeps MER-56 (CP-3) green. → MER-73 exit gate.
+  MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable. Dep MER-70 ✅, MER-54 ✅.
 
 ---
 
