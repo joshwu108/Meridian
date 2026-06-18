@@ -1,6 +1,13 @@
 # ADR-0008: Compiled-policy + xDS resource wire contract (CC-2)
 
 - **Status:** Accepted (Phase-3 control-plane↔agent transport contract; MER-70)
+- **Revised:** 2026-06-18 (MER-77) — §2 encoding changed from protoc-generated
+  messages to a **no-protoc, versioned JSON** payload. The build environment has no
+  `protoc`/`protoc-gen-go`/`buf` (host or Lima 5.15), and a protoc build dependency
+  cuts against D11 (minimal deps). §1 (type_url mapping) and §3 (commit ordering)
+  are unchanged. **Reversible:** if a protoc toolchain is provisioned (host + Lima +
+  CI) later, a follow-up revision may move §2 back to generated protos without
+  touching §1/§3.
 - **Date:** 2026-06-17
 - **Relates to:** ROADMAP [CC-2](../../ROADMAP.md#cross-cutting-decisions)
   ("the byte layout … and the xDS metadata schema carrying verdicts,
@@ -56,41 +63,57 @@ agent must tolerate empty L7 channels without NACK.
 
 ### 2. Resource message shape
 
-Each resource is a `google.protobuf.Any` wrapping a **Meridian-defined protobuf
-message** (not JSON-in-`BytesValue`, not an envoy proto) carried over the xDS
-transport. The messages are single-sourced with `pkg/wire` and mirror the
-ADR-0004 frozen kernel structs field-for-field. The `.proto` is authored in
-MER-72; the **frozen field set + numbers** are:
+Each resource is a `google.protobuf.Any` wrapping a `google.protobuf.BytesValue`
+whose `.value` is a **versioned JSON document** — the frozen CC-2 encoding. JSON
+(stdlib `encoding/json`) is chosen over protoc-generated messages because the
+build environment has no protoc toolchain (host or Lima) and a protoc dependency
+is disproportionate for two flat structs (D11); the contract is made rigorous by
+**freezing the schema, versioning it, and validating field widths** rather than by
+codegen. The payload is single-sourced with `pkg/wire` and mirrors the ADR-0004
+frozen kernel structs field-for-field.
 
-```proto
-// package meridian.config.v1;  type_url prefix: type.meridian.io/
+**Envelope (every resource):**
 
-message PolicyRule {           // CDS resource — mirrors wire.PolicyRule
-  message Key {
-    uint32 src_identity = 1;   // wire.IdentityID
-    uint32 dst_identity = 2;
-    uint32 dst_port     = 3;   // uint16 range
-    uint32 protocol     = 4;   // uint8 range (IPPROTO_*)
-    uint32 direction    = 5;   // 0=ingress, 1=egress (ADR-0003)
-  }
-  Key    key     = 1;
-  uint32 action  = 2;          // 0=allow,1=deny,2=redirect_proxy
-  uint32 flags   = 3;          // POLICY_FLAG_* bitset (ADR-0004 D4)
-}
-
-message Identity {             // EDS resource — mirrors wire.Identity
-  uint32 id        = 1;        // wire.IdentityID; 0 reserved (CC-3)
-  string spiffe_id = 2;
-  string pod_ipv4  = 3;
-  string namespace = 4;
-  string name      = 5;
-}
+```json
+{ "schema_version": 1, "kind": "PolicyRule" | "Identity", "spec": { … } }
 ```
 
-Field numbers are **frozen**: new fields append; existing numbers/types never
-change (proto3 evolution). Integer-range fields (`dst_port`, `protocol`,
-`action`, `flags`, `direction`) are validated against their kernel widths on
-decode; an out-of-range value is a contract violation → NACK.
+`schema_version` is a `uint32` (currently **1**); a decoder MUST reject an unknown
+major version (→ NACK). `kind` MUST match the channel (CDS→`PolicyRule`,
+EDS→`Identity`); a mismatch is a contract violation (→ NACK).
+
+**`PolicyRule` spec (CDS) — mirrors `wire.PolicyRule`:**
+
+```json
+{ "src_identity": <u32>, "dst_identity": <u32>, "dst_port": <u16>,
+  "protocol": <u8>, "direction": <0|1>,
+  "action": <0|1|2>, "flags": <u8 POLICY_FLAG_* bitset> }
+```
+
+**`Identity` spec (EDS) — mirrors `wire.Identity`:**
+
+```json
+{ "id": <u32, 0 reserved (CC-3)>, "spiffe_id": <string>,
+  "pod_ipv4": <string>, "namespace": <string>, "name": <string> }
+```
+
+**Decode rules (fail-closed):**
+
+1. Decode with `json.Decoder` + **`DisallowUnknownFields`** and reject trailing
+   data — an unknown field or junk is a contract violation (→ NACK), so a typo or a
+   future field a stale agent can't model never silently drops to a default.
+2. **Integer-width validation:** `dst_port` ≤ 65535, `protocol`/`flags` ≤ 255,
+   `direction` ∈ {0,1}, `action` ∈ {0,1,2}, identities are `uint32`; out-of-range
+   → NACK (mirrors the ADR-0004 kernel widths exactly).
+3. **Evolution is additive + version-gated:** new optional fields require a
+   `schema_version` bump and remain backward-compatible at the prior version;
+   existing field names/types/semantics never change. Removing or repurposing a
+   field requires a new major `schema_version` (and a new ADR revision).
+
+This **supersedes** the D21 interim encoding by *freezing and versioning* it — the
+interim shipped an unversioned, schema-free `[]wire.PolicyRule` JSON blob on the
+Cluster channel only; the frozen contract adds the version/kind envelope, the
+identity (EDS) channel, `DisallowUnknownFields`, and explicit width validation.
 
 ### 3. Apply (write) ordering — kernel commit contract
 
@@ -115,34 +138,43 @@ A mid-apply error rolls back to the prior byte-identical kernel state and NACKs
 ### 4. Translation boundary
 
 `internal/agent/datapath` remains the **sole** importer of both `pkg/wire` and
-the generated `bpf/` types (ARCHITECTURE D17); the xDS resource protos decode to
-`wire` types, which `datapath` translates to kernel structs. The ADS client
+the generated `bpf/` types (ARCHITECTURE D17); the decoded resource payloads
+become `wire` types, which `datapath` translates to kernel structs. The ADS client
 (`internal/agent/xds`) never touches `bpf/` (depguard).
 
 ## Rejected alternatives
 
-- **Keep the interim JSON-in-`BytesValue` (D21).** Rejected: not language-neutral
-  or schema-evolvable, no field-level versioning, opaque to proto tooling, and
-  carries policy on one channel with no identity channel — it cannot express the
-  identity-before-policy commit ordering A-3 needs.
+- **Keep the interim encoding exactly as-is (D21).** Rejected: it is an
+  *unversioned, schema-free* `[]wire.PolicyRule` JSON blob on the Cluster channel
+  only, with no identity channel and no decode validation — it cannot express the
+  identity-before-policy commit ordering A-3 needs and silently tolerates drift.
+  This ADR keeps JSON but **freezes + versions** it (envelope, `schema_version`,
+  EDS channel, `DisallowUnknownFields`, width validation).
+- **protoc-generated `meridian.config.v1` messages** (the original ADR-0008 §2).
+  Rejected (MER-77): the build environment has **no protoc/protoc-gen-go/buf**
+  (host or Lima 5.15), protoc is not a `go install` tool, and a protoc build
+  dependency is disproportionate for two flat structs (D11). Versioned JSON over
+  the stdlib meets the contract goals without codegen. **Reversible** if protoc is
+  later provisioned.
 - **Reuse envoy `Cluster`/`ClusterLoadAssignment` protos to carry Meridian
   semantics.** Rejected: Meridian's identity-keyed L4 policy has no faithful
   mapping onto envoy's upstream-cluster/endpoint/LB model; the impedance mismatch
-  is lossy and misleading. Meridian protos stay single-sourced with `pkg/wire`
-  and the ADR-0004 kernel structs.
+  is lossy and misleading. The Meridian payload stays single-sourced with
+  `pkg/wire` and the ADR-0004 kernel structs.
 - **A custom non-xDS gRPC streaming protocol.** Rejected: would discard the
   version/nonce ACK/NACK state machine, make-before-break ordering, and the
   go-control-plane tooling already built and gated in MER-54/56.
 
 ## Consequences
 
-- MER-72 (A-3) authors the `meridian.config.v1` `.proto`, swaps the MER-54 server
-  resource builder from JSON-in-`BytesValue` to these protos, and implements the
-  agent decode + commit-ordered translation. The version/nonce transport is
-  untouched; MER-56 (CP-3) conformance should stay green after the swap (the
-  stub/agent decode changes, not the handshake).
+- MER-72 (A-3) implements the versioned-JSON codec (encode/decode for the §2
+  envelope + specs), swaps the MER-54 server resource builder and the MER-55 stub
+  decode from the unversioned interim blob onto it, and implements the agent
+  decode + commit-ordered translation. The version/nonce transport is untouched;
+  MER-56 (CP-3) conformance should stay green after the swap (the encode/decode
+  changes, not the handshake). No protoc / generated bindings are introduced.
 - The interim encoding (D21) is **superseded by this ADR** the moment MER-72 lands
-  the proto path; until then D21 remains the as-built note and this ADR is the
+  the versioned codec; until then D21 remains the as-built note and this ADR is the
   target.
 - LDS/RDS L7 resources are deferred to Phase 5; reserving them now keeps the
   channel mapping stable so L7 lands additively without re-freezing CC-2.
