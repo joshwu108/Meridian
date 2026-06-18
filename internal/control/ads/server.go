@@ -2,7 +2,6 @@ package ads
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 
@@ -10,8 +9,8 @@ import (
 	discoveryv3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	resourcev3 "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/joshuawu/meridian/internal/cc2"
 	"github.com/joshuawu/meridian/internal/control"
 )
 
@@ -157,27 +156,41 @@ func (s *Server) push(srv stream, state *streamState, typeURL string) error {
 	})
 }
 
-// resourcesFor returns the xDS resources for a type_url. MER-54 carries
-// Meridian's compiled L4 policy snapshot on the cluster channel only; the other
-// channels are versioned and ordered but empty. The JSON-in-BytesValue encoding
-// is the internal server↔stub contract for CP-1/CP-3 — the real xDS resource
-// model (which envoy type carries which Meridian construct) is frozen later
-// under CC-2, so this deliberately does not assert that mapping yet.
+// resourcesFor returns the xDS resources for a type_url, encoded per the frozen
+// CC-2 contract (ADR-0008 / internal/cc2): one resource per policy on the
+// Cluster (CDS) channel and one per identity on the Endpoint (EDS) channel.
+// LDS/RDS are reserved and versioned-but-empty until Phase 5 (L7).
 func (s *Server) resourcesFor(ctx context.Context, typeURL string) ([]*anypb.Any, error) {
-	if typeURL != resourcev3.ClusterType {
+	switch typeURL {
+	case resourcev3.ClusterType:
+		policies, err := s.store.ListPolicies(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]*anypb.Any, 0, len(policies))
+		for _, p := range policies {
+			a, err := cc2.EncodePolicyRule(p)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, a)
+		}
+		return out, nil
+	case resourcev3.EndpointType:
+		identities, err := s.store.ListIdentities(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]*anypb.Any, 0, len(identities))
+		for _, id := range identities {
+			a, err := cc2.EncodeIdentity(id)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, a)
+		}
+		return out, nil
+	default:
 		return nil, nil
 	}
-	policies, err := s.store.ListPolicies(ctx)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := json.Marshal(policies)
-	if err != nil {
-		return nil, err
-	}
-	packed, err := anypb.New(wrapperspb.Bytes(payload))
-	if err != nil {
-		return nil, err
-	}
-	return []*anypb.Any{packed}, nil
 }
