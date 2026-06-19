@@ -12,7 +12,7 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-81**. (MER-70…76 reserved for Phase 3 — see
+Next free ID = **MER-82**. (MER-70…76 reserved for Phase 3 — see
 `docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision; MER-78/79 = the A-3
 split of the oversized MER-72; MER-80 = ADR-0008 §3 ordering reconciliation; all below.)
 
@@ -60,14 +60,23 @@ tracked here.
   jittered reconnect. Removed obsolete P0-002 `doc.go` stubs. `go test -race
   ./internal/...` green; build/vet/tidy clean. End-to-end Lima kernel-write proof is
   the **MER-73** gate (not duplicated). **A-3 lane (codec 72 → server/stub 78 → client 79) COMPLETE.**
-- **MER-73 — A-3 GATE: REST→kernel `policy_map` < 500 ms (Phase-3 exit gate)** —
-  **ACTIVE.** Wire REST `POST /policies` → store → ADS server → `xds.Client` →
-  `datapath.Writer` → real kernel `policy_map`; assert the rule lands < 500 ms
-  (`WaitUntil`, not sleep); NACK-on-malformed holds last-good; arm a manifest row.
-  Real deps **MER-78 ✅ + MER-79 ✅** (the A-3 propagation path) + the writer/REST/store;
-  the planned `{71}` (A-2 veth lifecycle) is **over-specified** — the gate measures
-  config propagation, not TC attach, so MER-71 is NOT required. **Lima T3 / isolated
-  window** (collision corrupts shared runs).
+- **MER-73 — A-3 GATE: REST→kernel `policy_map` < 500 ms** — **CLOSED `44c448b`.**
+  `TestRestToKernelGate_MER73` wires store→REST→ADS→`xds.Client`→`datapath.Writer`→real
+  kernel `policy_map`; **verified on Lima 5.15 (isolated window): propagation 1.92 ms**
+  (budget 500 ms); malformed→4xx→map unchanged. Manifest armed → **10 gates**;
+  `check-gate-skips` 10/10, 0 skips. **A-3 lane (codec 72 → server/stub 78 → client 79
+  → exit gate 73) COMPLETE — Phase-3 REST→kernel<500 ms success criterion MET.**
+- **MER-81 — resolve stranded CI/build-hygiene tree changes (ci.yml + bpf build-tags + regenerated .o)** —
+  **ACTIVE.** A concurrent loop left UNCOMMITTED in the working tree: `ci.yml`
+  (add LLVM apt repo so pinned `clang-${CLANG_VERSION}` installs), `bpf/*.c`
+  (`//go:build ignore` to silence the `go build` "C source files not allowed"
+  warning), AND **regenerated `bpf/*_bpfel.o`** (bytecode changed). ⚠️ **D10 risk:**
+  clang is pinned for *deterministic* `.o` + CI `verify-gen` diffs after regen — so
+  the `.o` change must be **re-verified with pinned clang**: if `make ebpf` reproduces
+  it byte-identical → commit the CI/build fix; if NOT (wrong clang / non-deterministic)
+  → **revert the `.o`** (keep only the `.c` build-tag + ci.yml) so `verify-gen` stays
+  green. Branch is now PUSHED (8 ahead of origin) so CI correctness matters. Lima +
+  pinned clang.
 - **MER-80 — reconcile ADR-0008 §3 apply-ordering prose vs numbered order / D5** —
   **OPEN (P2).** Finding from MER-79: §3 point-3 prose ("an allow is removed **before**
   a narrower allow/deny is added — never widen") contradicts §3's own **numbered
