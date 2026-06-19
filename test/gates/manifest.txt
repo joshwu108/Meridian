@@ -36,3 +36,8 @@ yes integration ./test/integration/... TestSockmapIntegrityGate_MER51
 
 # CP-3 — MER-56 ADS conformance + <500 ms propagation
 yes '' ./internal/control/ads/... TestADSConformanceGate_MER56
+
+# --- Phase 3 gates (MER-69 plan) ---
+
+# A-3 EXIT — MER-73 REST→kernel policy_map < 500 ms end-to-end
+yes integration ./test/integration/... TestRestToKernelGate_MER73
