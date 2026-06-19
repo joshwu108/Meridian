@@ -12,9 +12,9 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-80**. (MER-70…76 reserved for Phase 3 — see
+Next free ID = **MER-81**. (MER-70…76 reserved for Phase 3 — see
 `docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision; MER-78/79 = the A-3
-split of the oversized MER-72; all below.)
+split of the oversized MER-72; MER-80 = ADR-0008 §3 ordering reconciliation; all below.)
 
 ---
 
@@ -53,12 +53,30 @@ tracked here.
   per channel; 2 ADS test files migrated off the blob format (per-resource ⇒
   multi-resource valid, kind-mismatch the new error). `go test -race ./internal/control/...`
   green incl. **CP-3 (MER-56)**; build/vet/tidy clean. Unblocks MER-79.
-- **MER-79 — agent A-3 ADS client + datapath translation** — **ACTIVE** (MER-78 ✅).
-  `internal/agent/xds` production ADS client (reuses the MER-55 stream/ACK-NACK/
-  reconnect shape; decodes via `internal/cc2`; **applies** via the existing
-  `datapath.Writer` — its `Apply` order already matches ADR-0008) + snapshot→`CommitPlan`
-  diff. Host-testable (bufconn) + a Lima T3 kernel-write proof (isolated window).
-  → MER-73 exit gate. Dep MER-78 ✅, MER-54 ✅, cc2 ✅.
+- **MER-79 — agent A-3 ADS client + datapath translation** — **CLOSED `d604a4d`.**
+  `internal/agent/xds.Client`: bidi ADS stream, subscribe CDS+EDS, decode via
+  `internal/cc2`, diff→`wire.CommitPlan`, apply via the injected `datapath.Writer`
+  (no `bpf/` import — D17/depguard-clean), ACK-after-apply, NACK-holds-last-known-good,
+  jittered reconnect. Removed obsolete P0-002 `doc.go` stubs. `go test -race
+  ./internal/...` green; build/vet/tidy clean. End-to-end Lima kernel-write proof is
+  the **MER-73** gate (not duplicated). **A-3 lane (codec 72 → server/stub 78 → client 79) COMPLETE.**
+- **MER-73 — A-3 GATE: REST→kernel `policy_map` < 500 ms (Phase-3 exit gate)** —
+  **ACTIVE.** Wire REST `POST /policies` → store → ADS server → `xds.Client` →
+  `datapath.Writer` → real kernel `policy_map`; assert the rule lands < 500 ms
+  (`WaitUntil`, not sleep); NACK-on-malformed holds last-good; arm a manifest row.
+  Real deps **MER-78 ✅ + MER-79 ✅** (the A-3 propagation path) + the writer/REST/store;
+  the planned `{71}` (A-2 veth lifecycle) is **over-specified** — the gate measures
+  config propagation, not TC attach, so MER-71 is NOT required. **Lima T3 / isolated
+  window** (collision corrupts shared runs).
+- **MER-80 — reconcile ADR-0008 §3 apply-ordering prose vs numbered order / D5** —
+  **OPEN (P2).** Finding from MER-79: §3 point-3 prose ("an allow is removed **before**
+  a narrower allow/deny is added — never widen") contradicts §3's own **numbered
+  order** (policy-adds @2 → policy-removes @3 = adds-first), which matches the
+  `datapath.Writer` and **D5** (adds-first, C∪D-bounded, deliberately chosen to avoid
+  transient false-denies). Decide: confirm **adds-first (D5)** → fix the §3 prose
+  (doc-only); OR if **removes-first / never-widen** is truly wanted → that's a
+  **writer behavior change** superseding D5 (security-vs-availability call). Off the
+  A-3 critical path; pure-docs if confirming D5.
 
 ---
 
@@ -584,3 +602,27 @@ Selected: **MER-78** — the critical-path next step (server must emit CC-2 befo
 agent decodes it), host-testable (collision-safe verification), and it RESOLVES the
 duplicate-codec hazard. `activeticket.md` holds the MER-78 spec. MER-79 blocks on it;
 MER-71 (A-2) + MER-74 (PKI-1) remain parallel-startable.
+
+## Batch 2026-06-19a — TPM/Auditor run (HEAD d604a4d)
+
+Findings: **MER-79 landed `d604a4d`** — the agent A-3 ADS client (`internal/agent/xds.Client`):
+bidi stream, subscribe CDS+EDS, decode via `internal/cc2`, diff→`wire.CommitPlan`,
+apply via the injected `datapath.Writer` (no `bpf/` import, D17/depguard-clean),
+ACK-after-apply, NACK-holds-last-known-good, jittered reconnect; obsolete P0-002
+`doc.go` stubs removed. `go test -race ./internal/...` green; build/vet/tidy clean.
+**The A-3 lane (codec 72 → server/stub 78 → client 79) is COMPLETE.**
+
+**Doc finding → MER-80 (P2):** ADR-0008 §3 point-3 prose ("allow removed *before* a
+narrower add — never widen") contradicts §3's numbered order (policy-adds@2 →
+policy-removes@3 = adds-first), which is what the `datapath.Writer` does and matches
+**D5** (adds-first, C∪D-bounded). Either fix the prose to D5 (doc-only) or change the
+writer to removes-first (a security-vs-availability decision superseding D5). Off the
+critical path. `Next free ID` → MER-81.
+
+Selected: **MER-73 — A-3 EXIT GATE (REST→kernel `policy_map` < 500 ms).** Highest
+priority: it is a **gate** and the Phase-3 exit criterion, and it proves the full A-3
+spine I just built end-to-end. **Unblocked by MER-78 ✅ + MER-79 ✅** — the planned
+`{71}` dep (A-2 netlink) is over-specified (the gate measures config propagation, not
+TC attach), so MER-73 wires the components directly without the full agent/netlink.
+⚠️ **Lima T3 → isolated window** (collision corrupts shared runs). MER-71 (A-2) +
+MER-74 (PKI-1, host-safe) remain parallel-startable. `activeticket.md` holds MER-73.
