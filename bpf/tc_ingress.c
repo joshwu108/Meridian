@@ -1,3 +1,5 @@
+//go:build ignore
+
 // SPDX-License-Identifier: GPL-2.0
 /*
  * tc_ingress.c — Phase 1 production ingress parser, identity resolution,

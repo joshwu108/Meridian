@@ -1,3 +1,5 @@
+//go:build ignore
+
 // SPDX-License-Identifier: GPL-2.0
 /*
  * sk_msg.c — Phase-2 SOCKHASH redirect fast path (MER-50 / ADR-0007).
