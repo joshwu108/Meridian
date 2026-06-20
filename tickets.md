@@ -66,17 +66,18 @@ tracked here.
   (budget 500 ms); malformed→4xx→map unchanged. Manifest armed → **10 gates**;
   `check-gate-skips` 10/10, 0 skips. **A-3 lane (codec 72 → server/stub 78 → client 79
   → exit gate 73) COMPLETE — Phase-3 REST→kernel<500 ms success criterion MET.**
-- **MER-81 — resolve stranded CI/build-hygiene tree changes (ci.yml + bpf build-tags + regenerated .o)** —
-  **ACTIVE.** A concurrent loop left UNCOMMITTED in the working tree: `ci.yml`
-  (add LLVM apt repo so pinned `clang-${CLANG_VERSION}` installs), `bpf/*.c`
-  (`//go:build ignore` to silence the `go build` "C source files not allowed"
-  warning), AND **regenerated `bpf/*_bpfel.o`** (bytecode changed). ⚠️ **D10 risk:**
-  clang is pinned for *deterministic* `.o` + CI `verify-gen` diffs after regen — so
-  the `.o` change must be **re-verified with pinned clang**: if `make ebpf` reproduces
-  it byte-identical → commit the CI/build fix; if NOT (wrong clang / non-deterministic)
-  → **revert the `.o`** (keep only the `.c` build-tag + ci.yml) so `verify-gen` stays
-  green. Branch is now PUSHED (8 ahead of origin) so CI correctness matters. Lima +
-  pinned clang.
+- **MER-81 — resolve stranded CI/build-hygiene tree changes** — **CLOSED `6bc982b`.**
+  Root finding: BOTH the `lint-unit` `go vet ./...` AND `make test-unit` (= `go test
+  -race ./...`) steps fail on `bpf/` ("C source files not allowed"). Fix: `//go:build
+  ignore` on `bpf/*.c` makes `bpf/` a pure-Go package for the whole toolchain
+  (vet/build/test/list ./...). The line-shift changes `*_bpfel.o` BTF line-info →
+  regenerated on Lima pinned clang-17, **deterministic across 2 runs** (verify-gen
+  reproducible per D10); `*_bpfel.go` unchanged; `make test-bpf` green. ci.yml `go vet`
+  restored to `./...`; the clang-17 `apt.llvm.org` repo (both install steps) retained.
+  ⚠️ **Ledger note:** the earlier partial CI commit `bdfa390` is **mislabeled `MER-80`**
+  (a dual-loop ID collision — the ledger's MER-80 is the unrelated ADR-0008 §3 ticket);
+  `bdfa390`'s vet-only hack is superseded by `6bc982b`. Branch pushed; commit not
+  rewritten.
 - **MER-80 — reconcile ADR-0008 §3 apply-ordering prose vs numbered order / D5** —
   **OPEN (P2).** Finding from MER-79: §3 point-3 prose ("an allow is removed **before**
   a narrower allow/deny is added — never widen") contradicts §3's own **numbered
