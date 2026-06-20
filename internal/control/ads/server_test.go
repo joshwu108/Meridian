@@ -2,7 +2,6 @@ package ads
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"testing"
 	"time"
@@ -13,8 +12,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/joshuawu/meridian/internal/cc2"
 	"github.com/joshuawu/meridian/internal/control/store"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
@@ -91,18 +90,16 @@ func recvWithin(t *testing.T, stream adsStreamClient, d time.Duration) *discover
 	}
 }
 
+// decodePolicies decodes a CDS DiscoveryResponse — one CC-2 resource per policy.
 func decodePolicies(t *testing.T, resp *discoveryv3.DiscoveryResponse) []wire.PolicyRule {
 	t.Helper()
-	if len(resp.GetResources()) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(resp.GetResources()))
-	}
-	var bv wrapperspb.BytesValue
-	if err := resp.GetResources()[0].UnmarshalTo(&bv); err != nil {
-		t.Fatalf("unmarshal resource: %v", err)
-	}
-	var rules []wire.PolicyRule
-	if err := json.Unmarshal(bv.GetValue(), &rules); err != nil {
-		t.Fatalf("decode policy json: %v", err)
+	rules := make([]wire.PolicyRule, 0, len(resp.GetResources()))
+	for i, res := range resp.GetResources() {
+		r, err := cc2.DecodePolicyRule(res)
+		if err != nil {
+			t.Fatalf("decode resource[%d]: %v", i, err)
+		}
+		rules = append(rules, r)
 	}
 	return rules
 }

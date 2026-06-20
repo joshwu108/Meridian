@@ -2,7 +2,6 @@ package ads
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +13,8 @@ import (
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/joshuawu/meridian/internal/cc2"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
@@ -166,29 +165,32 @@ func (a *StubAgent) acceptedVersion(typeURL string) string {
 // contract violation and yields an error so the caller NACKs.
 func decodeSnapshot(resp *discoveryv3.DiscoveryResponse) ([]wire.PolicyRule, error) {
 	resources := resp.GetResources()
-
-	if resp.GetTypeUrl() != resourcev3.ClusterType {
-		// Empty by contract. A payload on a non-Cluster channel is unexpected.
+	switch resp.GetTypeUrl() {
+	case resourcev3.ClusterType:
+		// CDS: one CC-2 resource per policy.
+		rules := make([]wire.PolicyRule, 0, len(resources))
+		for i, res := range resources {
+			r, err := cc2.DecodePolicyRule(res)
+			if err != nil {
+				return nil, fmt.Errorf("cluster resource[%d]: %w", i, err)
+			}
+			rules = append(rules, r)
+		}
+		return rules, nil
+	case resourcev3.EndpointType:
+		// EDS: one CC-2 resource per identity. The stub validates them
+		// (fail-closed) but does not track them — CP-3 only inspects policies.
+		for i, res := range resources {
+			if _, err := cc2.DecodeIdentity(res); err != nil {
+				return nil, fmt.Errorf("endpoint resource[%d]: %w", i, err)
+			}
+		}
+		return nil, nil
+	default:
+		// LDS/RDS reserved, versioned-but-empty; a payload here is unexpected.
 		if len(resources) != 0 {
-			return nil, fmt.Errorf("unexpected %d resource(s) on non-cluster channel %s", len(resources), resp.GetTypeUrl())
+			return nil, fmt.Errorf("unexpected %d resource(s) on %s", len(resources), resp.GetTypeUrl())
 		}
 		return nil, nil
 	}
-
-	if len(resources) == 0 {
-		return []wire.PolicyRule{}, nil
-	}
-	if len(resources) != 1 {
-		return nil, fmt.Errorf("expected exactly 1 cluster resource, got %d", len(resources))
-	}
-
-	var bv wrapperspb.BytesValue
-	if err := resources[0].UnmarshalTo(&bv); err != nil {
-		return nil, fmt.Errorf("cluster resource is not a BytesValue: %w", err)
-	}
-	var rules []wire.PolicyRule
-	if err := json.Unmarshal(bv.GetValue(), &rules); err != nil {
-		return nil, fmt.Errorf("policy payload is not decodable JSON: %w", err)
-	}
-	return rules, nil
 }

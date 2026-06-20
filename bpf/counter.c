@@ -1,3 +1,5 @@
+//go:build ignore
+
 // SPDX-License-Identifier: GPL-2.0
 /*
  * counter.c — toolchain/verifier smoke artifact (not in the production datapath).

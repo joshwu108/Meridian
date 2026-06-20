@@ -2,7 +2,6 @@ package ads
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/joshuawu/meridian/internal/cc2"
 	"github.com/joshuawu/meridian/internal/control/store"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
@@ -217,14 +217,17 @@ func TestStubNacksContractViolation(t *testing.T) {
 }
 
 func TestDecodeSnapshot(t *testing.T) {
-	goodAny := func(rules []wire.PolicyRule) *anypb.Any {
-		b, err := json.Marshal(rules)
+	policyAny := func(r wire.PolicyRule) *anypb.Any {
+		a, err := cc2.EncodePolicyRule(r)
 		if err != nil {
-			t.Fatalf("marshal: %v", err)
+			t.Fatalf("encode policy: %v", err)
 		}
-		a, err := anypb.New(wrapperspb.Bytes(b))
+		return a
+	}
+	identityAny := func(id wire.Identity) *anypb.Any {
+		a, err := cc2.EncodeIdentity(id)
 		if err != nil {
-			t.Fatalf("anypb.New: %v", err)
+			t.Fatalf("encode identity: %v", err)
 		}
 		return a
 	}
@@ -236,6 +239,7 @@ func TestDecodeSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("anypb.New: %v", err)
 	}
+	sampleIdentity := wire.Identity{ID: 7, SpiffeID: "spiffe://x/y", Name: "y"}
 
 	tests := []struct {
 		name    string
@@ -244,10 +248,12 @@ func TestDecodeSnapshot(t *testing.T) {
 		wantLen int
 	}{
 		{"empty cluster", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType}, false, 0},
-		{"one policy", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{goodAny([]wire.PolicyRule{samplePolicy(1)})}}, false, 1},
-		{"empty non-cluster ok", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.EndpointType}, false, 0},
-		{"payload on non-cluster", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.EndpointType, Resources: []*anypb.Any{goodAny(nil)}}, true, 0},
-		{"too many resources", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{goodAny(nil), goodAny(nil)}}, true, 0},
+		{"one policy", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{policyAny(samplePolicy(1))}}, false, 1},
+		{"many policies", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{policyAny(samplePolicy(1)), policyAny(samplePolicy(2))}}, false, 2},
+		{"empty endpoint ok", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.EndpointType}, false, 0},
+		{"identity on endpoint ok", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.EndpointType, Resources: []*anypb.Any{identityAny(sampleIdentity)}}, false, 0},
+		{"kind mismatch: policy on endpoint", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.EndpointType, Resources: []*anypb.Any{policyAny(samplePolicy(1))}}, true, 0},
+		{"kind mismatch: identity on cluster", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{identityAny(sampleIdentity)}}, true, 0},
 		{"not a bytesvalue", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{notBytesValue}}, true, 0},
 		{"undecodable json", &discoveryv3.DiscoveryResponse{TypeUrl: resourcev3.ClusterType, Resources: []*anypb.Any{badJSON}}, true, 0},
 	}

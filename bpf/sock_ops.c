@@ -1,3 +1,5 @@
+//go:build ignore
+
 // SPDX-License-Identifier: GPL-2.0
 /*
  * sock_ops.c — Phase-2 gated SOCKHASH population (MER-48 / ADR-0007).
