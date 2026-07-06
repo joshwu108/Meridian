@@ -8,6 +8,7 @@ import (
 
 	"github.com/joshuawu/meridian/internal/agent/attach"
 	"github.com/joshuawu/meridian/internal/agent/datapath"
+	"github.com/joshuawu/meridian/internal/agent/linkwatch"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
@@ -16,6 +17,13 @@ type StartupOptions struct {
 	PolicyFile     string
 	Interface      string
 	ProgramPinPath string
+
+	// LinkWatcher, when non-nil, drives RTNLGRP_LINK-based TC attach/detach for
+	// host-side pod veths alongside the static Interface lifecycle.
+	// LinkWatchOnError receives per-interface attach/detach failures; the loop
+	// continues on each error (state, not events, is truth).
+	LinkWatcher      linkwatch.Watcher
+	LinkWatchOnError linkwatch.AttachErrorFunc
 }
 
 type startupResources struct {
@@ -183,6 +191,48 @@ func (r *StartupRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	<-ctx.Done()
-	return runtime.Close(context.Background())
+
+	var runErr error
+	if r.opts.LinkWatcher != nil {
+		// Resolve the attacher: prefer the manager created for the static
+		// interface; fall back to a fresh one when no Interface is set but a
+		// program ref is available (dynamic-only lifecycle).
+		var a linkwatch.Attacher = runtime.attachManager
+		if a == nil && runtime.resources.AttachProgram != nil {
+			a = r.deps.newAttachManager(runtime.resources.AttachProgram, r.opts.ProgramPinPath)
+		}
+		if a != nil {
+			watchErrCh := make(chan error, 1)
+			go func() {
+				for {
+					err := linkwatch.Run(ctx, r.opts.LinkWatcher, a, r.opts.LinkWatchOnError)
+					// non-nil → fatal (subscribe failed) or ctx cancelled → stop.
+					// nil with ctx done → clean shutdown.
+					// nil with ctx alive → ENOBUFS or clean channel close; loop
+					// immediately to reconcile + resubscribe (state, not events,
+					// is truth — ARCHITECTURE failure matrix).
+					if err != nil || ctx.Err() != nil {
+						watchErrCh <- err
+						return
+					}
+				}
+			}()
+			select {
+			case <-ctx.Done():
+			case err := <-watchErrCh:
+				if err != nil && !errors.Is(err, context.Canceled) {
+					runErr = fmt.Errorf("linkwatch: %w", err)
+				}
+			}
+		} else {
+			<-ctx.Done()
+		}
+	} else {
+		<-ctx.Done()
+	}
+
+	if closeErr := runtime.Close(context.Background()); closeErr != nil && runErr == nil {
+		return closeErr
+	}
+	return runErr
 }
