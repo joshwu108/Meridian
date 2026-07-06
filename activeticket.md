@@ -2,70 +2,70 @@
 
 ID: MER-71
 
-Title: A-2 — agent netlink veth lifecycle (3/N: supervisor wiring + A-2 gate) — CONTINUATION
+Title: A-2 — netlink veth lifecycle (4/N CLOSE-OUT: real-attach gate + production wiring + Lima evidence)
 
 Objective:
-Finish MER-71. Parts 1/N (`2778bd9` — lifecycle orchestrator, reconcile-before-
-events, attach/detach dispatch) and 2/N (`896f851` — RTNLGRP_LINK netlink
-Watcher, reconcile + add/remove classify) are COMMITTED and host-green. What
-remains to close the ticket:
+Close MER-71. Tranches 1–3 (`2778bd9`, `896f851`, `e68c2ea`) landed the
+orchestrator, watcher, supervisor wiring (ENOBUFS retry loop), the A-2 gate,
+and armed the manifest row (11 armed gates). TPM review of `e68c2ea` found
+three acceptance gaps that block closure:
 
-  (a) wire the linkwatch orchestrator into `internal/agent/supervisor` (the
-      composition root) behind the existing agent lifecycle — currently NO
-      reference to `linkwatch` exists in `supervisor/` or `cmd/`;
-  (b) ENOBUFS resilience: on netlink overrun, resubscribe + full reconcile
-      (state, not events, is truth — ARCHITECTURE failure matrix) — verify it
-      is implemented end-to-end through the orchestrator, add coverage if not;
-  (c) the A-2 GATE test `TestVethAttachLifecycleGate_MER71`: netns+veth
-      create/destroy loop; every veth gets its TC programs within 100 ms; no
-      leaked attachments/qdiscs after teardown;
-  (d) arm the manifest row (11 armed gates, 0 skips) and verify on Lima 5.15
-      in an ISOLATED window.
+  (a) **Gate measures a fake.** `TestVethAttachLifecycleGate_MER71` uses
+      `linkwatchRecorder` — no real TC program is ever attached, so the
+      "no leaked attachments/qdiscs" claim is unverifiable. Harden the gate:
+      drive the real MER-57 TC attach manager (root + netns are already
+      available in this suite) so the 100 ms budget covers actual
+      `EnsureAttached` → qdisc/filter on the host-side veth, and the leak
+      check inspects real kernel state (no `mh-*`/`r71*` qdiscs or filters
+      left after teardown). Keep the recorder-based assertions if useful,
+      but the armed gate row must exercise the real path.
+  (b) **Feature is dead code in the shipped binary.** No caller constructs
+      a `NetlinkWatcher`: wire it in `cmd/meridian-agent` (the process
+      composition root) into `supervisor.StartupOptions.LinkWatcher`,
+      flag-gated if appropriate (mirror the `--cgroup` opt-in pattern), with
+      a sane default selector for pod veths.
+  (c) **No Lima evidence.** Run the full battery on Lima 5.15 in an ISOLATED
+      window and record it: update `docs/PHASE3_GATES.md` gate-status table —
+      A-2 → armed=yes/green with the run evidence; while there, correct the
+      stale A-3 row (MER-73 closed green, 1.92 ms; actual test name is
+      TestRestToKernelGate_MER73) per the committed history.
 
-Stay in scope: `internal/agent/linkwatch` + supervisor wiring + tests. Reuse
-the MER-57 `attach` managers and `bpfobj` loaders — do NOT re-implement attach
-or import `bpf/` outside `bpfobj` (depguard `wire-bpf-bridge`). Do NOT touch
-the eBPF programs, the frozen schema, the ADS path, or start PKI (MER-74/75).
+Stay in scope: linkwatch gate test, `cmd/meridian-agent` wiring,
+`docs/PHASE3_GATES.md`. Do NOT touch eBPF programs, the frozen schema, the
+ADS path, or start PKI (MER-74/75). depguard: no `bpf/` outside `bpfobj`.
 
 Dependencies:
-- MER-57 (attach managers) ✅, bpfobj ✅, `vishvananda/netlink` ✅ (already a dep).
-  Parts 1–2 of this ticket ✅ committed. No new deps.
-- Runtime: Linux + root + netns/veth → **Lima 5.15, ISOLATED window** (netlink +
-  veth churn; the dual-runner collision corrupts shared Lima runs — run ONE runner).
-- depguard: `internal/agent/linkwatch` imports `attach`/`bpfobj`/`netlink`, never `bpf/`.
+- Tranches 1–3 ✅ (`e68c2ea` at HEAD). MER-57 attach managers ✅. No new deps.
+- Lima 5.15, root, ISOLATED window (confirm no second gate runner — MER-68).
 
 Acceptance Criteria:
-1. Watcher semantics complete: (a) full interface reconcile BEFORE subscribing
-   to RTMGRP_LINK ✅ (1/N–2/N, verify at wiring level); (b) RTM_NEWLINK for a
-   matching veth → idempotent attach; (c) RTM_DELLINK → detach/cleanup;
-   (d) ENOBUFS → resubscribe + full reconcile (add if missing).
-2. Wired into `internal/agent/supervisor` behind the existing agent lifecycle;
-   attach uses the MER-57 `attach` managers; clean stop of the watch loop on
-   shutdown (no goroutine leak).
-3. **A-2 gate** `TestVethAttachLifecycleGate_MER71` (in
-   `internal/.../linkwatch_test.go` or `test/integration/`): create/destroy
-   netns+veth in a loop; assert every veth attached within **100 ms** and
-   **no leaked attachments/qdiscs** after teardown. Arm the manifest row
-   (`armed=yes`) per PHASE3_GATES — 0 skips.
-4. depguard clean (no `bpf/` from `linkwatch`); idempotent attach/detach.
-5. `go build ./...` / `go vet ./...` clean; `go test -race ./internal/agent/...`
-   green on host; `make test-integration` green on Lima (ISOLATED window);
-   `make check-gate-skips` 0 skips across the now-11 armed gates;
-   `go mod tidy` no diff.
-6. After commit, `git status` clean; `make check-commits` passes (MER-71 ref).
-   Push the branch — 2 MER-71 commits are not yet on origin.
+1. The armed A-2 gate exercises the REAL attach path: TC qdisc/filter
+   actually present on each host-side veth within 100 ms (reconcile + event
+   paths), actually gone after deletion; kernel-state leak check (not map
+   bookkeeping) passes after teardown. Never t.Skip under root on 5.15.
+2. `cmd/meridian-agent` constructs and passes the NetlinkWatcher into the
+   supervisor (flag-gated OK); the binary's veth auto-attach is reachable in
+   production, not only from tests.
+3. Lima 5.15 isolated run: `make test-integration` green;
+   `make check-gate-skips` → 0 skips across all 11 armed gates. Evidence
+   (kernel, date, result) recorded in `docs/PHASE3_GATES.md` A-2 row; stale
+   A-3 row corrected in the same edit.
+4. Host: `go build ./...` / `go vet ./...` / `go test -race ./internal/...`
+   clean; `go mod tidy` no diff; depguard clean.
+5. Commit(s) reference MER-71; `make check-commits` passes; `git status`
+   clean; branch pushed.
 
 Files Expected To Change:
-- internal/agent/supervisor/*.go        (wire linkwatch into the lifecycle)
-- internal/agent/linkwatch/*.go          (only if ENOBUFS path needs completion)
-- internal/agent/linkwatch/*_test.go OR test/integration/linkwatch_test.go (A-2 gate)
-- test/gates/manifest.txt                (arm TestVethAttachLifecycleGate_MER71)
+- test/integration/linkwatch_test.go     (real-attach hardening + kernel leak check)
+- cmd/meridian-agent/*.go                 (construct + wire NetlinkWatcher, flag)
+- docs/PHASE3_GATES.md                    (A-2 evidence; A-3 row correction)
+- internal/agent/supervisor/*.go          (only if wiring needs a small seam)
 
 Required Tests:
-- `limactl shell meridian -- make test-integration` (isolated) → veth attach <100 ms, no leaks
-- `limactl shell meridian -- make check-gate-skips`            → 0 skips across 11 armed gates
-- `go build ./...` / `go vet ./...` / `go test -race ./internal/agent/...` → clean
-- `make check-commits`                                        → MER-71 commit-linkage satisfied
+- `limactl shell meridian -- make test-integration` (ISOLATED) → real TC attach <100 ms, kernel leak check clean
+- `limactl shell meridian -- make check-gate-skips`             → 0 skips / 11 armed gates
+- `go build ./...` / `go vet ./...` / `go test -race ./internal/...` → clean
+- `make check-commits` → MER-71 linkage satisfied
 
 Commit Message:
-feat(agent): MER-71 (3/N) supervisor wiring + A-2 veth lifecycle gate — attach <100 ms, no leaks
+feat(agent): MER-71 (4/N) real-attach A-2 gate + meridian-agent linkwatch wiring + Lima evidence
