@@ -32,8 +32,8 @@ no entry dependency — they are not Phase-3 implementation.
 
 | Gate | Ticket | Armed | State | Evidence |
 |------|--------|-------|-------|----------|
-| A-2 | MER-71 | no | pending | gated on MER-71 |
-| A-3 | MER-73 | no | pending | gated on MER-71 + MER-72 |
+| A-2 | MER-71 | yes | green | Lima 5.15.0-181-generic · 2026-07-06 · attach <1 ms · detach <1 ms · 0 skips · kernel BPF filter verified · no leaked interfaces |
+| A-3 | MER-73 | yes | green | Lima 5.15.0-181-generic · 2026-07-06 · REST→kernel 2.66 ms (budget 500 ms) · 0 skips |
 | PKI-1 | MER-74 | no | pending | gated on MER-74 |
 
 Gate stubs start `armed=no` until their upstream tickets merge (MER-44).
@@ -45,7 +45,7 @@ Gate stubs start `armed=no` until their upstream tickets merge (MER-44).
 no integration ./test/integration/... TestVethAttachLifecycleGate_MER71
 
 # A-3 — MER-73 REST→kernel propagation < 500 ms (Phase-3 exit criterion)
-no integration ./test/integration/... TestRestToKernelPropagationGate_MER73
+no integration ./test/integration/... TestRestToKernelGate_MER73
 
 # PKI-1 — MER-74 CA / CSR / signing
 no '' ./internal/control/ca/... TestCAPrimitivesGate_MER74
