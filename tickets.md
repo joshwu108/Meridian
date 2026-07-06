@@ -12,7 +12,7 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-82**. (MER-70…76 reserved for Phase 3 — see
+Next free ID = **MER-83**. (MER-70…76 reserved for Phase 3 — see
 `docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision; MER-78/79 = the A-3
 split of the oversized MER-72; MER-80 = ADR-0008 §3 ordering reconciliation; all below.)
 
@@ -636,3 +636,46 @@ spine I just built end-to-end. **Unblocked by MER-78 ✅ + MER-79 ✅** — the 
 TC attach), so MER-73 wires the components directly without the full agent/netlink.
 ⚠️ **Lima T3 → isolated window** (collision corrupts shared runs). MER-71 (A-2) +
 MER-74 (PKI-1, host-safe) remain parallel-startable. `activeticket.md` holds MER-73.
+
+## Batch 2026-07-06a — TPM/Auditor run (HEAD 02825e7)
+
+Findings: **MER-71 (A-2 netlink veth lifecycle) CLOSED `02825e7`** — four tranches
+(`2778bd9` orchestrator, `896f851` watcher, `e68c2ea` supervisor wiring + gate,
+`02825e7` close-out). The close-out fixed all three review findings on `e68c2ea`:
+the A-2 gate now drives the REAL MER-57 TCManager (kernel `tc filter` verified
+per attach; teardown checks `ip link` for leaked interfaces), `meridian-agent`
+gained the `--veth-prefix` opt-in wiring (feature no longer dead code), and Lima
+evidence recorded in PHASE3_GATES (A-2 green: attach <1 ms; A-3 row corrected:
+2.66 ms re-run on 5.15.0-181). Host build/vet/-race/tidy clean at HEAD; branch
+pushed. **A-2 lane COMPLETE.**
+
+⚠️ **P0 gate-integrity finding → MER-82:** the closing commit's Lima run reports
+**P1.3 (`TestGeneveIngressIdentityPolicyGate_MER21`) FAILING**, waved off as
+"pre-existing failure unrelated." An ARMED merge-blocker gate red at HEAD is a
+MER-44 violation regardless of cause (MER-66 precedent). Note the VM kernel moved
+**5.15.0-179 → 5.15.0-181** between evidence runs — a plausible Geneve live-path
+trigger; dual-runner collision (MER-68) is the other suspect. `Next free ID` → MER-83.
+
+### MER-82 — P1.3 armed gate RED on Lima 5.15.0-181: triage + restore 11/11 green
+
+- **ID:** MER-82
+- **TITLE:** Triage the P1.3 Geneve gate failure at HEAD (kernel 181 regression vs collision vs real bug) and restore all-armed-gates green
+- **PRIORITY:** P0 / CRITICAL (armed merge-blocker gate red; MER-44)
+- **ESTIMATE:** 2–4h
+- **BLOCKS:** any "all gates green" claim; MER-76 (Phase-3 EXIT); trustworthy CI signal
+- **DEPENDENCIES:** none (Lima 5.15, ISOLATED window mandatory)
+- **ACCEPTANCE CRITERIA:**
+  1. Reproduce P1.3 at HEAD in a verified-isolated Lima window (competing-process
+     guard per MER-68); capture the failure mode (which sub-case: allow-connect
+     vs deny-timeout; error output committed to the evidence log).
+  2. Root-cause disposition, one of: (a) kernel 5.15.0-179→181 behavior change
+     (document + fix the test or program per ADR-0002/0005 constraints);
+     (b) dual-runner collision artifact (prove with the guard; re-run clean);
+     (c) real regression introduced by a Phase-2/3 commit (bisect, fix, cite).
+  3. `make check-gate-skips` → 11/11 armed gates green, 0 skips, 0 failures, in
+     an isolated window at HEAD; evidence in `docs/PHASE1_GATE_EVIDENCE.log` +
+     PHASE3_GATES.
+  4. If a code fix is needed: minimal diff, MER-82-linked commit, frozen ADR-0004
+     schema untouched; regenerated `.o` only via the pinned deterministic path (D10).
+  5. Root-cause note recorded so "pre-existing failure unrelated" can never again
+     be a gate disposition (MER-44 hygiene).

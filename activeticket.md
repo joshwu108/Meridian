@@ -1,71 +1,68 @@
 # Active Ticket
 
-ID: MER-71
+ID: MER-82
 
-Title: A-2 — netlink veth lifecycle (4/N CLOSE-OUT: real-attach gate + production wiring + Lima evidence)
+Title: P0 — P1.3 armed gate RED on Lima 5.15.0-181: triage + restore 11/11 armed gates green
 
 Objective:
-Close MER-71. Tranches 1–3 (`2778bd9`, `896f851`, `e68c2ea`) landed the
-orchestrator, watcher, supervisor wiring (ENOBUFS retry loop), the A-2 gate,
-and armed the manifest row (11 armed gates). TPM review of `e68c2ea` found
-three acceptance gaps that block closure:
+The MER-71 closing commit (`02825e7`) reports the Lima gate run with
+**P1.3 (`TestGeneveIngressIdentityPolicyGate_MER21`) FAILING**, dismissed in
+the commit body as "pre-existing failure unrelated." An ARMED merge-blocker
+gate red at HEAD is a MER-44 integrity violation regardless of which change
+caused it (MER-66 precedent: P1.3 red = P0). Triage and fix.
 
-  (a) **Gate measures a fake.** `TestVethAttachLifecycleGate_MER71` uses
-      `linkwatchRecorder` — no real TC program is ever attached, so the
-      "no leaked attachments/qdiscs" claim is unverifiable. Harden the gate:
-      drive the real MER-57 TC attach manager (root + netns are already
-      available in this suite) so the 100 ms budget covers actual
-      `EnsureAttached` → qdisc/filter on the host-side veth, and the leak
-      check inspects real kernel state (no `mh-*`/`r71*` qdiscs or filters
-      left after teardown). Keep the recorder-based assertions if useful,
-      but the armed gate row must exercise the real path.
-  (b) **Feature is dead code in the shipped binary.** No caller constructs
-      a `NetlinkWatcher`: wire it in `cmd/meridian-agent` (the process
-      composition root) into `supervisor.StartupOptions.LinkWatcher`,
-      flag-gated if appropriate (mirror the `--cgroup` opt-in pattern), with
-      a sane default selector for pod veths.
-  (c) **No Lima evidence.** Run the full battery on Lima 5.15 in an ISOLATED
-      window and record it: update `docs/PHASE3_GATES.md` gate-status table —
-      A-2 → armed=yes/green with the run evidence; while there, correct the
-      stale A-3 row (MER-73 closed green, 1.92 ms; actual test name is
-      TestRestToKernelGate_MER73) per the committed history.
+Context/leads (from the audit):
+- The Lima VM kernel moved **5.15.0-179 → 5.15.0-181** between evidence runs
+  (MER-73 closed on -179; MER-71 evidence cites -181). A kernel point-release
+  change to Geneve/TC behavior is a plausible trigger.
+- The other prime suspect is the **dual-runner collision** (MER-68 finding: a
+  second gate runner in the same VM corrupts runs — netns/pin cleanup races).
+- A real regression from a Phase-2/3 commit is possible but less likely: no
+  committed change since `630f616` touches the Geneve path (verify).
 
-Stay in scope: linkwatch gate test, `cmd/meridian-agent` wiring,
-`docs/PHASE3_GATES.md`. Do NOT touch eBPF programs, the frozen schema, the
-ADS path, or start PKI (MER-74/75). depguard: no `bpf/` outside `bpfobj`.
+Do NOT modify the frozen ADR-0004 map schemas. Any eBPF `.o` regeneration
+must go through the pinned deterministic toolchain (D10). Do NOT green-wash:
+if the gate is genuinely red, the fix must make it genuinely green; do not
+disarm the row, widen budgets, or re-run until lucky.
 
 Dependencies:
-- Tranches 1–3 ✅ (`e68c2ea` at HEAD). MER-57 attach managers ✅. No new deps.
-- Lima 5.15, root, ISOLATED window (confirm no second gate runner — MER-68).
+- None. Requires Lima 5.15 root access, **ISOLATED window** with the MER-68
+  competing-process guard (instrument and verify no second runner before
+  trusting any result).
 
 Acceptance Criteria:
-1. The armed A-2 gate exercises the REAL attach path: TC qdisc/filter
-   actually present on each host-side veth within 100 ms (reconcile + event
-   paths), actually gone after deletion; kernel-state leak check (not map
-   bookkeeping) passes after teardown. Never t.Skip under root on 5.15.
-2. `cmd/meridian-agent` constructs and passes the NetlinkWatcher into the
-   supervisor (flag-gated OK); the binary's veth auto-attach is reachable in
-   production, not only from tests.
-3. Lima 5.15 isolated run: `make test-integration` green;
-   `make check-gate-skips` → 0 skips across all 11 armed gates. Evidence
-   (kernel, date, result) recorded in `docs/PHASE3_GATES.md` A-2 row; stale
-   A-3 row corrected in the same edit.
-4. Host: `go build ./...` / `go vet ./...` / `go test -race ./internal/...`
-   clean; `go mod tidy` no diff; depguard clean.
-5. Commit(s) reference MER-71; `make check-commits` passes; `git status`
-   clean; branch pushed.
+1. Reproduce P1.3 at HEAD in a verified-isolated window; capture which
+   sub-case fails (allow-path connect vs deny-path timeout) and the full
+   failure output into `docs/PHASE1_GATE_EVIDENCE.log`.
+2. Root-cause disposition, exactly one of:
+   (a) kernel -179→-181 behavior change — document it and fix test/program
+       within ADR-0002/ADR-0005 constraints;
+   (b) collision artifact — prove with the competing-process guard, then
+       show a clean-window pass (and record the collision evidence);
+   (c) real regression — bisect to the introducing commit, minimal fix, cite
+       the SHA in the commit body.
+3. `limactl shell meridian -- make check-gate-skips` → **11/11 armed gates
+   green, 0 skips, 0 failures** in an isolated window at HEAD (or HEAD+fix).
+4. Evidence recorded: `docs/PHASE1_GATE_EVIDENCE.log` (P1.3 re-pass with
+   kernel + date) and `docs/PHASE3_GATES.md` footnote if relevant.
+5. Root-cause note committed so "pre-existing failure unrelated" is never
+   again a gate disposition (MER-44 hygiene).
+6. Host battery clean (`go build ./...`, `go vet ./...`,
+   `go test -race ./internal/...`, `go mod tidy` no diff); commit(s)
+   MER-82-linked; `make check-commits` passes; tree clean; branch pushed.
 
 Files Expected To Change:
-- test/integration/linkwatch_test.go     (real-attach hardening + kernel leak check)
-- cmd/meridian-agent/*.go                 (construct + wire NetlinkWatcher, flag)
-- docs/PHASE3_GATES.md                    (A-2 evidence; A-3 row correction)
-- internal/agent/supervisor/*.go          (only if wiring needs a small seam)
+- docs/PHASE1_GATE_EVIDENCE.log            (failure capture + re-pass evidence)
+- bpf/tc_egress.c / bpf/tc_ingress.c        (ONLY if disposition (a)/(c) requires;
+                                             regen .o via pinned clang per D10)
+- test/integration/geneve_test.go           (ONLY if the test itself must adapt)
+- docs/PHASE3_GATES.md                      (footnote, if relevant)
 
 Required Tests:
-- `limactl shell meridian -- make test-integration` (ISOLATED) → real TC attach <100 ms, kernel leak check clean
-- `limactl shell meridian -- make check-gate-skips`             → 0 skips / 11 armed gates
-- `go build ./...` / `go vet ./...` / `go test -race ./internal/...` → clean
-- `make check-commits` → MER-71 linkage satisfied
+- `limactl shell meridian -- make test-integration` (ISOLATED, guarded) → P1.3 green
+- `limactl shell meridian -- make check-gate-skips`                      → 11/11, 0 skips, 0 failures
+- `go build ./...` / `go vet ./...` / `go test -race ./internal/...`     → clean
+- `make check-commits`                                                   → MER-82 linkage
 
 Commit Message:
-feat(agent): MER-71 (4/N) real-attach A-2 gate + meridian-agent linkwatch wiring + Lima evidence
+fix(gates): MER-82 P1.3 Geneve gate red on 5.15.0-181 — <root cause> + restore 11/11 armed green
