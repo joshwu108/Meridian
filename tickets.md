@@ -679,3 +679,19 @@ trigger; dual-runner collision (MER-68) is the other suspect. `Next free ID` →
      schema untouched; regenerated `.o` only via the pinned deterministic path (D10).
   5. Root-cause note recorded so "pre-existing failure unrelated" can never again
      be a gate disposition (MER-44 hygiene).
+
+## Batch 2026-07-06b — TPM/Auditor note (HEAD cc0289a, dirty tree)
+
+**MER-82 work STRANDED UNCOMMITTED.** An in-flight fix sits in the working
+tree across 4+ audit cycles with an unchanged diff (md5 `83aca7be…`):
+`bpf/tc_egress.c` +12 (adds a `bpf_skb_adjust_room` ENCAP_L2 path before the
+manual-shift fallback in `insert_inner_tlv_room`) + regenerated
+`tcegress_bpfel.o` (82944→83672 B). **No evidence-log update, no commit — the
+fix is UNVERIFIED** (no recorded Lima P1.3 run). TPM technical caution on the
+draft: the flags word shifts `room_off` into the `BPF_F_ADJ_ROOM_ENCAP_L2`
+field, which encodes the inner **L2 header length** (8-bit mask), not a packet
+offset — >255 truncates silently; semantics must be checked against uapi
+`bpf.h` before any green run is trusted. Deliberately NOT committed by the
+TPM (unverified eBPF production code; anti-green-wash). Resume = execute the
+MER-82 activeticket close-out checklist against this diff, or discard and
+re-derive. Implementation loop appears intermittent — operator flagged.
