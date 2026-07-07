@@ -711,3 +711,18 @@ green on 5.15.0-179? The disposition must reconcile the -179→-181 delta
 acceptance of change_head in cls_act on the target kernel. (3) the 128-iter
 unroll bound vs MERIDIAN_MAX_INNER_SHIFT_BYTES guard. Verification checklist
 unchanged (activeticket @ cc0289a).
+
+## Batch 2026-07-07b — TPM/Auditor note (HEAD 8d76249, dirty tree)
+
+**MER-82 draft v3** (md5 `e688dab7…`, +19/−15, .o 82944→58168 B). Supersedes
+v2. Now `bpf_skb_adjust_room(+8, BPF_ADJ_ROOM_MAC, 0)` (no encap flags — the
+earlier ENCAP_L2 misuse is NOT reintroduced) + left-shift of only the OUTER
+headers (`outer_ip_off`→`room_off`, bound ≤64 with a matching 64-iter unroll),
+gap lands at `room_off` for the TLV. Root-cause comment now names the exact
+kernel: change_tail → -ENOTSUPP when `skb->encapsulation` set, "5.15.0-181+".
+**Resolved by construction:** v2 questions (b) change_head availability (moot —
+helper switched) and (c) unroll bound (explicit ≤64). **Still open before
+merge:** question (a) — captured errno/log line proving the -ENOTSUPP claim +
+what changed -179→-181; and the full verification battery (isolated Lima
+gate run 11/11, D10-reproducible .o, evidence in PHASE1_GATE_EVIDENCE.log).
+Design reviewed — sound; awaiting proof.
