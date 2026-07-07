@@ -695,3 +695,19 @@ offset — >255 truncates silently; semantics must be checked against uapi
 TPM (unverified eBPF production code; anti-green-wash). Resume = execute the
 MER-82 activeticket close-out checklist against this diff, or discard and
 re-derive. Implementation loop appears intermittent — operator flagged.
+
+## Batch 2026-07-07a — TPM/Auditor note (HEAD a035f45, dirty tree)
+
+**MER-82 draft REVISED (still uncommitted/unverified).** Supersedes the
+2026-07-06b fingerprint: now md5 `2e4ef470…` (+12/−9, .o 82944→74976 B). The
+flagged adjust_room/ENCAP_L2 approach was DROPPED; new approach:
+`bpf_skb_change_head(8)` then forward-shift the first `room_off` outer-header
+bytes back by 8, leaving the TLV gap at `room_off`. Draft's stated root cause:
+`bpf_skb_change_tail` returns `-ENOTSUPP` when `skb->encapsulation` is set
+(kernel Geneve driver, "5.15+"). **Open evidence questions before this can
+merge:** (1) if change_tail always fails on encapsulated skbs, why was P1.3
+green on 5.15.0-179? The disposition must reconcile the -179→-181 delta
+(likely a stable backport) with a captured repro error. (2) verifier
+acceptance of change_head in cls_act on the target kernel. (3) the 128-iter
+unroll bound vs MERIDIAN_MAX_INNER_SHIFT_BYTES guard. Verification checklist
+unchanged (activeticket @ cc0289a).
