@@ -712,6 +712,41 @@ acceptance of change_head in cls_act on the target kernel. (3) the 128-iter
 unroll bound vs MERIDIAN_MAX_INNER_SHIFT_BYTES guard. Verification checklist
 unchanged (activeticket @ cc0289a).
 
+## Batch 2026-07-11a — TPM/Auditor run (HEAD 88a6344, dirty tree)
+
+**Cycle 11 audit. State unchanged across 11 consecutive cycles.**
+- HEAD: `88a6344` (docs: MER-82 draft v3 — evidence pending).
+- Working tree dirty: `bpf/tc_egress.c` (+30/−15 draft v3), `bpf/tcegress_bpfel.o` regenerated.
+- `internal/control/ca/` does NOT exist — MER-74 (PKI-1) not started.
+- Open critical-path work: MER-82 (P0, Lima-gated), MER-74 (P1, pure-Go, fully unblocked).
+- New ticket MER-83 appended below (remote CI push, P1, gated on MER-82 green).
+
+**`Next free ID` advances to MER-84.**
+
+---
+
+### MER-83 — Push branch to remote origin for first CI validation
+
+- **ID:** MER-83
+- **TITLE:** Push `mer-64-adr-0007-sockmap-redirect` to remote origin for CI gate validation
+- **PRIORITY:** P1 / HIGH (branch hygiene; zero remote CI runs in 40+ commits)
+- **ESTIMATE:** 30 min
+- **DEPENDS ON:** MER-82 (P1.3 gate must be green before push; do not push a red gate)
+- **DESCRIPTION:**
+  Branch `mer-64-adr-0007-sockmap-redirect` has accumulated 40+ commits with zero
+  remote CI validation. All gate evidence (A-2, A-3, P1.1–P1.3, CP-2, CP-3, O-2,
+  P2.1-N, P2.2) exists only as local Lima runs or committed prose. MER-59 closure
+  explicitly noted "Remaining: CI confirmation on branch push (commits not yet on
+  `origin`)." This ticket resolves that long-standing debt.
+- **ACCEPTANCE CRITERIA:**
+  1. `git push origin mer-64-adr-0007-sockmap-redirect` completes (after MER-82 green).
+  2. GitHub Actions `ci.yml` completes on the pushed commits with no failures.
+  3. All 11 armed gate rows in `test/gates/manifest.txt` pass in the CI environment, or
+     any environment-specific failures are documented as new P0/P1 tickets.
+  4. CI run URL recorded in `docs/PHASE3_GATES.md` under the gate status table.
+
+---
+
 ## Batch 2026-07-07b — TPM/Auditor note (HEAD 8d76249, dirty tree)
 
 **MER-82 draft v3** (md5 `e688dab7…`, +19/−15, .o 82944→58168 B). Supersedes
