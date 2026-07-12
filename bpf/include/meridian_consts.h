@@ -57,6 +57,17 @@
 #define MERIDIAN_MAX_GENEVE_OPT_WORDS      (MERIDIAN_MAX_GENEVE_OPTS * MERIDIAN_GENEVE_OPT_WORDS)
 
 /*
+ * Maximum inner-payload bytes that strip_meridian_tlv can shift in one pass.
+ * Linux ≥ 5.15.0-181 Geneve rejects opt_len > 0 on non-collect_metadata
+ * devices; tc_ingress strips the TLV before returning TC_ACT_OK so the kernel
+ * can decap normally.  The #pragma unroll bound here must be a compile-time
+ * constant.  256 covers all TCP SYN / ACK packets (≤ 94 bytes inner) with
+ * margin.  Packets whose inner content exceeds this limit are dropped (same
+ * outcome as kernel Geneve dropping them for unknown options).
+ */
+#define MERIDIAN_STRIP_MAX_LEN 256
+
+/*
  * Redirect placeholder mark (MER-17): REDIRECT verdict marks skb but does not
  * perform a tc redirect action yet.
  */
