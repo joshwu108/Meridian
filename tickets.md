@@ -12,7 +12,7 @@ SHAs. MER-68 closed `1b5bdf3` (deterministic `check-gate-skips` — reap between
 gates; 10/10 green on Lima 5.15). MER-67 closed `9d1790a` (ARCHITECTURE D21 — ADS
 server decision; interim xDS encoding flagged CC-2-pending).
 
-Next free ID = **MER-82**. (MER-70…76 reserved for Phase 3 — see
+Next free ID = **MER-83**. (MER-70…76 reserved for Phase 3 — see
 `docs/PHASE3_TICKETS.md`; MER-77 = ADR-0008 encoding revision; MER-78/79 = the A-3
 split of the oversized MER-72; MER-80 = ADR-0008 §3 ordering reconciliation; all below.)
 
@@ -636,3 +636,128 @@ spine I just built end-to-end. **Unblocked by MER-78 ✅ + MER-79 ✅** — the 
 TC attach), so MER-73 wires the components directly without the full agent/netlink.
 ⚠️ **Lima T3 → isolated window** (collision corrupts shared runs). MER-71 (A-2) +
 MER-74 (PKI-1, host-safe) remain parallel-startable. `activeticket.md` holds MER-73.
+
+## Batch 2026-07-06a — TPM/Auditor run (HEAD 02825e7)
+
+Findings: **MER-71 (A-2 netlink veth lifecycle) CLOSED `02825e7`** — four tranches
+(`2778bd9` orchestrator, `896f851` watcher, `e68c2ea` supervisor wiring + gate,
+`02825e7` close-out). The close-out fixed all three review findings on `e68c2ea`:
+the A-2 gate now drives the REAL MER-57 TCManager (kernel `tc filter` verified
+per attach; teardown checks `ip link` for leaked interfaces), `meridian-agent`
+gained the `--veth-prefix` opt-in wiring (feature no longer dead code), and Lima
+evidence recorded in PHASE3_GATES (A-2 green: attach <1 ms; A-3 row corrected:
+2.66 ms re-run on 5.15.0-181). Host build/vet/-race/tidy clean at HEAD; branch
+pushed. **A-2 lane COMPLETE.**
+
+⚠️ **P0 gate-integrity finding → MER-82:** the closing commit's Lima run reports
+**P1.3 (`TestGeneveIngressIdentityPolicyGate_MER21`) FAILING**, waved off as
+"pre-existing failure unrelated." An ARMED merge-blocker gate red at HEAD is a
+MER-44 violation regardless of cause (MER-66 precedent). Note the VM kernel moved
+**5.15.0-179 → 5.15.0-181** between evidence runs — a plausible Geneve live-path
+trigger; dual-runner collision (MER-68) is the other suspect. `Next free ID` → MER-83.
+
+### MER-82 — P1.3 armed gate RED on Lima 5.15.0-181: triage + restore 11/11 green
+
+- **ID:** MER-82
+- **TITLE:** Triage the P1.3 Geneve gate failure at HEAD (kernel 181 regression vs collision vs real bug) and restore all-armed-gates green
+- **PRIORITY:** P0 / CRITICAL (armed merge-blocker gate red; MER-44)
+- **ESTIMATE:** 2–4h
+- **BLOCKS:** any "all gates green" claim; MER-76 (Phase-3 EXIT); trustworthy CI signal
+- **DEPENDENCIES:** none (Lima 5.15, ISOLATED window mandatory)
+- **ACCEPTANCE CRITERIA:**
+  1. Reproduce P1.3 at HEAD in a verified-isolated Lima window (competing-process
+     guard per MER-68); capture the failure mode (which sub-case: allow-connect
+     vs deny-timeout; error output committed to the evidence log).
+  2. Root-cause disposition, one of: (a) kernel 5.15.0-179→181 behavior change
+     (document + fix the test or program per ADR-0002/0005 constraints);
+     (b) dual-runner collision artifact (prove with the guard; re-run clean);
+     (c) real regression introduced by a Phase-2/3 commit (bisect, fix, cite).
+  3. `make check-gate-skips` → 11/11 armed gates green, 0 skips, 0 failures, in
+     an isolated window at HEAD; evidence in `docs/PHASE1_GATE_EVIDENCE.log` +
+     PHASE3_GATES.
+  4. If a code fix is needed: minimal diff, MER-82-linked commit, frozen ADR-0004
+     schema untouched; regenerated `.o` only via the pinned deterministic path (D10).
+  5. Root-cause note recorded so "pre-existing failure unrelated" can never again
+     be a gate disposition (MER-44 hygiene).
+
+## Batch 2026-07-06b — TPM/Auditor note (HEAD cc0289a, dirty tree)
+
+**MER-82 work STRANDED UNCOMMITTED.** An in-flight fix sits in the working
+tree across 4+ audit cycles with an unchanged diff (md5 `83aca7be…`):
+`bpf/tc_egress.c` +12 (adds a `bpf_skb_adjust_room` ENCAP_L2 path before the
+manual-shift fallback in `insert_inner_tlv_room`) + regenerated
+`tcegress_bpfel.o` (82944→83672 B). **No evidence-log update, no commit — the
+fix is UNVERIFIED** (no recorded Lima P1.3 run). TPM technical caution on the
+draft: the flags word shifts `room_off` into the `BPF_F_ADJ_ROOM_ENCAP_L2`
+field, which encodes the inner **L2 header length** (8-bit mask), not a packet
+offset — >255 truncates silently; semantics must be checked against uapi
+`bpf.h` before any green run is trusted. Deliberately NOT committed by the
+TPM (unverified eBPF production code; anti-green-wash). Resume = execute the
+MER-82 activeticket close-out checklist against this diff, or discard and
+re-derive. Implementation loop appears intermittent — operator flagged.
+
+## Batch 2026-07-07a — TPM/Auditor note (HEAD a035f45, dirty tree)
+
+**MER-82 draft REVISED (still uncommitted/unverified).** Supersedes the
+2026-07-06b fingerprint: now md5 `2e4ef470…` (+12/−9, .o 82944→74976 B). The
+flagged adjust_room/ENCAP_L2 approach was DROPPED; new approach:
+`bpf_skb_change_head(8)` then forward-shift the first `room_off` outer-header
+bytes back by 8, leaving the TLV gap at `room_off`. Draft's stated root cause:
+`bpf_skb_change_tail` returns `-ENOTSUPP` when `skb->encapsulation` is set
+(kernel Geneve driver, "5.15+"). **Open evidence questions before this can
+merge:** (1) if change_tail always fails on encapsulated skbs, why was P1.3
+green on 5.15.0-179? The disposition must reconcile the -179→-181 delta
+(likely a stable backport) with a captured repro error. (2) verifier
+acceptance of change_head in cls_act on the target kernel. (3) the 128-iter
+unroll bound vs MERIDIAN_MAX_INNER_SHIFT_BYTES guard. Verification checklist
+unchanged (activeticket @ cc0289a).
+
+## Batch 2026-07-11a — TPM/Auditor run (HEAD 88a6344, dirty tree)
+
+**Cycle 11 audit. State unchanged across 11 consecutive cycles.**
+- HEAD: `88a6344` (docs: MER-82 draft v3 — evidence pending).
+- Working tree dirty: `bpf/tc_egress.c` (+30/−15 draft v3), `bpf/tcegress_bpfel.o` regenerated.
+- `internal/control/ca/` does NOT exist — MER-74 (PKI-1) not started.
+- Open critical-path work: MER-82 (P0, Lima-gated), MER-74 (P1, pure-Go, fully unblocked).
+- New ticket MER-83 appended below (remote CI push, P1, gated on MER-82 green).
+
+**`Next free ID` advances to MER-84.**
+
+---
+
+### MER-83 — Push branch to remote origin for first CI validation
+
+- **ID:** MER-83
+- **TITLE:** Push `mer-64-adr-0007-sockmap-redirect` to remote origin for CI gate validation
+- **PRIORITY:** P1 / HIGH (branch hygiene; zero remote CI runs in 40+ commits)
+- **ESTIMATE:** 30 min
+- **DEPENDS ON:** MER-82 (P1.3 gate must be green before push; do not push a red gate)
+- **DESCRIPTION:**
+  Branch `mer-64-adr-0007-sockmap-redirect` has accumulated 40+ commits with zero
+  remote CI validation. All gate evidence (A-2, A-3, P1.1–P1.3, CP-2, CP-3, O-2,
+  P2.1-N, P2.2) exists only as local Lima runs or committed prose. MER-59 closure
+  explicitly noted "Remaining: CI confirmation on branch push (commits not yet on
+  `origin`)." This ticket resolves that long-standing debt.
+- **ACCEPTANCE CRITERIA:**
+  1. `git push origin mer-64-adr-0007-sockmap-redirect` completes (after MER-82 green).
+  2. GitHub Actions `ci.yml` completes on the pushed commits with no failures.
+  3. All 11 armed gate rows in `test/gates/manifest.txt` pass in the CI environment, or
+     any environment-specific failures are documented as new P0/P1 tickets.
+  4. CI run URL recorded in `docs/PHASE3_GATES.md` under the gate status table.
+
+---
+
+## Batch 2026-07-07b — TPM/Auditor note (HEAD 8d76249, dirty tree)
+
+**MER-82 draft v3** (md5 `e688dab7…`, +19/−15, .o 82944→58168 B). Supersedes
+v2. Now `bpf_skb_adjust_room(+8, BPF_ADJ_ROOM_MAC, 0)` (no encap flags — the
+earlier ENCAP_L2 misuse is NOT reintroduced) + left-shift of only the OUTER
+headers (`outer_ip_off`→`room_off`, bound ≤64 with a matching 64-iter unroll),
+gap lands at `room_off` for the TLV. Root-cause comment now names the exact
+kernel: change_tail → -ENOTSUPP when `skb->encapsulation` set, "5.15.0-181+".
+**Resolved by construction:** v2 questions (b) change_head availability (moot —
+helper switched) and (c) unroll bound (explicit ≤64). **Still open before
+merge:** question (a) — captured errno/log line proving the -ENOTSUPP claim +
+what changed -179→-181; and the full verification battery (isolated Lima
+gate run 11/11, D10-reproducible .o, evidence in PHASE1_GATE_EVIDENCE.log).
+Design reviewed — sound; awaiting proof.

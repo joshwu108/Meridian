@@ -1,5 +1,6 @@
-# Phase-1 gate evidence — Lima VM (5.15.0-179-generic)
-# Date: 2026-06-13
+# Phase-1 gate evidence — Lima VM (5.15.0-181-generic)
+# Last updated: 2026-07-11 (MER-82: restore P1.3 red → green on 5.15.0-181)
+# Also covers original run on 5.15.0-179 (2026-06-13)
 # Host: limactl shell meridian
 # Commands (MER-66 rerun on Lima 5.15.0-179-generic):
 #   scripts/lima-delegate.sh test-clean
@@ -29,3 +30,61 @@
   needs egress stamping after kernel Geneve encapsulation, plus a pre-encap
   silent deny hook so denied TCP connects drop instead of returning a refusal.
 - `make check-gate-skips` reports 0 skips for every armed gate, including P1.3.
+
+## MER-82: P1.3 red on 5.15.0-181 — root-cause and fix (2026-07-11)
+
+### Failure reproduction
+
+On Lima 5.15.0-181-generic, TestGeneveIngressIdentityPolicyGate_MER21 timed out
+after 3 s in AssertAllowed(18080).  Metrics showed ingress FLOWS_ALLOWED=5 but
+the TCP connection never completed.
+
+### Root cause
+
+Linux ≥ 5.15.0-181 geneve_rx() enforces:
+
+    if (unlikely(gnvh->opt_len && !(geneve->cfg.info.key.tun_flags &
+                                    TUNNEL_OPTIONS_PRESENT)))
+        goto drop;
+
+Non-collect_metadata Geneve devices (as required by ADR-0002) never set
+TUNNEL_OPTIONS_PRESENT.  Any Geneve packet with opt_len > 0 is silently dropped
+by the kernel AFTER tc_ingress returns TC_ACT_OK.  Egress TLV stamping
+(tc_egress.c insert_inner_tlv_room) set opt_len=2 on every packet; the ingress
+BPF program allowed them but did not strip the TLV before handing back to the
+kernel, so geneve_rx() always dropped them.
+
+### Fix (bpf/tc_ingress.c + bpf/include/meridian_consts.h)
+
+Added strip_meridian_tlv() to tc_ingress.c.  It is called on every allowed
+Geneve packet (both the enforce_flow TC_ACT_OK path and the non-SYN TCP bypass
+path) before returning TC_ACT_OK:
+
+1. Byte-shift inner payload MERIDIAN_GENEVE_OPT_BYTES (8) bytes toward head,
+   overwriting the TLV position with inner content.
+2. Clear opt_len in Geneve header byte 0.
+3. Decrement outer IP total_len by 8 (with BPF_F_RECOMPUTE_CSUM).
+4. Decrement outer UDP len by 8.
+
+No bpf_skb_change_tail call: on 5.15.0-181, virtio_net GRO sets
+skb->encapsulation before TC ingress fires, making bpf_skb_change_tail return
+-ENOTSUPP.  Instead the IP total_len decrement causes ip_rcv() to call
+pskb_trim_rcsum() which removes the duplicate 8 tail bytes naturally, without
+requiring any tail-trim BPF helper.
+
+### Gate re-run (5.15.0-181, 2026-07-11)
+
+| Gate | Ticket | Test | Result | Skips |
+|------|--------|------|--------|-------|
+| P1.1 | MER-18 | TestVerdictMatrixMatchesReferenceEvaluator | PASS | 0 |
+| P1.2 | MER-29 | TestLivePolicyIntegrationGate_MER29 | PASS | 0 |
+| P1.3 | MER-21/MER-82 | TestGeneveIngressIdentityPolicyGate_MER21 | PASS | 0 |
+| CP-2 | MER-24 | TestCompilerMatchesReferenceProperty + TestConformanceRegressionCorpus | PASS | 0 |
+| O-2 | MER-32 | TestDeniedFlowsMetricsGate_MER32 | PASS | 0 |
+| — | MER-49 | TestSockmapNegativeGate_MER49 | PASS | 0 |
+| — | MER-51 | TestSockmapIntegrityGate_MER51 | PASS | 0 |
+| — | MER-71 | TestVethAttachLifecycleGate_MER71 | PASS | 0 |
+| — | MER-73 | TestRestToKernelGate_MER73 | PASS | 0 |
+| — | MER-56 | TestADSConformanceGate_MER56 | PASS | 0 |
+
+make check-gate-skips: 11/11 PASS, 0 skips, 0 failures.

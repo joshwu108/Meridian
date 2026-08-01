@@ -147,38 +147,54 @@ static __always_inline __u32 parse_geneve_option_count(void *opts, void *data_en
 	return 1;
 }
 
-#define MERIDIAN_MAX_INNER_SHIFT_BYTES 128
-
 static __always_inline int insert_inner_tlv_room(struct __sk_buff *skb, __u32 room_off,
-						 __u32 inner_ip_off, __u32 udp_off,
+						 __u32 outer_ip_off, __u32 udp_off,
 						 __u32 opt_bytes)
 {
-	__u32 paylen;
+	__u32 shift_bytes;
 	__u32 i;
 	__u8 b;
 
-	(void)inner_ip_off;
 	(void)udp_off;
 	(void)opt_bytes;
 
 	if (bpf_skb_pull_data(skb, skb->len))
 		return 1;
-	if (room_off >= skb->len)
+	if (room_off == 0 || room_off >= skb->len || outer_ip_off >= room_off)
 		return 1;
 
-	paylen = skb->len - room_off;
-	if (paylen == 0 || paylen > MERIDIAN_MAX_INNER_SHIFT_BYTES)
+	shift_bytes = room_off - outer_ip_off;
+	if (shift_bytes > 64)
 		return 1;
-	if (bpf_skb_change_tail(skb, skb->len + MERIDIAN_GENEVE_OPT_BYTES, 0))
+
+	/* bpf_skb_change_tail returns -ENOTSUPP when skb->encapsulation is set
+	 * (kernel Geneve driver sets this flag; stable backport to 5.15.0-181+).
+	 * bpf_skb_adjust_room(BPF_ADJ_ROOM_MAC) also fails: the kernel rejects it
+	 * when len_diff(8) < mac_len(14), returning -ENOTSUPP on 5.15.0-181+.
+	 * bpf_skb_adjust_room(BPF_ADJ_ROOM_NET) succeeds but with mac_len=14 in
+	 * live TC context it inserts room between ETH and outer IP, not before ETH,
+	 * so the copy loop below would read from the wrong offsets.
+	 *
+	 * bpf_skb_change_head(opt_bytes) is a plain skb_push: it zeroes opt_bytes
+	 * bytes before the current head with no memmove of MAC content and no
+	 * encapsulation check.  After the call: data[0..opt_bytes-1]=0,
+	 * data[opt_bytes..]=original packet, regardless of mac_len.
+	 *
+	 * We copy ETH + outer IP/UDP/Geneve (room_off bytes) from
+	 * [opt_bytes..opt_bytes+room_off-1] back to [0..room_off-1], leaving
+	 * an opt_bytes TLV slot at [room_off..room_off+opt_bytes-1]. */
+	if (room_off > 80)
+		return 1;
+	if (bpf_skb_change_head(skb, MERIDIAN_GENEVE_OPT_BYTES, 0))
 		return 1;
 	if (bpf_skb_pull_data(skb, skb->len))
 		return 1;
 
 #pragma unroll
-	for (i = 0; i < 128; i++) {
-		if (i < paylen) {
-			__u32 src_off = room_off + paylen - 1 - i;
-			__u32 dst_off = room_off + MERIDIAN_GENEVE_OPT_BYTES + paylen - 1 - i;
+	for (i = 0; i < 80; i++) {
+		if (i < room_off) {
+			__u32 src_off = MERIDIAN_GENEVE_OPT_BYTES + i;
+			__u32 dst_off = i;
 
 			if (bpf_skb_load_bytes(skb, src_off, &b, 1))
 				return 1;
@@ -416,11 +432,10 @@ int meridian_tc_egress(struct __sk_buff *skb)
 		stamp_off = (__u32)(inner_base - (__u8 *)data);
 	} else if (reserved_headroom == 0) {
 		__u32 room_off = (__u32)(inner_base - (__u8 *)data);
-		__u32 inner_ip_off = (__u32)((__u8 *)inner_ip - (__u8 *)data);
 		__u32 outer_ip_off = (__u32)((__u8 *)outer_ip - (__u8 *)data);
 		__u32 udp_off = (__u32)((__u8 *)udp - (__u8 *)data);
 
-		if (insert_inner_tlv_room(skb, room_off, inner_ip_off, udp_off, opt_bytes))
+		if (insert_inner_tlv_room(skb, room_off, outer_ip_off, udp_off, opt_bytes))
 			goto encap_fail;
 		(void)bump_udp_geneve_lengths(skb, outer_ip_off, udp_off);
 		stamp_off = room_off;

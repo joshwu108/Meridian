@@ -39,5 +39,8 @@ yes '' ./internal/control/ads/... TestADSConformanceGate_MER56
 
 # --- Phase 3 gates (MER-69 plan) ---
 
+# A-2 EXIT — MER-71 veth attach lifecycle <100 ms, no leaked attachments
+yes integration ./test/integration/... TestVethAttachLifecycleGate_MER71
+
 # A-3 EXIT — MER-73 REST→kernel policy_map < 500 ms end-to-end
 yes integration ./test/integration/... TestRestToKernelGate_MER73

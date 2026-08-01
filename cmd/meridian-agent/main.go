@@ -25,6 +25,7 @@ import (
 
 	"github.com/joshuawu/meridian/internal/agent/attach"
 	"github.com/joshuawu/meridian/internal/agent/bpfobj"
+	"github.com/joshuawu/meridian/internal/agent/linkwatch"
 	"github.com/joshuawu/meridian/internal/agent/metrics"
 	"github.com/joshuawu/meridian/internal/agent/supervisor"
 	"github.com/joshuawu/meridian/internal/agent/telemetry"
@@ -35,14 +36,15 @@ func main() {
 	iface := flag.String("iface", "", "interface to attach tc ingress program")
 	policyFile := flag.String("policy-file", "", "optional static YAML policy snapshot to seed at startup")
 	cgroup := flag.String("cgroup", "", "cgroup v2 path to attach the SOCKMAP fast path (sock_ops + sk_msg); empty = disabled")
+	vethPrefix := flag.String("veth-prefix", "", "host-side pod veth name prefix for auto TC attach via RTNLGRP_LINK watcher (empty = disabled; e.g. 'mh-' or 'lxc')")
 	flag.Parse()
 
-	if err := run(*pinDir, *iface, *policyFile, *cgroup); err != nil {
+	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface, policyFile, cgroup string) error {
+func run(pinDir, iface, policyFile, cgroup, vethPrefix string) error {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -52,11 +54,22 @@ func run(pinDir, iface, policyFile, cgroup string) error {
 	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
 
-	startupRunner := supervisor.NewDefaultStartupRunner(supervisor.StartupOptions{
+	opts := supervisor.StartupOptions{
 		PinDir:     pinDir,
 		Interface:  iface,
 		PolicyFile: policyFile,
-	})
+	}
+	if vethPrefix != "" {
+		opts.LinkWatcher = linkwatch.NewNetlinkWatcher(
+			linkwatch.PrefixSelector(vethPrefix),
+			linkwatch.WithWatcherLogf(func(f string, a ...any) { log.Printf(f, a...) }),
+		)
+		opts.LinkWatchOnError = func(op, ifName string, err error) {
+			log.Printf("linkwatch: %s %s: %v", op, ifName, err)
+		}
+	}
+
+	startupRunner := supervisor.NewDefaultStartupRunner(opts)
 	startupRuntime, err := startupRunner.Startup(ctx)
 	if err != nil {
 		return fmt.Errorf("startup runner: %w", err)
@@ -87,8 +100,20 @@ func run(pinDir, iface, policyFile, cgroup string) error {
 	}()
 	log.Printf("serving metrics endpoint on %s/metrics", metricsServer.Addr)
 
+	// Run the supervisor alongside the consumer loop. When --veth-prefix is set
+	// the supervisor drives the RTNLGRP_LINK watcher (with ENOBUFS-resilient
+	// retry) so every matching pod veth is automatically TC-attached. Without
+	// --veth-prefix the supervisor blocks on ctx and handles static interface
+	// teardown on shutdown. Either way we wait for its clean exit before metrics
+	// shutdown to preserve detach ordering.
+	supervisorDone := make(chan error, 1)
+	go func() { supervisorDone <- startupRunner.Run(ctx) }()
+
 	if iface != "" {
 		log.Printf("attached tc ingress program on iface=%s", iface)
+	}
+	if vethPrefix != "" {
+		log.Printf("linkwatch: watching pod veths with prefix %q for auto TC attach", vethPrefix)
 	}
 
 	// Phase-2 SOCKMAP fast path (MER-57): when --cgroup is set, load the sock_ops
@@ -131,6 +156,8 @@ func run(pinDir, iface, policyFile, cgroup string) error {
 			ev.Proto, ev.Verdict, ev.Bytes)
 	})
 	cancel()
+	<-supervisorDone // wait for clean watcher/attacher shutdown before tearing down SOCKMAP
+
 	if shutdownErr := metrics.Shutdown(metricsServer); shutdownErr != nil {
 		return fmt.Errorf("shutdown metrics server: %w", shutdownErr)
 	}

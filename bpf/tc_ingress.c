@@ -349,6 +349,86 @@ static __always_inline int enforce_flow(struct __sk_buff *skb, struct iphdr *ip,
 	}
 }
 
+/*
+ * strip_meridian_tlv removes all Geneve options (MERIDIAN_GENEVE_OPT_BYTES
+ * bytes) from an already-allowed packet so the kernel Geneve device can
+ * decapsulate it normally.
+ *
+ * Linux ≥ 5.15.0-181 checks in geneve_rx():
+ *   if (opt_len && !(tun_flags & TUNNEL_OPTIONS_PRESENT)) goto drop;
+ * A non-collect_metadata device never sets TUNNEL_OPTIONS_PRESENT, so any
+ * packet arriving with opt_len > 0 is silently dropped by the kernel AFTER
+ * tc_ingress returns TC_ACT_OK.  Stripping here restores opt_len = 0 before
+ * the packet reaches the kernel Geneve driver.
+ *
+ * bpf_skb_change_tail is NOT used here: on 5.15.0-181 virtio_net GRO sets
+ * skb->encapsulation before TC ingress fires, making bpf_skb_change_tail
+ * return -ENOTSUPP.  Instead the outer IP total_len is decremented; ip_rcv()
+ * calls pskb_trim_rcsum() which removes the duplicate tail bytes naturally.
+ *
+ * Before: [outer ETH][outer IP][UDP][Geneve(opt_N)][N opt bytes][inner …]
+ * After:  [outer ETH][outer IP][UDP][Geneve(opt_0)][inner …]
+ */
+static __always_inline int strip_meridian_tlv(struct __sk_buff *skb,
+					       __u32 inner_base_off,
+					       __u32 outer_ip_off,
+					       __u32 udp_off,
+					       __u32 geneve_off)
+{
+	__u32 inner_len;
+	__u32 i;
+	__u8 b;
+	__u8 geneve0;
+	__u16 len_be;
+
+	if (bpf_skb_pull_data(skb, skb->len))
+		return 1;
+	if (inner_base_off < MERIDIAN_GENEVE_OPT_BYTES)
+		return 1;
+	if (inner_base_off > skb->len)
+		return 1;
+
+	inner_len = skb->len - inner_base_off;
+	if (inner_len > MERIDIAN_STRIP_MAX_LEN)
+		return 1;
+
+	/* Shift inner payload MERIDIAN_GENEVE_OPT_BYTES bytes toward packet head. */
+	for (i = 0; i < MERIDIAN_STRIP_MAX_LEN; i++) {
+		if (i >= inner_len)
+			break;
+		if (bpf_skb_load_bytes(skb, inner_base_off + i, &b, 1))
+			return 1;
+		if (bpf_skb_store_bytes(skb,
+					inner_base_off - MERIDIAN_GENEVE_OPT_BYTES + i,
+					&b, 1, 0))
+			return 1;
+	}
+
+	/* Clear opt_len field in Geneve byte 0; preserve version/flags bits. */
+	if (bpf_skb_load_bytes(skb, geneve_off, &geneve0, 1))
+		return 1;
+	geneve0 &= 0xc0;
+	if (bpf_skb_store_bytes(skb, geneve_off, &geneve0, 1, 0))
+		return 1;
+
+	/* Adjust outer IP total_len to reflect the removed option bytes. */
+	if (bpf_skb_load_bytes(skb, outer_ip_off + 2, &len_be, 2))
+		return 1;
+	len_be = bpf_htons(bpf_ntohs(len_be) - MERIDIAN_GENEVE_OPT_BYTES);
+	if (bpf_skb_store_bytes(skb, outer_ip_off + 2, &len_be, 2,
+				BPF_F_RECOMPUTE_CSUM))
+		return 1;
+
+	/* Adjust UDP length to reflect the removed option bytes. */
+	if (bpf_skb_load_bytes(skb, udp_off + 4, &len_be, 2))
+		return 1;
+	len_be = bpf_htons(bpf_ntohs(len_be) - MERIDIAN_GENEVE_OPT_BYTES);
+	if (bpf_skb_store_bytes(skb, udp_off + 4, &len_be, 2, 0))
+		return 1;
+
+	return 0;
+}
+
 static __always_inline __u32 is_geneve_udp_outer(struct iphdr *outer_ip, void *data_end)
 {
 	struct udphdr *udp;
@@ -380,6 +460,11 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	__u32 dst_id = 0;
 	__u32 *mapped_src;
 	__u32 *mapped_dst;
+	/* TLV strip offsets — populated when is_geneve && geneve_tlv_found. */
+	__u32 outer_ip_off = 0;
+	__u32 udp_off = 0;
+	__u32 geneve_off = 0;
+	__u32 inner_base_off = 0;
 
 	metric_add(METRIC_PACKETS_TOTAL, 1);
 	metric_add(METRIC_BYTES_TOTAL, packet_bytes);
@@ -400,12 +485,32 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	if (ip->ihl < IPV4_IHL_MIN || ip->ihl > IPV4_IHL_MAX)
 		return TC_ACT_OK;
 
+	/* Save outer_ip before ip may be redirected to inner_ip below. */
+	struct iphdr *outer_ip = ip;
+
 	is_geneve = try_parse_geneve_inner(ip, data_end, &inner_ip, &geneve_src_id,
 					   &geneve_tlv_found);
 	if (!is_geneve && is_geneve_udp_outer(ip, data_end))
 		return TC_ACT_OK;
-	if (is_geneve)
+	if (is_geneve) {
 		ip = inner_ip;
+		/*
+		 * Compute byte offsets for strip_meridian_tlv.  These are
+		 * derived before any packet modification and remain valid as
+		 * scalar offsets even after bpf_skb_* helpers invalidate
+		 * the data pointer.
+		 */
+		outer_ip_off = (__u32)((__u8 *)outer_ip - (__u8 *)data);
+		udp_off = outer_ip_off + outer_ip->ihl * IPV4_WORD_BYTES;
+		geneve_off = udp_off + 8; /* sizeof(struct udphdr) */
+		{
+			__u8 gnv_byte = 0;
+
+			(void)bpf_skb_load_bytes(skb, geneve_off, &gnv_byte, 1);
+			inner_base_off = geneve_off + 8 +
+					 ((__u32)(gnv_byte & 0x3f)) * 4;
+		}
+	}
 
 	if (!parse_l4_ports(ip, data_end, &src_port, &dst_port))
 		return TC_ACT_OK;
@@ -424,16 +529,30 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 		dst_id = *mapped_dst;
 
 	/*
-	 * Geneve underlay ingress sees both directions. Enforce policy only on
-	 * the initial client SYN once src_identity is known; return segments pass
-	 * through (MER-21 gate). Missing TLV / unknown src must still fail closed.
+	 * Geneve underlay ingress sees both directions.  Enforce policy only on
+	 * the initial client SYN once src_identity is known; non-SYN TCP
+	 * segments pass through (MER-21 gate).  Strip the identity TLV on all
+	 * allowed Geneve packets so the kernel Geneve device (non-collect_metadata)
+	 * can decapsulate normally — Linux ≥ 5.15.0-181 drops opt_len > 0.
 	 */
 	if (is_geneve && ip->protocol == IPPROTO_TCP && src_id != 0 &&
-	    !is_geneve_tcp_client_syn(ip, data_end))
+	    !is_geneve_tcp_client_syn(ip, data_end)) {
+		if (geneve_tlv_found)
+			(void)strip_meridian_tlv(skb, inner_base_off, outer_ip_off,
+						 udp_off, geneve_off);
 		return TC_ACT_OK;
+	}
 
-	return enforce_flow(skb, ip, data_end, packet_bytes, now_ns, src_port, dst_port,
-			    src_id, dst_id, is_geneve ? TC_ACT_STOLEN : TC_ACT_SHOT);
+	{
+		int verdict = enforce_flow(skb, ip, data_end, packet_bytes, now_ns,
+					   src_port, dst_port, src_id, dst_id,
+					   is_geneve ? TC_ACT_STOLEN : TC_ACT_SHOT);
+
+		if (is_geneve && geneve_tlv_found && verdict == TC_ACT_OK)
+			(void)strip_meridian_tlv(skb, inner_base_off, outer_ip_off,
+						 udp_off, geneve_off);
+		return verdict;
+	}
 }
 
 char _license[] SEC("license") = "GPL";
