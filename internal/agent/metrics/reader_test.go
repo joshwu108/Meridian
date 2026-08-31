@@ -122,7 +122,7 @@ meridian_geneve_decode_fail_total 8
 
 func TestMapReaderLiveMap(t *testing.T) {
 	if err := rlimit.RemoveMemlock(); err != nil {
-		t.Fatalf("remove memlock rlimit: %v", err)
+		t.Skipf("requires CAP_SYS_RESOURCE (run as root or with make test-bpf): %v", err)
 	}
 
 	m, err := ebpf.NewMap(&ebpf.MapSpec{
@@ -167,7 +167,7 @@ func TestMapReaderLiveMap(t *testing.T) {
 
 func TestMapReaderRejectsOutOfRangeID(t *testing.T) {
 	if err := rlimit.RemoveMemlock(); err != nil {
-		t.Fatalf("remove memlock rlimit: %v", err)
+		t.Skipf("requires CAP_SYS_RESOURCE (run as root or with make test-bpf): %v", err)
 	}
 	m, err := ebpf.NewMap(&ebpf.MapSpec{
 		Name:       "test_metrics_map_bounds",

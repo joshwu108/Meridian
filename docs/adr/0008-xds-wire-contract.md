@@ -125,8 +125,12 @@ the ARCHITECTURE "xDS apply pipeline" phase order, never widening transiently:
 1. **identity adds/updates** (`identity_map`) — *before* any policy that
    references them, so no policy keys a not-yet-present identity;
 2. **policy adds/updates** (`policy_map`);
-3. **policy removes** — on a shrink, an allow is removed **before** a narrower
-   allow/deny is added (never a transient widen);
+3. **policy removes** — after all adds/updates in step 2, so the live set is
+   bounded by `C ∪ D` (neither old-only nor new-only allows are ever absent,
+   preventing transient false-denies). This is the **adds-first** ordering per
+   **D5** (ARCHITECTURE decision log). A removes-first ordering would prevent
+   transient false-allows at the cost of transient false-denies; D5 explicitly
+   chose adds-first as the availability-vs-security tradeoff for L4 policy;
 4. **identity deletes** — last, after no policy references them.
 
 The agent **ACKs only after the commit succeeds** (so

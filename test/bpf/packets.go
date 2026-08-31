@@ -121,7 +121,9 @@ func synthIPv4PacketFrom(proto uint8, srcIP, dstIP []byte) []byte {
 }
 
 func synthNonIPv4Packet(ethertype uint16) []byte {
-	pkt := make([]byte, 14+32)
+	// 14+40 = 54 bytes: satisfies bpf_prog_test_run minimum for IPv6 ethertype
+	// (kernel 5.15.0-190+ requires ETH_HLEN+sizeof(ipv6hdr)=54 for 0x86dd).
+	pkt := make([]byte, 14+40)
 	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
 	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
 	binary.BigEndian.PutUint16(pkt[12:14], ethertype)
@@ -139,15 +141,19 @@ func synthTruncatedEthPacket() []byte {
 	return pkt
 }
 
-// synthTruncatedIPv4Packet has a valid Ethernet header but fewer than 20 IPv4 bytes.
+// synthTruncatedIPv4Packet returns a 54-byte packet with a valid Ethernet header
+// and IPv4 ethertype, but only 10 bytes of IP data. The caller must pass
+// dataEnd=24 to bpf_prog_test_run so the eBPF program sees a truncated IPv4
+// header; the packet itself is padded to 54 bytes to satisfy the kernel's
+// bpf_prog_test_run minimum (ETH_HLEN+sizeof(iphdr)=34 on 5.15.0-190+).
 func synthTruncatedIPv4Packet() []byte {
 	const ethHdrLen = 14
-	pkt := make([]byte, ethHdrLen+10)
+	pkt := make([]byte, ethHdrLen+40) // 54 bytes — kernel accepts; eBPF sees dataEnd=24
 	copy(pkt[0:6], []byte{0x02, 0, 0, 0, 0, 0x02})
 	copy(pkt[6:12], []byte{0x02, 0, 0, 0, 0, 0x01})
 	binary.BigEndian.PutUint16(pkt[12:14], 0x0800)
 	ip := pkt[ethHdrLen:]
-	ip[0] = 0x45
+	ip[0] = 0x45 // version=4, IHL=5 — eBPF will check data_end >= data+34, fails at dataEnd=24
 	return pkt
 }
 

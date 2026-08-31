@@ -1,0 +1,256 @@
+<mxfile host="app.diagrams.net" version="21.0.0">
+  <diagram id="meridian-arch" name="Meridian Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== TITLE ===== -->
+        <mxCell id="100" value="Meridian — eBPF-Native Service Mesh: Full Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="668" width="640" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LEGEND ===== -->
+        <mxCell id="101" value="eBPF Programs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="155" y="672" width="115" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="102" value="Kernel Maps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="672" width="100" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="103" value="Events / Observability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="155" y="708" width="145" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="104" value="Pods / Workloads" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="310" y="708" width="120" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- ===== BACKGROUND ZONES ===== -->
+
+        <!-- Control Plane zone -->
+        <mxCell id="2" value="Control Plane (meridian-control)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;verticalAlign=top;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="148" y="10" width="565" height="385" as="geometry" />
+        </mxCell>
+
+        <!-- Node Agent zone -->
+        <mxCell id="3" value="Node Agent (meridian-agent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;verticalAlign=top;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="740" y="10" width="430" height="235" as="geometry" />
+        </mxCell>
+
+        <!-- Kernel / eBPF zone -->
+        <mxCell id="4" value="Kernel Space — eBPF Data Plane" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=12;fontStyle=1;verticalAlign=top;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="740" y="270" width="660" height="380" as="geometry" />
+        </mxCell>
+
+        <!-- ===== OPERATOR ===== -->
+        <mxCell id="5" value="Operator / CLI&#xa;(REST client)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="15" y="178" width="118" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- ===== CONTROL PLANE COMPONENTS ===== -->
+
+        <mxCell id="6" value="REST API&#xa;POST /policies&#xa;POST /identities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="175" y="58" width="148" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="7" value="Policy Store&#xa;+ Compiler&#xa;(YAML → wire.PolicyRule)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="175" y="170" width="148" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="8" value="Identity Registry&#xa;(monotonic uint32 IDs&#xa;never reused — CC-3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="175" y="285" width="148" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="9" value="ADS Server&#xa;(xDS / gRPC bidirectional&#xa;ACK/NACK state machine&#xa;CC-2 encoding)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="378" y="108" width="158" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="10" value="CA (PKI — PKI-1/2)&#xa;Root CA P-384&#xa;Intermediate P-384&#xa;SVID P-256 / 24 h&#xa;Node cert P-384 / 7 d" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="562" y="162" width="138" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ===== NODE AGENT COMPONENTS ===== -->
+
+        <mxCell id="11" value="xDS Client&#xa;(CC-2 JSON decode&#xa;hold last-known-good on NACK)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="758" y="52" width="172" height="68" as="geometry" />
+        </mxCell>
+
+        <mxCell id="12" value="LinkWatcher&#xa;(netlink: watches for new veth&#xa;TC attach on pod start)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="758" y="155" width="172" height="68" as="geometry" />
+        </mxCell>
+
+        <mxCell id="13" value="Datapath Writer&#xa;SOLE writer to kernel maps&#xa;D5 apply order:&#xa;ID adds → policy adds&#xa;→ policy removes → ID deletes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="75" width="185" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ===== KERNEL MAPS ===== -->
+
+        <mxCell id="14" value="identity_map&#xa;src IP (network order)&#xa;→ identity ID (host order)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="758" y="322" width="158" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="15" value="policy_map&#xa;(identity, port, proto, dir)&#xa;→ verdict flags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="938" y="322" width="162" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="16" value="sockhash&#xa;5-tuple → socket fd&#xa;(SOCKMAP fast path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="322" width="148" height="62" as="geometry" />
+        </mxCell>
+
+        <!-- ===== eBPF PROGRAMS ===== -->
+
+        <mxCell id="17" value="tc_ingress&#xa;Ethertype gate → IP parse&#xa;→ identity_map lookup&#xa;→ policy_map lookup → verdict" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="758" y="438" width="158" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="18" value="tc_egress&#xa;Geneve encap&#xa;(cross-node identity option)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="938" y="438" width="152" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="19" value="sock_ops&#xa;socket lifecycle events&#xa;ALLOW + ELIGIBLE → insert&#xa;DENY / mTLS-req → never insert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1108" y="438" width="162" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="20" value="sk_msg&#xa;SOCKMAP redirect&#xa;kernel bypass&#xa;(intra-node fast path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1288" y="438" width="100" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ring_buf (events) -->
+        <mxCell id="21" value="ring_buf&#xa;(flow events → agent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="758" y="558" width="158" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- Remote Node (cross-node Geneve target) -->
+        <mxCell id="24" value="Remote Node&#xa;(Geneve tunnel target)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="938" y="558" width="148" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- ===== PODS ===== -->
+
+        <mxCell id="22" value="Pod A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1448" y="388" width="80" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="23" value="Pod B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1448" y="475" width="80" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES: CONTROL PLANE INTERNAL ===== -->
+
+        <!-- Operator → REST API -->
+        <mxCell id="50" value="POST /policies" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="5" target="6" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- REST API → Policy Store -->
+        <mxCell id="51" value="store + compile" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="6" target="7" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- REST API → Identity Registry -->
+        <mxCell id="52" value="assign identity" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="6" target="8" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Policy Store → ADS Server -->
+        <mxCell id="53" value="Watch() change" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="7" target="9" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Identity Registry → ADS Server -->
+        <mxCell id="54" value="Watch() change" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="8" target="9" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ADS Server → xDS Client (main stream, thick) -->
+        <mxCell id="55" value="gRPC ADS stream&#xa;(CC-2 versioned JSON)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeWidth=2;strokeColor=#6c8ebf;fontStyle=1;" edge="1" source="9" target="11" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CA → xDS Client (SVID / trust bundle, dashed yellow) -->
+        <mxCell id="60" value="SVID + trust bundle" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;dashed=1;strokeColor=#d6b656;strokeWidth=1;" edge="1" source="10" target="11" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES: AGENT → KERNEL ===== -->
+
+        <!-- xDS Client → Datapath Writer -->
+        <mxCell id="56" value="decoded policy + identities" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="11" target="13" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LinkWatcher → Datapath Writer -->
+        <mxCell id="57" value="new veth event" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="12" target="13" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Datapath Writer → identity_map (thick, sole writer) -->
+        <mxCell id="58" value="write" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeWidth=2;" edge="1" source="13" target="14" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Datapath Writer → policy_map (thick, sole writer) -->
+        <mxCell id="59" value="write (D5 order)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeWidth=2;" edge="1" source="13" target="15" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES: DATA PLANE (packet path) ===== -->
+
+        <!-- Pod A → tc_ingress (packet arrives on veth) -->
+        <mxCell id="61" value="packet in (TC ingress hook)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeWidth=2;strokeColor=#b85450;" edge="1" source="22" target="17" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Pod A → tc_egress (outbound packet) -->
+        <mxCell id="71" value="egress (TC egress hook)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeColor=#b85450;" edge="1" source="22" target="18" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_ingress → identity_map (dashed lookup) -->
+        <mxCell id="62" value="bpf_map_lookup (src IP)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;dashed=1;strokeColor=#b85450;" edge="1" source="17" target="14" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_ingress → policy_map (dashed lookup) -->
+        <mxCell id="63" value="bpf_map_lookup (identity+port)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;dashed=1;strokeColor=#b85450;" edge="1" source="17" target="15" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_ingress → Pod B (ALLOW forward, thick green) -->
+        <mxCell id="64" value="ALLOW: TC_ACT_OK" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeColor=#82b366;strokeWidth=2;" edge="1" source="17" target="23" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_ingress → sock_ops (eligible socket notify) -->
+        <mxCell id="65" value="SOCKMAP eligible socket" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeColor=#9673a6;" edge="1" source="17" target="19" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- sock_ops → sockhash (insert) -->
+        <mxCell id="66" value="insert socket fd" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;" edge="1" source="19" target="16" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- sk_msg → sockhash (lookup) -->
+        <mxCell id="67" value="lookup dest fd" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;dashed=1;" edge="1" source="20" target="16" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- sk_msg → Pod B (kernel bypass fast path, dashed purple) -->
+        <mxCell id="68" value="kernel redirect (fast path)" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeColor=#9673a6;strokeWidth=2;dashed=1;" edge="1" source="20" target="23" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_ingress → ring_buf (flow event) -->
+        <mxCell id="69" value="flow event" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;strokeColor=#9673a6;" edge="1" source="17" target="21" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- tc_egress → Remote Node (Geneve cross-node) -->
+        <mxCell id="70" value="Geneve + identity option" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=9;dashed=1;" edge="1" source="18" target="24" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

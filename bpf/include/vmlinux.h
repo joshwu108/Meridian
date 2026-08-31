@@ -1030,6 +1030,7 @@ struct task_struct {
 	unsigned int sched_task_hot: 1;
 	long: 28;
 	unsigned int sched_remote_wakeup: 1;
+	unsigned int user_dumpable: 1;
 	unsigned int in_execve: 1;
 	unsigned int in_iowait: 1;
 	unsigned int in_user_fault: 1;
@@ -5434,6 +5435,7 @@ struct device {
 	bool state_synced: 1;
 	bool can_match: 1;
 	bool dma_coherent: 1;
+	long unsigned int flags[1];
 };
 
 struct disk_stats;
@@ -6307,7 +6309,7 @@ struct fwnode_handle {
 	struct device *dev;
 	struct list_head suppliers;
 	struct list_head consumers;
-	u8 flags;
+	long unsigned int flags;
 };
 
 struct property;
@@ -9157,7 +9159,9 @@ enum flow_dissector_key_id {
 	FLOW_DISSECTOR_KEY_META = 25,
 	FLOW_DISSECTOR_KEY_CT = 26,
 	FLOW_DISSECTOR_KEY_HASH = 27,
-	FLOW_DISSECTOR_KEY_MAX = 28,
+	FLOW_DISSECTOR_KEY_NUM_OF_VLANS = 28,
+	FLOW_DISSECTOR_KEY_PPPOE = 29,
+	FLOW_DISSECTOR_KEY_MAX = 30,
 };
 
 enum {
@@ -11598,7 +11602,6 @@ struct net_device {
 	const struct udp_tunnel_nic_info *udp_tunnel_nic_info;
 	struct udp_tunnel_nic *udp_tunnel_nic;
 	struct bpf_xdp_entity xdp_state[3];
-	long: 64;
 };
 
 enum bpf_reg_type {
@@ -12260,6 +12263,7 @@ struct nla_policy {
 	u8 validation_type;
 	u16 len;
 	union {
+		u16 strict_start_type;
 		const u32 bitfield32_valid;
 		const u32 mask;
 		const char *reject_message;
@@ -12271,7 +12275,6 @@ struct nla_policy {
 			s16 max;
 		};
 		int (*validate)(const struct nlattr *, struct netlink_ext_ack *);
-		u16 strict_start_type;
 	};
 };
 
@@ -14036,6 +14039,11 @@ enum {
 	__SD_OVERLAP = 12,
 	__SD_NUMA = 13,
 	__SD_FLAG_CNT = 14,
+};
+
+enum struct_device_flags {
+	DEV_FLAG_READY_TO_PROBE = 0,
+	DEV_FLAG_COUNT = 1,
 };
 
 enum {
@@ -17385,7 +17393,6 @@ struct pci_host_bridge {
 	unsigned int msi_domain: 1;
 	resource_size_t (*align_resource)(struct pci_dev *, const struct resource *, resource_size_t, resource_size_t, resource_size_t);
 	long: 64;
-	long: 64;
 	long unsigned int private[0];
 };
 
@@ -18684,6 +18691,7 @@ struct preempt_notifier {
 struct kvm_mmio_fragment {
 	gpa_t gpa;
 	void *data;
+	u64 val;
 	unsigned int len;
 };
 
@@ -22709,15 +22717,16 @@ enum lockdown_reason {
 	LOCKDOWN_XMON_WR = 15,
 	LOCKDOWN_BPF_WRITE_USER = 16,
 	LOCKDOWN_KGDB = 17,
-	LOCKDOWN_INTEGRITY_MAX = 18,
-	LOCKDOWN_KCORE = 19,
-	LOCKDOWN_KPROBES = 20,
-	LOCKDOWN_BPF_READ_KERNEL = 21,
-	LOCKDOWN_PERF = 22,
-	LOCKDOWN_TRACEFS = 23,
-	LOCKDOWN_XMON_RW = 24,
-	LOCKDOWN_XFRM_SECRET = 25,
-	LOCKDOWN_CONFIDENTIALITY_MAX = 26,
+	LOCKDOWN_XEN_USER_ACTIONS = 18,
+	LOCKDOWN_INTEGRITY_MAX = 19,
+	LOCKDOWN_KCORE = 20,
+	LOCKDOWN_KPROBES = 21,
+	LOCKDOWN_BPF_READ_KERNEL = 22,
+	LOCKDOWN_PERF = 23,
+	LOCKDOWN_TRACEFS = 24,
+	LOCKDOWN_XMON_RW = 25,
+	LOCKDOWN_XFRM_SECRET = 26,
+	LOCKDOWN_CONFIDENTIALITY_MAX = 27,
 };
 
 struct kmalloced_param {
@@ -28195,7 +28204,9 @@ enum {
 	NLA_S64 = 15,
 	NLA_BITFIELD32 = 16,
 	NLA_REJECT = 17,
-	__NLA_TYPE_MAX = 18,
+	NLA_BE16 = 18,
+	NLA_BE32 = 19,
+	__NLA_TYPE_MAX = 20,
 };
 
 struct genl_multicast_group {
@@ -29366,7 +29377,7 @@ struct hwlat_sample {
 
 struct hwlat_data {
 	struct mutex lock;
-	u64 count;
+	atomic64_t count;
 	u64 sample_window;
 	u64 sample_width;
 	int thread_mode;
@@ -36767,6 +36778,8 @@ struct mmu_gather {
 	unsigned int cleared_p4ds: 1;
 	unsigned int vma_exec: 1;
 	unsigned int vma_huge: 1;
+	unsigned int unshared_tables: 1;
+	unsigned int fully_unshared_tables: 1;
 	unsigned int batch_count;
 	struct mmu_gather_batch *active;
 	struct mmu_gather_batch local;
@@ -41109,6 +41122,7 @@ struct epitem {
 	struct list_head rdllink;
 	struct epitem *next;
 	struct epoll_filefd ffd;
+	bool dying;
 	struct eppoll_entry *pwqlist;
 	struct eventpoll *ep;
 	struct hlist_node fllink;
@@ -41121,7 +41135,7 @@ struct eventpoll {
 	wait_queue_head_t wq;
 	wait_queue_head_t poll_wait;
 	struct list_head rdllist;
-	rwlock_t lock;
+	spinlock_t lock;
 	struct rb_root_cached rbr;
 	struct epitem *ovflist;
 	struct wakeup_source *ws;
@@ -41130,6 +41144,8 @@ struct eventpoll {
 	u64 gen;
 	struct hlist_head refs;
 	u8 loop_check_depth;
+	refcount_t refcount;
+	struct callback_head rcu;
 	unsigned int napi_id;
 };
 
@@ -42917,6 +42933,8 @@ struct rpc_xprt_ops {
 	void (*rpcbind)(struct rpc_task *);
 	void (*set_port)(struct rpc_xprt *, short unsigned int);
 	void (*connect)(struct rpc_xprt *, struct rpc_task *);
+	int (*get_srcaddr)(struct rpc_xprt *, char *, size_t);
+	short unsigned int (*get_srcport)(struct rpc_xprt *);
 	int (*buf_alloc)(struct rpc_task *);
 	void (*buf_free)(struct rpc_task *);
 	void (*prepare_request)(struct rpc_rqst *);
@@ -45563,6 +45581,7 @@ struct ext4_sb_info {
 	struct proc_dir_entry *s_proc;
 	struct kobject s_kobj;
 	struct completion s_kobj_unregister;
+	struct mutex s_error_notify_mutex;
 	struct super_block *s_sb;
 	struct buffer_head *s_mmp_bh;
 	struct journal_s *s_journal;
@@ -45647,6 +45666,10 @@ struct ext4_sb_info {
 	struct ext4_es_stats s_es_stats;
 	struct mb_cache *s_ea_block_cache;
 	struct mb_cache *s_ea_inode_cache;
+	long: 64;
+	long: 64;
+	long: 64;
+	long: 64;
 	long: 64;
 	long: 64;
 	spinlock_t s_es_lock;
@@ -53983,11 +54006,6 @@ struct sctp_inithdr {
 	__u8 params[0];
 };
 
-struct sctp_init_chunk {
-	struct sctp_chunkhdr chunk_hdr;
-	struct sctp_inithdr init_hdr;
-};
-
 struct sctp_ipv4addr_param {
 	struct sctp_paramhdr param_hdr;
 	struct in_addr addr;
@@ -54145,7 +54163,6 @@ struct sctp_cookie {
 	__u8 auth_hmacs[10];
 	__u8 auth_chunks[20];
 	__u32 raw_addr_list_len;
-	struct sctp_init_chunk peer_init[0];
 };
 
 struct sctp_tsnmap {
@@ -67363,7 +67380,7 @@ struct fsl_mc_device {
 	struct fsl_mc_device_irq **irqs;
 	struct fsl_mc_resource *resource;
 	struct device_link *consumer_link;
-	char *driver_override;
+	const char *driver_override;
 };
 
 enum fsl_mc_pool_type {
@@ -93621,7 +93638,6 @@ struct pci_epf_group {
 	struct config_group group;
 	struct config_group primary_epc_group;
 	struct config_group secondary_epc_group;
-	struct delayed_work cfs_work;
 	struct pci_epf *epf;
 	int index;
 };
@@ -96376,7 +96392,7 @@ struct fbcon_ops {
 	int (*update_start)(struct fb_info *);
 	int (*rotate_font)(struct fb_info *, struct vc_data *);
 	struct fb_var_screeninfo var;
-	struct timer_list cursor_timer;
+	struct delayed_work cursor_work;
 	struct fb_cursor cursor_state;
 	struct fbcon_display *p;
 	struct fb_info *info;
@@ -98112,6 +98128,7 @@ struct transaction;
 
 struct acpi_ec {
 	acpi_handle handle;
+	acpi_handle address_space_handler_holder;
 	int gpe;
 	int irq;
 	long unsigned int command_addr;
@@ -98161,10 +98178,11 @@ enum {
 	EC_FLAGS_QUERY_GUARDING = 2,
 	EC_FLAGS_EVENT_HANDLER_INSTALLED = 3,
 	EC_FLAGS_EC_HANDLER_INSTALLED = 4,
-	EC_FLAGS_QUERY_METHODS_INSTALLED = 5,
-	EC_FLAGS_STARTED = 6,
-	EC_FLAGS_STOPPED = 7,
-	EC_FLAGS_EVENTS_MASKED = 8,
+	EC_FLAGS_EC_REG_CALLED = 5,
+	EC_FLAGS_QUERY_METHODS_INSTALLED = 6,
+	EC_FLAGS_STARTED = 7,
+	EC_FLAGS_STOPPED = 8,
+	EC_FLAGS_EVENTS_MASKED = 9,
 };
 
 struct acpi_ec_query_handler {
@@ -100175,15 +100193,20 @@ enum dmi_entry_type {
 	DMI_ENTRY_OOB_REMOTE_ACCESS = 30,
 	DMI_ENTRY_BIS_ENTRY = 31,
 	DMI_ENTRY_SYSTEM_BOOT = 32,
-	DMI_ENTRY_MGMT_DEV = 33,
-	DMI_ENTRY_MGMT_DEV_COMPONENT = 34,
-	DMI_ENTRY_MGMT_DEV_THRES = 35,
-	DMI_ENTRY_MEM_CHANNEL = 36,
-	DMI_ENTRY_IPMI_DEV = 37,
-	DMI_ENTRY_SYS_POWER_SUPPLY = 38,
-	DMI_ENTRY_ADDITIONAL = 39,
-	DMI_ENTRY_ONBOARD_DEV_EXT = 40,
-	DMI_ENTRY_MGMT_CONTROLLER_HOST = 41,
+	DMI_ENTRY_64_MEM_ERROR = 33,
+	DMI_ENTRY_MGMT_DEV = 34,
+	DMI_ENTRY_MGMT_DEV_COMPONENT = 35,
+	DMI_ENTRY_MGMT_DEV_THRES = 36,
+	DMI_ENTRY_MEM_CHANNEL = 37,
+	DMI_ENTRY_IPMI_DEV = 38,
+	DMI_ENTRY_SYS_POWER_SUPPLY = 39,
+	DMI_ENTRY_ADDITIONAL = 40,
+	DMI_ENTRY_ONBOARD_DEV_EXT = 41,
+	DMI_ENTRY_MGMT_CONTROLLER_HOST = 42,
+	DMI_ENTRY_TPM_DEVICE = 43,
+	DMI_ENTRY_PROCESSOR_ADDITIONAL = 44,
+	DMI_ENTRY_FIRMWARE_INVENTORY = 45,
+	DMI_ENTRY_STRING_PROPERTY = 46,
 	DMI_ENTRY_INACTIVE = 126,
 	DMI_ENTRY_END_OF_TABLE = 127,
 };
@@ -100862,6 +100885,7 @@ struct ghes {
 		struct acpi_hest_generic_v2 *generic_v2;
 	};
 	struct acpi_hest_generic_status *estatus;
+	unsigned int estatus_length;
 	long unsigned int flags;
 	union {
 		struct list_head list;
@@ -124856,7 +124880,6 @@ struct scsi_cd {
 	struct scsi_device *device;
 	unsigned int vendor;
 	long unsigned int ms_offset;
-	unsigned int writeable: 1;
 	unsigned int use: 1;
 	unsigned int xa_flag: 1;
 	unsigned int readcd_known: 1;
@@ -125893,7 +125916,6 @@ struct ata_device {
 	long: 64;
 	long: 64;
 	long: 64;
-	long: 64;
 	union {
 		u16 id[256];
 		u32 gscr[128];
@@ -125924,7 +125946,6 @@ struct ata_link {
 	enum ata_lpm_policy lpm_policy;
 	struct ata_eh_info eh_info;
 	struct ata_eh_context eh_context;
-	long: 64;
 	struct ata_device device[2];
 	long unsigned int last_lpm_change;
 	long: 64;
@@ -126114,7 +126135,6 @@ struct ata_port {
 	int em_message_type;
 	void *private_data;
 	struct ata_acpi_gtm __acpi_init_gtm;
-	long: 64;
 	long: 64;
 	long: 64;
 	long: 64;
@@ -127937,7 +127957,7 @@ struct flow_dissector_key_basic {
 
 struct flow_dissector {
 	unsigned int used_keys;
-	short unsigned int offset[28];
+	short unsigned int offset[30];
 };
 
 struct flow_keys_basic {
@@ -128343,7 +128363,6 @@ struct wpan_phy {
 	u16 sifs_period;
 	struct device dev;
 	possible_net_t _net;
-	long: 64;
 	long: 64;
 	char priv[0];
 };
@@ -129932,7 +129951,8 @@ enum tunable_id {
 	ETHTOOL_RX_COPYBREAK = 1,
 	ETHTOOL_TX_COPYBREAK = 2,
 	ETHTOOL_PFC_PREVENTION_TOUT = 3,
-	__ETHTOOL_TUNABLE_COUNT = 4,
+	ETHTOOL_TX_COPYBREAK_BUF_SIZE = 4,
+	__ETHTOOL_TUNABLE_COUNT = 5,
 };
 
 struct tso_t {
@@ -135895,6 +135915,7 @@ struct uinput_device {
 	struct input_dev *dev;
 	struct mutex mutex;
 	enum uinput_state state;
+	spinlock_t state_lock;
 	wait_queue_head_t waitq;
 	unsigned char ready;
 	unsigned char head;
@@ -139459,6 +139480,7 @@ struct dbs_governor {
 	int (*init)(struct dbs_data *);
 	void (*exit)(struct dbs_data *);
 	void (*start)(struct cpufreq_policy *);
+	void (*limits)(struct cpufreq_policy *);
 };
 
 struct policy_dbs_info {
@@ -139933,18 +139955,18 @@ struct mmc_host {
 	unsigned int max_busy_timeout;
 	spinlock_t lock;
 	struct mmc_ios ios;
+	bool claimed;
 	unsigned int use_spi_crc: 1;
-	unsigned int claimed: 1;
 	unsigned int doing_init_tune: 1;
-	unsigned int can_retune: 1;
 	unsigned int doing_retune: 1;
-	unsigned int retune_now: 1;
-	unsigned int retune_paused: 1;
 	unsigned int retune_crc_disable: 1;
 	unsigned int can_dma_map_merge: 1;
 	unsigned int vqmmc_enabled: 1;
 	int rescan_disable;
 	int rescan_entered;
+	bool can_retune;
+	bool retune_now;
+	bool retune_paused;
 	int need_retune;
 	int hold_retune;
 	unsigned int retune_period;
@@ -139981,7 +140003,6 @@ struct mmc_host {
 	bool cqe_on;
 	struct blk_keyslot_manager ksm;
 	bool hsq_enabled;
-	long: 64;
 	long: 64;
 	long: 64;
 	long: 64;
@@ -140319,6 +140340,7 @@ struct mmc_queue_req {
 	void *drv_op_data;
 	unsigned int ioc_count;
 	int retries;
+	u32 flags;
 };
 
 struct mmc_ioc_cmd {
@@ -146174,7 +146196,7 @@ struct inet_connection_sock_af_ops {
 	int (*rebuild_header)(struct sock *);
 	void (*sk_rx_dst_set)(struct sock *, const struct sk_buff *);
 	int (*conn_request)(struct sock *, struct sk_buff *);
-	struct sock * (*syn_recv_sock)(const struct sock *, struct sk_buff *, struct request_sock *, struct dst_entry *, struct request_sock *, bool *);
+	struct sock * (*syn_recv_sock)(const struct sock *, struct sk_buff *, struct request_sock *, struct dst_entry *, struct request_sock *, bool *, void (*)(struct sock *, const struct sock *));
 	u16 net_header_len;
 	u16 net_frag_header_len;
 	u16 sockaddr_len;
@@ -147012,6 +147034,16 @@ struct flow_dissector_key_ct {
 
 struct flow_dissector_key_hash {
 	u32 hash;
+};
+
+struct flow_dissector_key_num_of_vlans {
+	u8 num_of_vlans;
+};
+
+struct flow_dissector_key_pppoe {
+	__be16 session_id;
+	__be16 ppp_proto;
+	__be16 type;
 };
 
 struct flow_dissector_key {
@@ -152329,7 +152361,6 @@ struct tcf_pedit_key_ex {
 struct tcf_pedit_parms {
 	struct tc_pedit_key *tcfp_keys;
 	struct tcf_pedit_key_ex *tcfp_keys_ex;
-	u32 tcfp_off_max_hint;
 	unsigned char tcfp_nkeys;
 	unsigned char tcfp_flags;
 	struct callback_head rcu;
@@ -153108,7 +153139,6 @@ struct ethtool_rx_flow_key {
 
 struct ethtool_rx_flow_match {
 	struct flow_dissector dissector;
-	long: 0;
 	struct ethtool_rx_flow_key key;
 	struct ethtool_rx_flow_key mask;
 };
@@ -153942,6 +153972,7 @@ struct nf_ipv6_ops {
 struct nf_queue_entry {
 	struct list_head list;
 	struct sk_buff *skb;
+	struct net_device *skb_dev;
 	unsigned int id;
 	unsigned int hook_index;
 	struct net_device *physin;
@@ -157623,7 +157654,8 @@ enum {
 };
 
 struct seg6_lwt {
-	struct dst_cache cache;
+	struct dst_cache cache_input;
+	struct dst_cache cache_output;
 	struct seg6_iptunnel_encap tuninfo[0];
 };
 
@@ -158955,7 +158987,6 @@ struct wiphy {
 	struct rfkill *rfkill;
 	long: 64;
 	long: 64;
-	long: 64;
 	char priv[0];
 };
 
@@ -159430,6 +159461,7 @@ struct rfkill_data {
 	struct list_head events;
 	struct mutex mtx;
 	wait_queue_head_t read_wait;
+	u32 event_count;
 	bool input_handler;
 };
 

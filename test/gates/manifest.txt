@@ -44,3 +44,23 @@ yes integration ./test/integration/... TestVethAttachLifecycleGate_MER71
 
 # A-3 EXIT — MER-73 REST→kernel policy_map < 500 ms end-to-end
 yes integration ./test/integration/... TestRestToKernelGate_MER73
+
+# PKI-1 — MER-74 CA / CSR / signing unit gate (T1, pure-Go)
+yes '' ./internal/control/ca/... TestCAPrimitivesGate_MER74
+
+# PKI-2 — MER-75 node bootstrap credential unit gate (T1, pure-Go)
+yes '' ./internal/control/ca/... TestBootstrapIssueAndLoad
+
+# --- Phase 4 gates (CC-1 echo prototype; requires Lima for integration) ---
+
+# CP-4 — ADS mTLS: authenticated client accepted, unauthenticated rejected (T1)
+yes '' ./internal/control/ads/... TestMTLSAuthenticatedClientCanStream
+yes '' ./internal/control/ads/... TestMTLSUnauthenticatedClientRejected
+
+# A-4 — SVID lifecycle + store (T1, pure-Go)
+yes '' ./internal/agent/svid/... TestManagerInitialIssuance
+yes '' ./internal/agent/svid/... TestLocalSigner
+
+# P4.1 — CC-1 echo prototype: orig-dst seam (T1 seam test; full TPROXY on Lima T3)
+yes '' ./internal/proxy/... TestEchoServerSeamAbstraction
+yes '' ./internal/proxy/... TestTPROXYResolverImplementsInterface

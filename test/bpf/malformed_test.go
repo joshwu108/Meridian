@@ -24,7 +24,7 @@ func TestMalformedPacketsPassthrough(t *testing.T) {
 		dataEnd uint32 // 0 => skb data_end == len(packet)
 	}{
 		{name: "truncated eth", packet: synthTruncatedEthPacket(), dataEnd: 10},
-		{name: "truncated IPv4", packet: synthTruncatedIPv4Packet()},
+		{name: "truncated IPv4", packet: synthTruncatedIPv4Packet(), dataEnd: 24},
 		{name: "ihl less than 5", packet: synthMalformedIPv4IHLPacket(4)},
 		{name: "ihl greater than 15", packet: synthMalformedIPv4IHLPacket(16)},
 		{name: "ihl 15 truncated options", packet: synthMalformedIPv4IHLOptionsTruncated()},
@@ -47,7 +47,9 @@ func TestMalformedPacketsPassthrough(t *testing.T) {
 
 			ret, err := runTcIngressPacket(t, objs, tc.packet, tc.dataEnd)
 			if err != nil {
-				if tc.name == "truncated eth" {
+				if tc.dataEnd != 0 {
+					// Kernels < 5.19 reject prog_test_run with a custom skb
+					// context (non-zero dataEnd) — skip rather than fail.
 					t.Skipf("kernel prog_test_run rejected trimmed skb context: %v", err)
 				}
 				t.Fatalf("prog test run: %v", err)
