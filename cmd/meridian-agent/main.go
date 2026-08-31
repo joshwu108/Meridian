@@ -23,6 +23,7 @@ import (
 
 	"github.com/cilium/ebpf/rlimit"
 
+	adminserver "github.com/joshuawu/meridian/internal/agent/admin"
 	"github.com/joshuawu/meridian/internal/agent/attach"
 	"github.com/joshuawu/meridian/internal/agent/bpfobj"
 	"github.com/joshuawu/meridian/internal/agent/linkwatch"
@@ -37,14 +38,33 @@ func main() {
 	policyFile := flag.String("policy-file", "", "optional static YAML policy snapshot to seed at startup")
 	cgroup := flag.String("cgroup", "", "cgroup v2 path to attach the SOCKMAP fast path (sock_ops + sk_msg); empty = disabled")
 	vethPrefix := flag.String("veth-prefix", "", "host-side pod veth name prefix for auto TC attach via RTNLGRP_LINK watcher (empty = disabled; e.g. 'mh-' or 'lxc')")
+
+	// Phase 4 flags.
+	standalone := flag.Bool("standalone", false, "run with an embedded ephemeral CA (dev mode)")
+	controlAddr := flag.String("control-addr", "", "control-plane REST address for RemoteSigner (e.g. https://control:9443)")
+	bootstrapCert := flag.String("bootstrap-cert", "", "path to node bootstrap certificate PEM (CC-4)")
+	bootstrapKey := flag.String("bootstrap-key", "", "path to node bootstrap private key PEM (CC-4)")
+	workloadSocket := flag.String("workload-api-socket", "/run/meridian/workload.sock", "SPIFFE Workload API Unix socket path")
+	proxyIn := flag.Int("proxy-inbound-port", 15008, "inbound mTLS transparent listener port")
+	proxyOut := flag.Int("proxy-outbound-port", 15001, "outbound CONNECT transparent listener port")
+	adminAddr := flag.String("admin-addr", "127.0.0.1:9902", "agent admin HTTP address")
 	flag.Parse()
 
-	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix); err != nil {
+	p4opts := phase4Options{
+		workloadAPISocket: *workloadSocket,
+		proxyInPort:       *proxyIn,
+		proxyOutPort:      *proxyOut,
+		controlAddr:       *controlAddr,
+		bootstrapCert:     *bootstrapCert,
+		bootstrapKey:      *bootstrapKey,
+		standalone:        *standalone,
+	}
+	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, p4opts); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface, policyFile, cgroup, vethPrefix string) error {
+func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr string, p4 phase4Options) error {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -146,6 +166,18 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix string) error {
 		defer func() { _ = skMgr.Detach() }()
 
 		log.Printf("attached SOCKMAP fast path: sock_ops on cgroup=%s, sk_msg on sockhash", cgroup)
+	}
+
+	// Phase 4: proxy, SVID, TPROXY, Workload API.
+	if err := startPhase4(ctx, p4); err != nil {
+		log.Printf("phase4 startup error (continuing without proxy): %v", err)
+	}
+
+	// Admin HTTP server (phase 6).
+	if adminAddr != "" {
+		adminSrv := adminserver.NewServer(adminAddr, nil, adminserver.WithLogf(log.Printf))
+		go func() { _ = adminSrv.Serve(ctx) }()
+		log.Printf("admin server: %s", adminAddr)
 	}
 
 	log.Printf("consuming flow events (pin dir %s); Ctrl-C to exit", pinDir)

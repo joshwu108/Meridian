@@ -1,0 +1,14 @@
+apiVersion: v2
+name: meridian
+description: Meridian eBPF-native service mesh data plane
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - service-mesh
+  - ebpf
+  - mtls
+  - spiffe
+home: https://github.com/joshuawu/meridian
+maintainers:
+  - name: Meridian Authors

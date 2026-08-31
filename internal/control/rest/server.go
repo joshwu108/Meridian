@@ -24,6 +24,7 @@ type Server struct {
 	store    control.Store
 	registry *identity.Registry
 	mux      *http.ServeMux
+	auth     IssuanceAuthority // set by WithCA; nil if CA not configured
 }
 
 // NewServer constructs a Server backed by the given store and registry and

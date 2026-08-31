@@ -1,0 +1,58 @@
+## Meridian Helm chart values — Phase 7
+## Override in your values file or with --set.
+
+## Control plane deployment
+control:
+  image:
+    repository: ghcr.io/joshuawu/meridian-control
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  listenAddr: ":8080"
+  adsAddr: ":9443"
+  trustDomain: "cluster.local"
+  standalone: true
+  service:
+    type: ClusterIP
+    restPort: 8080
+    adsPort: 9443
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+## Agent DaemonSet
+agent:
+  image:
+    repository: ghcr.io/joshuawu/meridian-agent
+    tag: latest
+    pullPolicy: IfNotPresent
+  standalone: false
+  vethPrefix: "lxc"
+  pinDir: "/sys/fs/bpf/meridian"
+  workloadAPISocket: "/run/meridian/workload.sock"
+  proxyInboundPort: 15008
+  proxyOutboundPort: 15001
+  adminAddr: "127.0.0.1:9902"
+  metricsPort: 9901
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  # hostNetwork: false  -- agent uses host netns for TPROXY rules
+  hostPID: false
+
+## RBAC for K8s pod/service informers
+rbac:
+  create: true
+
+## ServiceAccount for agent TokenReview bootstrap (Phase 7 PKI-2b)
+serviceAccount:
+  create: true
+  name: meridian-agent

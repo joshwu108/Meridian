@@ -57,6 +57,15 @@ func (r *TPROXYResolver) Resolve(conn net.Conn) (netip.AddrPort, wire.IdentityID
 	return ap, wire.IdentityUnknown, dstID, nil
 }
 
+// OrigDstFromConn returns the original destination of a connection accepted on
+// an IP_TRANSPARENT listener. On TPROXY connections, LocalAddr() returns the
+// original dst_ip:dst_port the client dialed (not the proxy's bound address),
+// because TPROXY preserves packet addresses. This is the primitive the T3 gate
+// asserts on directly, and what TPROXYResolver.Resolve wraps for higher layers.
+func OrigDstFromConn(conn net.Conn) (netip.AddrPort, error) {
+	return addrPortFrom(conn.LocalAddr())
+}
+
 func addrPortFrom(addr net.Addr) (netip.AddrPort, error) {
 	switch a := addr.(type) {
 	case *net.TCPAddr:

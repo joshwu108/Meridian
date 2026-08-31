@@ -64,3 +64,6 @@ yes '' ./internal/agent/svid/... TestLocalSigner
 # P4.1 — CC-1 echo prototype: orig-dst seam (T1 seam test; full TPROXY on Lima T3)
 yes '' ./internal/proxy/... TestEchoServerSeamAbstraction
 yes '' ./internal/proxy/... TestTPROXYResolverImplementsInterface
+
+# P4.1 — CC-1 TPROXY integration gate (T3, Lima only): getsockname() == orig dst
+yes integration ./test/integration/... TestOriginalDestinationGate_P41
