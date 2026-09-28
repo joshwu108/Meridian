@@ -76,7 +76,7 @@ func run(ctx context.Context, cfg cli.Config, args []string) error {
 
 	case "cert":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: meridian cert inspect|verify|rotate ...")
+			return fmt.Errorf("usage: meridian cert inspect|verify|rotate <args>")
 		}
 		switch args[1] {
 		case "inspect":

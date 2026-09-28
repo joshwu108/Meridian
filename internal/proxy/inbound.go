@@ -14,7 +14,6 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/joshuawu/meridian/internal/agent/workloadapi"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
@@ -39,7 +38,7 @@ type L7PolicySource interface {
 
 type InboundHandler struct {
 	listener       Listener
-	certSource     workloadapi.CertSource
+	certSource     CertSource
 	trustPool      *x509.CertPool
 	resolver       OriginalDestinationResolver
 	policy         PolicySource
@@ -89,7 +88,7 @@ func WithInboundTracer(t trace.Tracer) InboundOption {
 // NewInboundHandler constructs a handler for the :15008 listener.
 func NewInboundHandler(
 	listener Listener,
-	certSource workloadapi.CertSource,
+	certSource CertSource,
 	trustPool *x509.CertPool,
 	resolver OriginalDestinationResolver,
 	policy PolicySource,

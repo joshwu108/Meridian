@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestKernelAtLeast(t *testing.T) {
 }
 
 func TestDoctorOSProbe(t *testing.T) {
-	r := probeOS(nil, Config{})
+	r := probeOS(context.Background(), Config{})
 	// Pass/fail depends on the host OS; only check the result shape.
 	if r.Name == "" {
 		t.Fatal("empty probe name")

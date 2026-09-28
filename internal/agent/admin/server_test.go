@@ -111,7 +111,9 @@ func TestAdminContextCancellation(t *testing.T) {
 }
 
 func TestAdminServerImplementsInterface(t *testing.T) {
-	var _ Server = NewServer("127.0.0.1:0", nil)
+	if NewServer("127.0.0.1:0", nil) == nil {
+		t.Fatal("NewServer returned nil")
+	}
 }
 
 // fakeRotator implements CertRotator with a canned result.

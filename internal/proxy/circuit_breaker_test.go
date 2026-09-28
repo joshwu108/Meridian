@@ -80,7 +80,7 @@ func TestCBTransitionsToHalfOpenAfterReset(t *testing.T) {
 }
 
 func TestCBHalfOpenSuccessCloses(t *testing.T) {
-	var fakeNow time.Time = time.Now()
+	fakeNow := time.Now()
 	cb := newTestCB(1, 10*time.Millisecond)
 	cb.nowFn = func() time.Time { return fakeNow }
 
@@ -98,7 +98,7 @@ func TestCBHalfOpenSuccessCloses(t *testing.T) {
 }
 
 func TestCBHalfOpenFailureReopens(t *testing.T) {
-	var fakeNow time.Time = time.Now()
+	fakeNow := time.Now()
 	cb := newTestCB(1, 10*time.Millisecond)
 	cb.nowFn = func() time.Time { return fakeNow }
 
@@ -113,7 +113,7 @@ func TestCBHalfOpenFailureReopens(t *testing.T) {
 }
 
 func TestCBOpenRejectsBeforeReset(t *testing.T) {
-	var fakeNow time.Time = time.Now()
+	fakeNow := time.Now()
 	cb := newTestCB(1, time.Hour)
 	cb.nowFn = func() time.Time { return fakeNow }
 
@@ -126,7 +126,7 @@ func TestCBOpenRejectsBeforeReset(t *testing.T) {
 }
 
 func TestCBHalfOpenBlocksSecondConcurrentProbe(t *testing.T) {
-	var fakeNow time.Time = time.Now()
+	fakeNow := time.Now()
 	cb := newTestCB(1, 10*time.Millisecond)
 	cb.nowFn = func() time.Time { return fakeNow }
 

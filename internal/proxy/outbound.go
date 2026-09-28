@@ -15,7 +15,6 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/joshuawu/meridian/internal/agent/workloadapi"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
@@ -31,13 +30,13 @@ type OutboundDialer interface {
 
 // MTLSDialer implements OutboundDialer using mTLS (SPIFFE SVIDs).
 type MTLSDialer struct {
-	certSource workloadapi.CertSource
+	certSource CertSource
 	trustPool  *x509.CertPool
 }
 
 // NewMTLSDialer returns a dialer that presents the local SVID and verifies the
 // remote peer against trustPool.
-func NewMTLSDialer(certSource workloadapi.CertSource, trustPool *x509.CertPool) *MTLSDialer {
+func NewMTLSDialer(certSource CertSource, trustPool *x509.CertPool) *MTLSDialer {
 	return &MTLSDialer{certSource: certSource, trustPool: trustPool}
 }
 

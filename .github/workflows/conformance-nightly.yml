@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.25" # must satisfy go.mod's go directive (1.25.0)
 
 jobs:
   conformance:

@@ -393,6 +393,7 @@ func TestEvaluateContextCanceled(t *testing.T) {
 func TestEvaluateNilContext(t *testing.T) {
 	t.Parallel()
 	eval := mustEval(t, UnknownIdentityFailClosed, nil)
+	//nolint:staticcheck // SA1012: nil ctx is the point — pins that Evaluate tolerates it.
 	_, err := eval.Evaluate(nil, Input{
 		SrcIdentity: 1,
 		DstIdentity: 2,

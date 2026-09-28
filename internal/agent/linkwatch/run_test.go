@@ -67,10 +67,7 @@ func TestRunReconcilesBeforeEventsThenDispatches(t *testing.T) {
 
 	// Wait until all four operations are observed.
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if len(att.snapshot()) >= 4 || time.Now().After(deadline) {
-			break
-		}
+	for len(att.snapshot()) < 4 && !time.Now().After(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	cancel()
@@ -111,10 +108,7 @@ func TestRunReportsPerInterfaceErrorsAndContinues(t *testing.T) {
 	// A subsequent good event must still be dispatched (loop did not abort).
 	events <- Event{IfName: "vethB", Type: EventAdded}
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if len(att.snapshot()) >= 2 || time.Now().After(deadline) {
-			break
-		}
+	for len(att.snapshot()) < 2 && !time.Now().After(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	cancel()

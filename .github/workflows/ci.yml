@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.25" # must satisfy go.mod's go directive (1.25.0)
   CLANG_VERSION: "17" # pinned for deterministic bpf2go output
 
 jobs:
@@ -28,15 +28,16 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           # Pinned for reproducible lint, same determinism posture as the
           # CLANG_VERSION pin and `verify-gen`: an unchanged tree must produce
           # an identical lint result across runs. `latest` floats the linter
           # version and can flag/clear issues without a code change.
-          # v1.64.8 is the final golangci-lint v1 release (what action @v6's
-          # `latest` already resolved to); bump deliberately, never to `latest`.
-          version: v1.64.8
+          # v2.x required since go.mod moved to go 1.25: v1.64.8 (the final
+          # v1 release) is built with Go 1.24 and refuses go 1.25 modules.
+          # .golangci.yml is v2-format; bump deliberately, never to `latest`.
+          version: v2.14.0
       - name: unit tests (T1)
         run: make test-unit
       - name: commit ticket traceability (MER-45)

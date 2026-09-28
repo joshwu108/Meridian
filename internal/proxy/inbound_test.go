@@ -16,7 +16,7 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// fakeCertSource implements workloadapi.CertSource using a pre-built tls.Config.
+// fakeCertSource implements CertSource using a pre-built tls.Config.
 type fakeCertSource struct {
 	cfg *tls.Config
 }
