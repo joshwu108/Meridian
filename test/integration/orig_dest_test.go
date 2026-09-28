@@ -13,10 +13,9 @@ package integration
 //     Remaining: wire RemoteSigner in cmd/meridian-agent when --control-addr
 //     flag is added; add mTLS dial to control plane in agent main loop.
 //
-//  2. [PKI-4 / go-spiffe] workloadapi.socketServer uses a custom PEM wire
-//     protocol, not the SPIFFE Workload API gRPC spec. go-spiffe's X509Source
-//     cannot consume it. The full gRPC server requires go-spiffe/v2 as a dep
-//     (not yet in go.mod — no protoc toolchain; planned for Phase 4 polish).
+//  2. [PKI-4 / go-spiffe] RESOLVED: full SPIFFE Workload API gRPC server
+//     implemented with go-spiffe/v2 v2.7.0 (internal/agent/workloadapi/server.go);
+//     X509Source-consumable, security header enforced.
 //
 //  3. [InboundHandler srcID] RESOLVED: SpiffeIDResolver seam implemented
 //     (internal/proxy/spiffe_resolver.go). InboundHandler.WithSpiffeIDResolver
@@ -30,11 +29,9 @@ package integration
 //     correct for SPIFFE — but this should be documented and verified against
 //     the peer's URI SAN, not DNS names.
 //
-//  5. [P4.4 peer identity] PARTIAL: OutboundHandler now calls SPIFFEIDFromCert
-//     on the remote proxy's cert and logs the peer SPIFFE ID. However it does
-//     not yet cross-check against the expected dst_identity (numeric ID → SPIFFE
-//     URI lookup requires a reverse-lookup in the identity table). Add
-//     SpiffeIDResolver.LookupID(dstID) → spiffeURI and compare post-handshake.
+//  5. [P4.4 peer identity] RESOLVED: peer identity cross-check implemented via
+//     WithOutboundSpiffeIDLookup and MapSpiffeIDResolver.LookupID
+//     (internal/proxy/outbound.go); closes on mismatch, unknown dst proceeds.
 //
 //  6. [P5.1] PARTIAL: L7 wire types (pkg/wire/l7.go) and MatchL7 matcher
 //     (internal/proxy/l7_matcher.go, 14 tests) implemented. InboundHandler
@@ -42,17 +39,14 @@ package integration
 //     raw stream) is deferred. Seam is ready: check PolicyFlagL7Required on
 //     authz verdict and branch into MatchL7 before proxying bytes.
 //
-//  7. [P5.2] RESOLVED: CircuitBreaker implemented (internal/proxy/circuit_breaker.go,
-//     9 tests, clock-injectable). Wired into OutboundHandler via
-//     WithCircuitBreaker option. Remaining: expose per-upstream CB state as
-//     Prometheus gauge and wire a per-upstream CB map (currently one global CB
-//     is supported; needs map[netip.Addr]*CircuitBreaker for multi-upstream).
+//  7. [P5.2] RESOLVED: per-upstream CB map implemented — WithCircuitBreaker
+//     now takes a template, per-addr breakers via map[netip.Addr]*CircuitBreaker,
+//     state exposed via CircuitStates(). Note: Prometheus gauge for per-upstream
+//     CB state still pending.
 //
-//  8. [P5.3] NOT STARTED: OTLP spans require go.opentelemetry.io/otel which
-//     is not in go.mod. Per-request traces (src_identity, dst_identity,
-//     latency, status, W3C traceparent propagation) deferred to Phase 5 polish.
-//     Add once the otel dep is provisioned. Prometheus counters/histograms can
-//     be added sooner (prometheus/client_golang already in go.mod).
+//  8. [P5.3] RESOLVED: OTLP tracing implemented (internal/proxy/tracing.go:
+//     NewTracerProvider, connSpan, injectTraceparent); noop unless
+//     OTEL_EXPORTER_OTLP_ENDPOINT is set.
 //
 //  9. [TPROXY probe] internal/agent/tproxy/ProbeTPROXY cannot reliably
 //     distinguish "module present, rule absent (iptables -C exit 1)" from
@@ -63,8 +57,7 @@ package integration
 //     (tproxy_isolation_test.go) runs two netns, each with its own TPROXY
 //     rule and IP_TRANSPARENT listener on the same :15008, and asserts no
 //     cross-talk plus correct orig-dst in both — validating ADR-0006 D-B.
-//     Remaining: run on Lima and arm the netns-isolation gate in
-//     test/gates/manifest.txt once it passes there.
+//     Runs and passes on Lima (T3); gate armed in test/gates/manifest.txt.
 //
 // 11. [Phase 6 CLI] RESOLVED: cmd/meridian implements status, policy list,
 //     services list, cert inspect/verify/rotate, flows watch, map dump
@@ -123,10 +116,9 @@ package integration
 //     the CA). Remaining: end-to-end test of agent+control in Lima with the
 //     new binary flags.
 //
-// 17. [SpiffeIDResolver update loop] MapSpiffeIDResolver.Update() is not yet
-//     called on each ADS snapshot apply in the agent startup loop. The seam
-//     is ready; the agent's xds.Client needs a post-apply callback that calls
-//     spiffeResolver.Update(identities) after each ACKed snapshot.
+// 17. [SpiffeIDResolver update loop] RESOLVED: MapSpiffeIDResolver.Update()
+//     is called via WithPostApply in the ADS client — fires after each ACKed
+//     snapshot apply (cmd/meridian-agent/adswire.go).
 //
 // 18. [MeridianPolicy CRD] Phase 7 requires a CRD for declarative policy in
 //     Kubernetes. Needs controller-runtime or hand-written admission webhook.

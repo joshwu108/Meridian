@@ -67,3 +67,6 @@ yes '' ./internal/proxy/... TestTPROXYResolverImplementsInterface
 
 # P4.1 — CC-1 TPROXY integration gate (T3, Lima only): getsockname() == orig dst
 yes integration ./test/integration/... TestOriginalDestinationGate_P41
+
+# D-B — netns isolation: two netns, same :15008 TPROXY listeners, no cross-talk (T3, Lima only)
+yes integration ./test/integration/... TestTPROXYNetnsIsolation
