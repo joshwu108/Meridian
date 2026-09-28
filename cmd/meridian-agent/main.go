@@ -170,7 +170,7 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 	}
 
 	// Phase 4: proxy, SVID, TPROXY, Workload API.
-	spiffeRes, err := startPhase4(ctx, p4)
+	spiffeRes, svidMgr, err := startPhase4(ctx, p4)
 	if err != nil {
 		log.Printf("phase4 startup error (continuing without proxy): %v", err)
 	}
@@ -186,7 +186,13 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 
 	// Admin HTTP server (phase 6).
 	if adminAddr != "" {
-		adminSrv := adminserver.NewServer(adminAddr, nil, adminserver.WithLogf(log.Printf))
+		adminOpts := []adminserver.Option{adminserver.WithLogf(log.Printf)}
+		// Guard: a nil *svid.SVIDManager in a CertRotator interface would be
+		// non-nil, so only attach the rotator when SVID rotation is enabled.
+		if svidMgr != nil {
+			adminOpts = append(adminOpts, adminserver.WithCertRotator(svidMgr))
+		}
+		adminSrv := adminserver.NewServer(adminAddr, nil, adminOpts...)
 		go func() { _ = adminSrv.Serve(ctx) }()
 		log.Printf("admin server: %s", adminAddr)
 	}

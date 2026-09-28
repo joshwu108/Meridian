@@ -36,7 +36,9 @@ type phase4Options struct {
 // node proxy inbound/outbound handlers. Each component runs in its own
 // goroutine; the first fatal error is logged. It returns the SPIFFE ID
 // resolver shared by the proxy handlers so the ADS post-apply hook can refresh
-// it on every applied snapshot (nil when the proxy is disabled).
+// it on every applied snapshot (nil when the proxy is disabled), and the
+// SVIDManager so the admin server can expose POST /cert/rotate (nil when SVID
+// rotation is disabled).
 //
 // Standalone mode (--standalone):
 //   - Generates an ephemeral in-process CA (dev/test).
@@ -45,11 +47,12 @@ type phase4Options struct {
 // Remote mode (--control-addr):
 //   - Loads the node bootstrap credential (--bootstrap-cert / --bootstrap-key).
 //   - Uses RemoteSigner that posts CSRs to control-plane /svid/sign over mTLS.
-func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDResolver, error) {
+func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDResolver, *svid.SVIDManager, error) {
 	var (
 		svidStore *svid.Store
 		auth      *ca.Authority
 		trustPool *x509.CertPool
+		mgr       *svid.SVIDManager
 	)
 
 	svidStore = svid.NewStore()
@@ -59,14 +62,14 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		var err error
 		auth, err = ca.NewTestAuthority("cluster.local")
 		if err != nil {
-			return nil, fmt.Errorf("phase4: generate dev CA: %w", err)
+			return nil, nil, fmt.Errorf("phase4: generate dev CA: %w", err)
 		}
 		trustPool = auth.TrustPool()
 
 		// Issue an initial SVID for the node proxy identity.
 		nodeSPIFFEID := ca.NodeSPIFFEID("cluster.local", "local-node")
 		signer := svid.NewLocalSigner(auth)
-		mgr := svid.NewManager(nodeSPIFFEID, signer, svidStore,
+		mgr = svid.NewManager(nodeSPIFFEID, signer, svidStore,
 			svid.WithLogf(log.Printf))
 		go func() {
 			if err := mgr.Start(ctx); err != nil {
@@ -78,7 +81,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		// Load bootstrap credential and dial control plane.
 		boot, err := ca.LoadBootstrapFiles(opts.bootstrapCert, opts.bootstrapKey)
 		if err != nil {
-			return nil, fmt.Errorf("phase4: load bootstrap: %w", err)
+			return nil, nil, fmt.Errorf("phase4: load bootstrap: %w", err)
 		}
 		// Placeholder: trust pool from bootstrap cert chain for now.
 		// In production, the trust bundle comes from FetchBundle RPC.
@@ -89,9 +92,9 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 
 		signer, err := newRemoteSigner(opts.controlAddr, opts.bootstrapCert, opts.bootstrapKey)
 		if err != nil {
-			return nil, fmt.Errorf("phase4: %w", err)
+			return nil, nil, fmt.Errorf("phase4: %w", err)
 		}
-		mgr := svid.NewManager(boot.NodeSpiffeID, signer, svidStore,
+		mgr = svid.NewManager(boot.NodeSpiffeID, signer, svidStore,
 			svid.WithLogf(log.Printf))
 		go func() {
 			if err := mgr.Start(ctx); err != nil {
@@ -101,7 +104,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 	} else {
 		log.Printf("phase4: neither --standalone nor --control-addr given; " +
 			"proxy mTLS and SVID rotation disabled")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Workload API socket.
@@ -136,7 +139,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		inAddr := fmt.Sprintf("0.0.0.0:%d", opts.proxyInPort)
 		inLn, err := proxy.ListenTransparent(ctx, inAddr)
 		if err != nil {
-			return nil, fmt.Errorf("phase4: inbound listen %s: %w", inAddr, err)
+			return nil, nil, fmt.Errorf("phase4: inbound listen %s: %w", inAddr, err)
 		}
 		inHandler := proxy.NewInboundHandler(
 			listenerAdapter{inLn},
@@ -160,7 +163,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		outAddr := fmt.Sprintf("0.0.0.0:%d", opts.proxyOutPort)
 		outLn, err := proxy.ListenTransparent(ctx, outAddr)
 		if err != nil {
-			return nil, fmt.Errorf("phase4: outbound listen %s: %w", outAddr, err)
+			return nil, nil, fmt.Errorf("phase4: outbound listen %s: %w", outAddr, err)
 		}
 		dialer := proxy.NewMTLSDialer(certSource, trustPool)
 		cb := proxy.NewCircuitBreaker(5, 30e9) // 5 errors → open; 30s reset
@@ -180,7 +183,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		log.Printf("phase4: outbound CONNECT listener: %s", outAddr)
 	}
 
-	return spiffeRes, nil
+	return spiffeRes, mgr, nil
 }
 
 // startADSClient dials the control plane's ADS gRPC endpoint and runs the
