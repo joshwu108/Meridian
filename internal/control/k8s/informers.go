@@ -112,7 +112,7 @@ func (w *Watcher) onPodAdd(ctx context.Context, obj any) {
 	if !ok {
 		return
 	}
-	spiffeID, ok := pod.Annotations["meridian.io/spiffe-id"]
+	spiffeID, ok := pod.Annotations[SpiffeIDAnnotation]
 	if !ok || spiffeID == "" {
 		return
 	}

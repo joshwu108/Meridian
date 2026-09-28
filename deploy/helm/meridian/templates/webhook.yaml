@@ -1,0 +1,27 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "meridian.fullname" . }}-policy-webhook
+  labels:
+    {{- include "meridian.labels" . | nindent 4 }}
+webhooks:
+  - name: policy.meridian.io
+    admissionReviewVersions: ["v1"]
+    failurePolicy: Fail
+    sideEffects: None
+    clientConfig:
+      service:
+        name: {{ include "meridian.fullname" . }}-control
+        namespace: {{ .Release.Namespace }}
+        path: /validate-meridianpolicy
+        port: 9443
+      {{- with .Values.webhook.caBundle }}
+      caBundle: {{ . }}
+      {{- end }}
+    rules:
+      - apiGroups: ["meridian.io"]
+        apiVersions: ["v1alpha1"]
+        resources: ["meridianpolicies"]
+        operations: ["CREATE", "UPDATE"]
+{{- end }}

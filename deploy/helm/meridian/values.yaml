@@ -48,6 +48,14 @@ agent:
   # hostNetwork: false  -- agent uses host netns for TPROXY rules
   hostPID: false
 
+## Validating admission webhook for MeridianPolicy (Phase 7)
+## caBundle: base64-encoded PEM bundle the apiserver uses to verify the
+## webhook's serving certificate — set by the deployer (e.g. cert-manager
+## CA injection or manual --set webhook.caBundle=$(base64 < ca.crt)).
+webhook:
+  enabled: false
+  caBundle: ""
+
 ## RBAC for K8s pod/service informers
 rbac:
   create: true

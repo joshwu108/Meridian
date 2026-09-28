@@ -30,13 +30,15 @@ import (
 	"github.com/joshuawu/meridian/internal/control/ads"
 	"github.com/joshuawu/meridian/internal/control/ca"
 	"github.com/joshuawu/meridian/internal/control/identity"
+	"github.com/joshuawu/meridian/internal/control/k8s"
 	"github.com/joshuawu/meridian/internal/control/rest"
 	"github.com/joshuawu/meridian/internal/control/store"
 )
 
 const (
-	defaultRESTAddr = ":8080"
-	defaultADSAddr  = ":9443"
+	defaultRESTAddr    = ":8080"
+	defaultADSAddr     = ":9443"
+	defaultWebhookAddr = ":9443"
 	readTimeout     = 10 * time.Second
 	writeTimeout    = 30 * time.Second
 	idleTimeout     = 60 * time.Second
@@ -53,18 +55,24 @@ func main() {
 	tlsCertFile := flag.String("tls-cert", "", "ADS gRPC server certificate PEM")
 	tlsKeyFile := flag.String("tls-key", "", "ADS gRPC server private key PEM")
 	trustDomain := flag.String("trust-domain", "cluster.local", "SPIFFE trust domain")
+	webhookAddr := flag.String("webhook-addr", defaultWebhookAddr, "admission webhook listen address")
+	webhookCert := flag.String("webhook-cert", "", "admission webhook TLS certificate PEM")
+	webhookKey := flag.String("webhook-key", "", "admission webhook TLS private key PEM")
 	flag.Parse()
 
 	if err := run(runConfig{
-		restAddr:     *restAddr,
-		adsAddr:      *adsAddr,
-		standalone:   *standalone,
-		caCertFile:   *caCertFile,
-		caKeyFile:    *caKeyFile,
-		rootCertFile: *rootCertFile,
-		tlsCertFile:  *tlsCertFile,
-		tlsKeyFile:   *tlsKeyFile,
-		trustDomain:  *trustDomain,
+		restAddr:        *restAddr,
+		adsAddr:         *adsAddr,
+		standalone:      *standalone,
+		caCertFile:      *caCertFile,
+		caKeyFile:       *caKeyFile,
+		rootCertFile:    *rootCertFile,
+		tlsCertFile:     *tlsCertFile,
+		tlsKeyFile:      *tlsKeyFile,
+		trustDomain:     *trustDomain,
+		webhookAddr:     *webhookAddr,
+		webhookCertFile: *webhookCert,
+		webhookKeyFile:  *webhookKey,
 	}); err != nil {
 		log.Fatalf("meridian-control: %v", err)
 	}
@@ -80,6 +88,10 @@ type runConfig struct {
 	tlsCertFile  string
 	tlsKeyFile   string
 	trustDomain  string
+
+	webhookAddr     string
+	webhookCertFile string
+	webhookKeyFile  string
 }
 
 func run(cfg runConfig) error {
@@ -129,6 +141,36 @@ func run(cfg runConfig) error {
 		restErrCh <- nil
 	}()
 
+	// Validating admission webhook (CP-5 / Phase 7). Only started when both
+	// TLS flags are set — the apiserver requires HTTPS, so there is no plain
+	// mode. Absent flags mean the deployment does not use the webhook.
+	var webhookServer *http.Server
+	webhookErrCh := make(chan error, 1)
+	switch {
+	case cfg.webhookCertFile != "" && cfg.webhookKeyFile != "":
+		mux := http.NewServeMux()
+		mux.Handle(k8s.ValidatePath, k8s.NewValidationWebhook())
+		webhookServer = &http.Server{
+			Addr:         cfg.webhookAddr,
+			Handler:      mux,
+			TLSConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+			ReadTimeout:  readTimeout,
+			WriteTimeout: writeTimeout,
+			IdleTimeout:  idleTimeout,
+		}
+		go func() {
+			log.Printf("meridian-control: admission webhook listening on %s%s",
+				cfg.webhookAddr, k8s.ValidatePath)
+			err := webhookServer.ListenAndServeTLS(cfg.webhookCertFile, cfg.webhookKeyFile)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				webhookErrCh <- fmt.Errorf("admission webhook: %w", err)
+			}
+			webhookErrCh <- nil
+		}()
+	case cfg.webhookCertFile != "" || cfg.webhookKeyFile != "":
+		return fmt.Errorf("admission webhook requires both --webhook-cert and --webhook-key")
+	}
+
 	// ADS gRPC server (CP-3).
 	var grpcOpts []grpc.ServerOption
 	if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
@@ -167,6 +209,10 @@ func run(cfg runConfig) error {
 		if err != nil {
 			return err
 		}
+	case err := <-webhookErrCh:
+		if err != nil {
+			return err
+		}
 	case <-ctx.Done():
 		log.Printf("meridian-control: shutdown signal received, draining")
 	}
@@ -175,6 +221,11 @@ func run(cfg runConfig) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	if webhookServer != nil {
+		if err := webhookServer.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+	}
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
