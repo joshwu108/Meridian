@@ -48,7 +48,7 @@ func TestCBSuccessResetsCounter(t *testing.T) {
 	cb := newTestCB(3, time.Minute)
 	cb.RecordFailure()
 	cb.RecordFailure()
-	cb.RecordSuccess() // resets counter
+	cb.RecordSuccess()
 	cb.RecordFailure()
 	cb.RecordFailure()
 	// Only 2 failures after the success reset — should still be closed.
@@ -104,7 +104,7 @@ func TestCBHalfOpenFailureReopens(t *testing.T) {
 
 	cb.RecordFailure() // open
 	fakeNow = fakeNow.Add(20 * time.Millisecond)
-	_ = cb.Allow() // half-open
+	_ = cb.Allow()     // half-open
 	cb.RecordFailure() // probe failed → reopen
 
 	if cb.State() != CBOpen {

@@ -11,10 +11,9 @@ import (
 func htons(host uint16) uint16 { return (host >> 8) | (host << 8) }
 
 func TestWallClockMath(t *testing.T) {
-	// Arrange: a fixed boot offset of one hour.
 	bootNs := int64(time.Hour)
 
-	// Act + Assert: a known monotonic value lands at monotonic + offset.
+	// A known monotonic value lands at monotonic + offset.
 	const monoNs = uint64(123_456_789)
 	got := wallClock(monoNs, bootNs)
 	want := time.Unix(0, int64(monoNs)+bootNs)
@@ -37,14 +36,12 @@ func TestNtohsRoundTrip(t *testing.T) {
 }
 
 func TestIPFromBE32(t *testing.T) {
-	// Arrange: 10.0.0.5 as it sits in kernel memory (network-order bytes)
-	// loaded as a little-endian uint32: first address byte is the LSB.
+	// 10.0.0.5 as it sits in kernel memory (network-order bytes) loaded as a
+	// little-endian uint32: first address byte is the LSB.
 	be := uint32(10) | uint32(0)<<8 | uint32(0)<<16 | uint32(5)<<24
 
-	// Act
 	ip := ipFromBE32(be)
 
-	// Assert
 	if !ip.Equal(net.ParseIP("10.0.0.5")) {
 		t.Fatalf("ipFromBE32 = %v, want 10.0.0.5", ip)
 	}

@@ -87,7 +87,7 @@ func TestOutboundHandlerDialsRemoteProxy(t *testing.T) {
 }
 
 // TestOutboundHandlerDropsOnDialError verifies that a dial failure drops the
-// connection without panicking or leaking goroutines.
+// connection.
 func TestOutboundHandlerDropsOnDialError(t *testing.T) {
 	resolver := &fakeResolver{origDst: netip.MustParseAddrPort("10.0.0.5:8080")}
 	dialer := &fakeDialer{dialErr: errors.New("connection refused")}

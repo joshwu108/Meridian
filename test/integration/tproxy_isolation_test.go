@@ -5,7 +5,7 @@ package integration
 // TestTPROXYNetnsIsolation validates the ADR-0006 D-B claim that TPROXY rules
 // and IP_TRANSPARENT listeners are netns-scoped: two "nodes" (netns) each run
 // a TPROXY rule and a transparent listener on the SAME port (15008) without
-// cross-talk (closes shortcoming #10 above).
+// cross-talk (closes shortcoming #10 in orig_dest_test.go).
 //
 // Topology (root namespace is the client):
 //

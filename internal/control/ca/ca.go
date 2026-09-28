@@ -354,9 +354,8 @@ func (a *Authority) sign(csr *x509.CertificateRequest, spiffeID string, ttl time
 	return x509.ParseCertificate(der)
 }
 
-// mustSerial generates a random 128-bit certificate serial number.
-// Panics only on cryptographic hardware failure (should never happen in
-// practice; the stdlib documents it can fail only on exhaustion).
+// mustSerial generates a random 128-bit certificate serial number; panics if
+// the system RNG fails.
 func mustSerial() *big.Int {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

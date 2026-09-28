@@ -20,14 +20,10 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// NewTracerProvider returns the proxy's TracerProvider (P5.4).
-//
-// When OTEL_EXPORTER_OTLP_ENDPOINT is set, spans are exported via OTLP/HTTP
-// to that endpoint (the exporter's own default is localhost:4318). When the
-// variable is unset the provider is a no-op, so tracing adds no behavior and
-// no network dependency — existing deployments and tests are unchanged.
-//
-// The returned shutdown function flushes pending spans; call it on agent exit.
+// NewTracerProvider returns the proxy's TracerProvider (P5.4). Spans are
+// exported via OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set (exporter
+// default localhost:4318); otherwise the provider is a no-op. The returned
+// shutdown function flushes pending spans; call it on agent exit.
 func NewTracerProvider(ctx context.Context) (trace.TracerProvider, func(context.Context) error, error) {
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
 		return noop.NewTracerProvider(), func(context.Context) error { return nil }, nil
@@ -46,15 +42,14 @@ func NewTracerProvider(ctx context.Context) (trace.TracerProvider, func(context.
 	return tp, tp.Shutdown, nil
 }
 
-// connSpan wraps one per-connection span. All methods are nil-safe so
-// handlers can call them unconditionally when tracing is disabled.
+// connSpan is one per-connection span. A nil *connSpan (tracing disabled)
+// is valid; all methods no-op.
 type connSpan struct {
 	span  trace.Span
 	start time.Time
 }
 
-// startConnSpan begins a span for one proxied connection. A nil tracer
-// (tracing disabled) returns a nil connSpan and the context unchanged.
+// startConnSpan begins a span for one proxied connection; nil tracer → nil span.
 func startConnSpan(ctx context.Context, tracer trace.Tracer, name string) (context.Context, *connSpan) {
 	if tracer == nil {
 		return ctx, nil
@@ -78,9 +73,8 @@ func (s *connSpan) end(srcID, dstID wire.IdentityID, dstPort uint16, verdict str
 	s.span.End()
 }
 
-// traceparent returns the W3C traceparent header value for this span
-// (version 00), or "" when tracing is disabled or the span is not sampled
-// into a valid context.
+// traceparent returns the W3C traceparent header value for this span, or ""
+// when tracing is disabled or the span context is invalid.
 func (s *connSpan) traceparent() string {
 	if s == nil {
 		return ""
@@ -93,9 +87,8 @@ func (s *connSpan) traceparent() string {
 }
 
 // injectTraceparent returns a reader replaying r with a traceparent header
-// inserted directly after the HTTP/1.1 request line (W3C trace context
-// propagation on outbound L7 flows). Streams that do not start with an
-// HTTP/1.x request line pass through unmodified, as does an empty header.
+// inserted after the HTTP/1.1 request line. Non-HTTP streams and an empty
+// header pass through unmodified.
 func injectTraceparent(r io.Reader, traceparent string) io.Reader {
 	if traceparent == "" {
 		return r

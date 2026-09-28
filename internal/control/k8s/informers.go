@@ -66,7 +66,6 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	factory.Start(ctx.Done())
 
-	// Wait for the cache to sync before considering the watcher ready.
 	if !cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced) {
 		return fmt.Errorf("k8s watcher: cache sync timed out")
 	}

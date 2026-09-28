@@ -79,11 +79,9 @@ func TestInboundHandlerMTLSRejectsNoClientCert(t *testing.T) {
 	defer cancel()
 	go func() { _ = h.Serve(ctx) }()
 
-	// Connect without a client certificate — the server must reject.
 	client, server := net.Pipe()
 	ln.inject(server)
 
-	// TLS client with NO client cert — must fail handshake.
 	tlsClient := tls.Client(client, &tls.Config{
 		InsecureSkipVerify: true, //nolint:gosec // test only — we're testing auth rejection
 		MinVersion:         tls.VersionTLS13,
@@ -109,7 +107,6 @@ func TestInboundHandlerMTLSRejectsNoClientCert(t *testing.T) {
 func TestInboundHandlerMTLSAcceptsValidPeer(t *testing.T) {
 	auth, serverCfg := makeTestCA(t)
 
-	// Build a listener that always returns deny so we don't need a real upstream.
 	resolver := &fakeResolver{origDst: netip.MustParseAddrPort("10.0.0.5:8080")}
 	policy := &fakePolicySource{snap: wire.ProxyPolicySnapshot{}} // no rules → deny
 
@@ -273,7 +270,6 @@ func TestInboundHandlerDeniesUnauthorizedFlow(t *testing.T) {
 	resolver := &fakeResolver{origDst: netip.MustParseAddrPort("10.0.0.5:8080")}
 	policy := &fakePolicySource{snap: wire.ProxyPolicySnapshot{}} // no rules → deny
 
-	// Override dial to detect if upstream was reached (it must NOT be).
 	ln := newFakeListener()
 	h := NewInboundHandler(ln,
 		&fakeCertSource{cfg: serverCfg},

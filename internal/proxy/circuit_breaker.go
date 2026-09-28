@@ -49,9 +49,9 @@ type CircuitBreaker struct {
 	openedAt          time.Time
 
 	// Configuration (immutable after construction).
-	Threshold   int           // consecutive errors before opening
-	ResetAfter  time.Duration // how long to stay open before half-open probe
-	nowFn       func() time.Time
+	Threshold  int           // consecutive errors before opening
+	ResetAfter time.Duration // how long to stay open before half-open probe
+	nowFn      func() time.Time
 }
 
 // NewCircuitBreaker returns a Closed circuit breaker with the given parameters.

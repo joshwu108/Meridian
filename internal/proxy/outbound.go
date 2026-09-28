@@ -80,9 +80,9 @@ type OutboundHandler struct {
 	tracer       trace.Tracer   // nil = no tracing (P5.4)
 	logf         func(string, ...any)
 
-	// Per-upstream circuit breakers (P5.2): each upstream address gets its
-	// own breaker so one failing node cannot open the circuit for all
-	// destinations. cbTemplate carries the configuration; nil = disabled.
+	// Per-upstream circuit breakers (P5.2): one failing node must not open
+	// the circuit for all destinations. cbTemplate holds the config; nil =
+	// disabled.
 	cbTemplate *CircuitBreaker
 	cbMu       sync.Mutex
 	cbs        map[netip.Addr]*CircuitBreaker
@@ -109,22 +109,20 @@ func WithOutboundMetrics(m *ProxyMetrics) OutboundOption {
 	return func(h *OutboundHandler) { h.metrics = m }
 }
 
-// WithOutboundTracer attaches an OpenTelemetry tracer that records one span
-// per tunneled connection (P5.4). Obtain one from NewTracerProvider.
+// WithOutboundTracer records one span per tunneled connection (P5.4).
 func WithOutboundTracer(t trace.Tracer) OutboundOption {
 	return func(h *OutboundHandler) { h.tracer = t }
 }
 
-// WithCircuitBreaker enables per-upstream circuit breaking. The passed breaker
-// is used as a configuration template (Threshold, ResetAfter): each upstream
-// address lazily gets its own breaker with the same parameters.
+// WithCircuitBreaker enables per-upstream circuit breaking. The passed
+// breaker is a config template: each upstream address lazily gets its own
+// breaker with the same Threshold/ResetAfter.
 func WithCircuitBreaker(cb *CircuitBreaker) OutboundOption {
 	return func(h *OutboundHandler) { h.cbTemplate = cb }
 }
 
-// cbFor returns the circuit breaker for the given upstream address, creating
-// it from the template on first access. Returns nil when circuit breaking is
-// disabled (no template configured).
+// cbFor returns the breaker for an upstream address, creating it from the
+// template on first access; nil when circuit breaking is disabled.
 func (h *OutboundHandler) cbFor(addr netip.Addr) *CircuitBreaker {
 	if h.cbTemplate == nil {
 		return nil
@@ -142,8 +140,8 @@ func (h *OutboundHandler) cbFor(addr netip.Addr) *CircuitBreaker {
 	return cb
 }
 
-// CircuitStates returns the current state of every per-upstream breaker, for
-// metrics and the admin surface (shortcoming #7: expose per-upstream CB state).
+// CircuitStates returns the state of every per-upstream breaker for the
+// admin surface (shortcoming #7).
 func (h *OutboundHandler) CircuitStates() map[netip.Addr]CBState {
 	h.cbMu.Lock()
 	defer h.cbMu.Unlock()
@@ -191,11 +189,11 @@ func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	defer conn.Close()
 
-	// One span per connection (P5.4); every return path ends it.
+	// One span per connection (P5.4).
 	ctx, span := startConnSpan(ctx, h.tracer, "meridian.proxy.outbound")
 	var srcID, dstID wire.IdentityID
 	var dstPort uint16
-	verdict := "deny" // fail-closed default; flipped once tunneling starts
+	verdict := "deny" // fail-closed default
 	defer func() { span.end(srcID, dstID, dstPort, verdict) }()
 
 	// Recover original destination from the transparent connection.
@@ -206,8 +204,7 @@ func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
 	}
 	dstPort = origDst.Port()
 
-	// Circuit breaker check (P5.2) before paying the dial cost. Each
-	// upstream address has its own breaker (per-upstream isolation).
+	// Circuit breaker check (P5.2) before paying the dial cost.
 	cb := h.cbFor(origDst.Addr())
 	if cb != nil {
 		if err := cb.Allow(); err != nil {
@@ -263,9 +260,8 @@ func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
 		conn.RemoteAddr(), origDst, dstID, remoteProxy)
 
 	// Bidirectional copy — the remote proxy reads from the upstream direction
-	// and forwards to the application; we forward the pod's bytes upstream.
-	// When tracing is active and the pod speaks HTTP/1.1, a W3C traceparent
-	// header is injected into the request for cross-node trace propagation.
+	// and forwards to the application; we forward the pod's bytes upstream,
+	// injecting a traceparent header into HTTP/1.1 requests when tracing is on.
 	verdict = "allow"
 	downstream := injectTraceparent(conn, span.traceparent())
 	errc := make(chan error, 2)

@@ -7,9 +7,7 @@ import (
 )
 
 // YAMLResolver resolves identities loaded from the agent stub YAML set.
-//
-// It is immutable after construction: all entries are copied into an internal
-// map and never mutated, so concurrent Resolve calls are safe.
+// Immutable after construction; safe for concurrent Resolve calls.
 type YAMLResolver struct {
 	byID map[wire.IdentityID]wire.Identity
 }

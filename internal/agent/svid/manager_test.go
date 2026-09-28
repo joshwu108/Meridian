@@ -137,9 +137,6 @@ func TestManagerRotationPushesNewEntry(t *testing.T) {
 	store := NewStore()
 	spiffeID := ca.WorkloadSPIFFEID("cluster.local", "ns", "svc-d")
 
-	// Use a very short TTL to force quick rotation.
-	// We override nextRotateDelay by injecting a near-expiry time via nowFn.
-	// Instead, track calls: 2 calls = initial + one rotation.
 	ch := store.Subscribe()
 
 	m := NewManager(spiffeID, signer, store, WithLogf(func(_ string, _ ...any) {}))
@@ -148,9 +145,8 @@ func TestManagerRotationPushesNewEntry(t *testing.T) {
 
 	go func() { _ = m.Start(ctx) }()
 
-	// Wait for at least 2 entries (initial + one rotation is hard without a
-	// very short TTL; here we just verify the initial SVID and that the
-	// subscriber receives it).
+	// Full rotation needs a fake clock (see expiry_chaos_test.go); here we
+	// verify the initial SVID reaches the subscriber.
 	select {
 	case e := <-ch:
 		if e == nil {

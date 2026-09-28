@@ -1,9 +1,8 @@
-// Package store provides the control-plane storage backends.
-// This file implements the etcd backend (CP-5 / Phase 7).
+// Etcd backend for control.Store (CP-5 / Phase 7).
 //
-// The etcd backend stores identities under /meridian/identities/<id> and
-// policies under /meridian/policies/<key>. Watch events are coalesced into
-// the StoreEvent channel (same semantics as the memory backend).
+// Identities live under /meridian/identities/<id>, policies under
+// /meridian/policies/<key>. Watch events coalesce into the StoreEvent
+// channel with the same semantics as the memory backend.
 package store
 
 import (
@@ -124,15 +123,14 @@ func (e *Etcd) ListPolicies(ctx context.Context) ([]wire.PolicyRule, error) {
 }
 
 // Watch subscribes to etcd changes under the Meridian prefix and delivers
-// coalescing StoreEvents until ctx is cancelled. It uses etcd's native Watch
-// RPC so no polling is needed.
+// coalescing StoreEvents until ctx is cancelled. Local writes signal through
+// notify; the etcd Watch RPC picks up changes from other writers.
 func (e *Etcd) Watch(ctx context.Context) <-chan control.StoreEvent {
 	ch := make(chan control.StoreEvent, 16)
 	e.mu.Lock()
 	e.subs = append(e.subs, ch)
 	e.mu.Unlock()
 
-	// Also subscribe to etcd Watch for real-time change delivery.
 	go func() {
 		watchCh := e.client.Watch(ctx, "/meridian/", clientv3.WithPrefix())
 		for {

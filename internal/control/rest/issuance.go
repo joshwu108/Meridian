@@ -29,9 +29,7 @@ type IssuanceAuthority interface {
 }
 
 // WithCA adds SVID issuance support to the Server, registering the
-// POST /svid/sign handler. Calling WithCA more than once is safe (idempotent
-// registration is guarded by the route being fixed on construction). Returns s
-// for chaining.
+// POST /svid/sign handler. Returns s for chaining.
 func (s *Server) WithCA(auth IssuanceAuthority) *Server {
 	s.auth = auth
 	s.mux.HandleFunc("POST /svid/sign", s.handleSignSVID)
@@ -48,7 +46,7 @@ type signRequest struct {
 
 // signResponse is the success body.
 type signResponse struct {
-	// ChainPEM holds the signed leaf + intermediate chain as a single PEM block.
+	// ChainPEM holds the signed leaf + intermediate chain as concatenated PEM blocks.
 	ChainPEM  string `json:"chain_pem"`
 	ExpiresAt string `json:"expires_at"`
 }
@@ -59,9 +57,8 @@ func (s *Server) handleSignSVID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract the requesting node's identity from the TLS peer cert (PKI-2
-	// bootstrap credential). The mTLS channel must be terminated before the
-	// handler runs (the http.Server.TLSConfig must set ClientAuth=Require).
+	// Node identity comes from the TLS peer cert (the PKI-2 bootstrap
+	// credential); the serving http.Server must require client certs.
 	nodeSpiffeID, err := nodeIDFromTLS(r.TLS)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", err.Error())
@@ -82,7 +79,6 @@ func (s *Server) handleSignSVID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the CSR.
 	csr, err := parseCSRPEM(req.CSRPEM)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_csr", err.Error())
@@ -99,7 +95,6 @@ func (s *Server) handleSignSVID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sign the SVID.
 	chain, err := s.auth.SignWorkloadSVID(csr, req.SpiffeID)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "sign_failed", err.Error())

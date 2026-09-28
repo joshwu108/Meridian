@@ -9,18 +9,14 @@ import (
 	"strings"
 )
 
-// streamClient has no total timeout: watch streams are long-lived and are
-// bounded by the request context instead (the shared httpClient's 10s timeout
-// would cut the stream off).
+// streamClient has no total timeout: watch streams are long-lived and
+// bounded by the request context, not by httpClient's 10s timeout.
 var streamClient = &http.Client{}
 
 // HTTPWatch connects to the agent's /http/watch SSE endpoint and streams L7
-// trace events (method, path, src/dst identity, status, latency) to w until
-// ctx is cancelled. The endpoint is served by the agent admin server when
-// go.opentelemetry.io/otel is provisioned (Phase 5 / shortcoming #8).
-//
-// Until OTLP is wired, the agent returns a 501 and this command prints a
-// helpful message indicating the feature is pending.
+// events (method, path, identities, verdict) to w until ctx is cancelled.
+// An agent without an L7 event source returns 501, which is reported as a
+// pending feature rather than an error.
 func HTTPWatch(ctx context.Context, cfg Config, w io.Writer) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		cfg.AgentAddr+"/http/watch", nil)

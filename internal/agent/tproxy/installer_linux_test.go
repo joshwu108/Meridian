@@ -108,7 +108,6 @@ func TestIPRuleIdempotent(t *testing.T) {
 	execFn := func(ctx context.Context, name string, args ...string) error {
 		call := strings.Join(args, " ")
 		if name == "ip" && strings.Contains(call, "rule show") {
-			// Fake output that contains our rule.
 			return nil
 		}
 		if name == "ip" && strings.Contains(call, "rule add") {
@@ -118,8 +117,6 @@ func TestIPRuleIdempotent(t *testing.T) {
 	}
 	_ = execFn
 
-	// We can't fully unit-test ip rule show without stubbing cmdOutput. This
-	// test verifies the add path works without error when execFn always succeeds.
 	addCalled2 := false
 	execFn2 := func(ctx context.Context, name string, args ...string) error {
 		if name == "ip" && strings.Contains(strings.Join(args, " "), "rule add") {
@@ -128,9 +125,8 @@ func TestIPRuleIdempotent(t *testing.T) {
 		return nil
 	}
 	inst := newInstallerWithExec(TproxyMark, TproxyTable, OutboundPort, InboundPort, execFn2).(*linuxInstaller)
-	// installIPRule calls cmdOutput (non-injectable) internally, so we
-	// just verify it doesn't panic and handles errors gracefully.
-	// In integration tests this is exercised against the real kernel.
+	// installIPRule shells out via cmdOutput, which is not injectable here;
+	// the show/add path is exercised against the real kernel in integration tests.
 	_ = inst
 	_ = addCalled
 	_ = addCalled2

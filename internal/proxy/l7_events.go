@@ -8,8 +8,8 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// L7Event is one observed HTTP request at the inbound proxy (P5.3). Events
-// feed the agent admin server's /http/watch stream (meridian http watch).
+// L7Event is one observed HTTP request at the inbound proxy (P5.3), streamed
+// to the admin server's /http/watch endpoint.
 type L7Event struct {
 	Time        time.Time       `json:"time"`
 	SrcIdentity wire.IdentityID `json:"src_identity"`
@@ -20,13 +20,12 @@ type L7Event struct {
 	Verdict     string          `json:"verdict"` // "allow" | "deny"
 }
 
-// l7EventBuffer is the per-subscriber channel depth. A subscriber that falls
-// further behind loses events (drop, never block the data path).
+// l7EventBuffer is the per-subscriber channel depth; subscribers that fall
+// further behind lose events.
 const l7EventBuffer = 64
 
-// L7EventRing fans out JSON-encoded L7 events to subscribers. Publishing
-// never blocks: slow subscribers drop events. A nil ring is a no-op, so the
-// inbound handler can call Publish unconditionally.
+// L7EventRing fans out JSON-encoded L7 events to subscribers. Publish never
+// blocks the data path: slow subscribers drop events. A nil ring is a no-op.
 type L7EventRing struct {
 	mu   sync.Mutex
 	subs []chan string
@@ -37,9 +36,8 @@ func NewL7EventRing() *L7EventRing {
 	return &L7EventRing{}
 }
 
-// Subscribe registers a new subscriber and returns its event channel.
-// The channel receives one JSON line per event. It satisfies the agent admin
-// server's event-source interface (Subscribe() <-chan string).
+// Subscribe registers a new subscriber; the channel receives one JSON line
+// per event.
 func (r *L7EventRing) Subscribe() <-chan string {
 	ch := make(chan string, l7EventBuffer)
 	r.mu.Lock()
@@ -49,14 +47,14 @@ func (r *L7EventRing) Subscribe() <-chan string {
 }
 
 // Publish JSON-encodes ev and delivers it to every subscriber without
-// blocking. Nil-safe.
+// blocking.
 func (r *L7EventRing) Publish(ev L7Event) {
 	if r == nil {
 		return
 	}
 	line, err := json.Marshal(ev)
 	if err != nil {
-		return // struct of scalars: cannot fail, but never panic the data path
+		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

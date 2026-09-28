@@ -17,7 +17,3 @@ func TestTproxyConstants(t *testing.T) {
 		t.Fatalf("InboundPort = %d, want 15008", InboundPort)
 	}
 }
-
-// TestUnsupportedInstallerError verifies the non-Linux stub returns an error.
-// This test only compiles against the unsupportedInstaller type (non-linux).
-// Linux-specific installer logic is in installer_linux_test.go.

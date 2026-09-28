@@ -334,10 +334,8 @@ func TestCertSourceUpdatesTLSCertOnRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second GetCertificate: %v", err)
 	}
-	// Verify the cert returned is from the new entry (check leaf serial).
 	leaf1, _ := x509.ParseCertificate(cert1.Certificate[0])
 	leaf2, _ := x509.ParseCertificate(cert2.Certificate[0])
-	// Verify different serials OR different raw certs — proves rotation happened.
 	if leaf1.SerialNumber.Cmp(leaf2.SerialNumber) == 0 &&
 		string(cert1.Certificate[0]) == string(cert2.Certificate[0]) {
 		t.Fatal("GetCertificate returned same cert after rotation")

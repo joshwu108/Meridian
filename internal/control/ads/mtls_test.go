@@ -128,7 +128,7 @@ func TestMTLSAuthenticatedClientCanStream(t *testing.T) {
 }
 
 // TestMTLSUnauthenticatedClientRejected verifies that a client without a
-// certificate is rejected at the TLS handshake (unauthenticated stream rejected).
+// certificate is rejected at the TLS handshake.
 func TestMTLSUnauthenticatedClientRejected(t *testing.T) {
 	auth, err := ca.NewTestAuthority("cluster.local")
 	if err != nil {
@@ -248,7 +248,6 @@ func TestValidateNodeCert(t *testing.T) {
 	})
 }
 
-// TestExtractNodeID checks happy path and error cases.
 func TestExtractNodeID(t *testing.T) {
 	tests := []struct {
 		uri     string
@@ -257,8 +256,8 @@ func TestExtractNodeID(t *testing.T) {
 	}{
 		{"spiffe://cluster.local/node/worker-1", "worker-1", false},
 		{"spiffe://cluster.local/node/a-b-c", "a-b-c", false},
-		{"spiffe://cluster.local/ns/svc", "", true},   // workload, not node
-		{"spiffe://cluster.local/node/", "", true},     // empty id
+		{"spiffe://cluster.local/ns/svc", "", true}, // workload, not node
+		{"spiffe://cluster.local/node/", "", true},  // empty id
 		{"not-a-uri", "", true},
 	}
 	for _, tc := range tests {

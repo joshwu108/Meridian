@@ -288,8 +288,7 @@ func TestOriginalDestinationGate_P41(t *testing.T) {
 	t.Logf("P4.1 gate PASS: proxy recovered orig_dst=%s correctly", gotOrigDst)
 }
 
-// run is a test-fatal command runner that delegates to ExecInNS semantics for
-// host commands (not inside a namespace).
+// run executes a host-namespace command, failing the test on non-zero exit.
 func run(t *testing.T, name string, args ...string) {
 	t.Helper()
 	out, err := exec.Command(name, args...).CombinedOutput()
@@ -299,5 +298,5 @@ func run(t *testing.T, name string, args ...string) {
 	}
 }
 
-// Ensure net is imported (used by conn type assertion in OrigDstFromConn).
+// Keep the net import referenced.
 var _ net.Listener

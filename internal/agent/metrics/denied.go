@@ -21,12 +21,12 @@ const unknownLabelValue = "unknown"
 
 // DropReason values mirror enum drop_reason in bpf/include/meridian_types.h.
 const (
-	DropReasonUnspecified      uint32 = 0
-	DropReasonPolicyDeny       uint32 = 1
-	DropReasonPolicyMiss       uint32 = 2
-	DropReasonUnknownIdentity  uint32 = 3
-	DropReasonInvalidAction    uint32 = 4
-	DropReasonGeneveEncapFail  uint32 = 5
+	DropReasonUnspecified     uint32 = 0
+	DropReasonPolicyDeny      uint32 = 1
+	DropReasonPolicyMiss      uint32 = 2
+	DropReasonUnknownIdentity uint32 = 3
+	DropReasonInvalidAction   uint32 = 4
+	DropReasonGeneveEncapFail uint32 = 5
 )
 
 type deniedFlowKey struct {

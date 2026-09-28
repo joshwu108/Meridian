@@ -12,9 +12,9 @@
 // point so the pinned toolchain is always used (determinism gate `make
 // verify-gen`).
 //
-// Adding a new program (e.g. Phase 1's tc_ingress.c) is exactly one new
-// //go:generate line following the same pattern; list every cross-boundary
-// struct with -type so its Go mirror is generated, never hand-written.
+// Adding a new program is exactly one new //go:generate line following the
+// same pattern; list every cross-boundary struct with -type so its Go mirror
+// is generated, never hand-written.
 package bpf
 
 // Phase 0 program + the FULL v2 cross-boundary type set (MER-14 contract

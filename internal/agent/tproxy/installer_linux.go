@@ -26,11 +26,11 @@ import (
 
 // linuxInstaller implements Installer using ip rule + iptables.
 type linuxInstaller struct {
-	mark      uint32
-	table     int
-	outPort   int
-	inPort    int
-	execCmd   func(ctx context.Context, name string, args ...string) error
+	mark    uint32
+	table   int
+	outPort int
+	inPort  int
+	execCmd func(ctx context.Context, name string, args ...string) error
 }
 
 // NewInstaller returns the production TPROXY installer for Linux.

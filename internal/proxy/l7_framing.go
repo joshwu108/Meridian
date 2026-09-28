@@ -11,9 +11,8 @@ import (
 
 // peekAndMatchL7 peeks at the start of conn, attempts to parse an HTTP request,
 // and evaluates it against rules. It returns the verdict, the parsed request
-// (nil when the stream is not HTTP/1.1 — used for L7 telemetry), and a new
-// reader that replays the already-consumed bytes prepended to conn (so the
-// caller can still proxy the full stream regardless of verdict).
+// (nil for non-HTTP streams), and a reader that replays the peeked bytes so
+// the caller can still proxy the full stream regardless of verdict.
 //
 // If the stream does not look like HTTP/1.1 (no valid request line), it returns
 // PolicyActionAllow with the original stream (pass-through for non-HTTP flows).

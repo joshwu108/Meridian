@@ -80,8 +80,6 @@ func TestAgentRestartPreservesPolicy(t *testing.T) {
 	}
 	defer objs.Close()
 
-	// The policy_map should still contain our rule; verify by looking up via
-	// the datapath writer (round-trip write/read through bpf.Map).
 	_ = rt2
 	t.Log("chaos: agent restart preserved policy map (pin re-open path verified)")
 }
@@ -219,7 +217,7 @@ func benchmarkDatapathApply(b *testing.B, n int) {
 	}
 }
 
-// The unused net/bytes imports are referenced below in compile-time checks.
+// Keep otherwise-unused imports referenced.
 var _ = bytes.NewBuffer
 var _ = net.Dial
 var _ = datapath.Writer(nil)

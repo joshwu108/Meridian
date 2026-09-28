@@ -28,7 +28,7 @@ func TestKernelAtLeast(t *testing.T) {
 
 func TestDoctorOSProbe(t *testing.T) {
 	r := probeOS(nil, Config{})
-	// Just verify it runs without panic and returns a non-empty name/detail.
+	// Pass/fail depends on the host OS; only check the result shape.
 	if r.Name == "" {
 		t.Fatal("empty probe name")
 	}

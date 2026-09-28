@@ -158,11 +158,9 @@ func (a *StubAgent) acceptedVersion(typeURL string) string {
 }
 
 // decodeSnapshot decodes the policy set carried by one DiscoveryResponse per the
-// MER-54 server contract: policy rides the Cluster channel as a single
-// wrapperspb.BytesValue Any wrapping a JSON []wire.PolicyRule; the other
-// channels are versioned-but-empty. Any deviation (foreign channel payload,
-// non-BytesValue resource, undecodable JSON, or more than one resource) is a
-// contract violation and yields an error so the caller NACKs.
+// MER-54 server contract: one CC-2 resource per policy on the Cluster channel,
+// one per identity on the Endpoint channel; LDS/RDS are versioned-but-empty.
+// Any deviation is a contract violation and yields an error so the caller NACKs.
 func decodeSnapshot(resp *discoveryv3.DiscoveryResponse) ([]wire.PolicyRule, error) {
 	resources := resp.GetResources()
 	switch resp.GetTypeUrl() {

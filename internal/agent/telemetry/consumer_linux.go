@@ -118,13 +118,12 @@ func (c *Consumer) Run(ctx context.Context, handler Handler) error {
 		}
 
 		if len(rec.RawSample) < flowEventSize {
-			c.decodeErr.Add(1) // count and skip; never panic on bad input
+			c.decodeErr.Add(1) // short record: count and skip
 			continue
 		}
-		// Reinterpret the sample as the generated wire struct. The ring buffer
-		// guarantees 8-byte alignment of samples, and the layout is owned by
-		// bpf2go (never hand-written), so the direct cast is safe and avoids
-		// reflection on the hot path.
+		// Reinterpret the sample as the generated wire struct: the ring buffer
+		// guarantees 8-byte sample alignment and bpf2go owns the layout, so a
+		// direct cast avoids reflection on the hot path.
 		wire := *(*bpf.CounterFlowEvent)(unsafe.Pointer(&rec.RawSample[0]))
 		c.decoded.Add(1)
 		handler(c.fromWire(wire))

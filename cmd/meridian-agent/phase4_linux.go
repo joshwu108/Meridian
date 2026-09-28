@@ -125,7 +125,6 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		defer func() { _ = tproxyInst.Uninstall(context.Background()) }()
 	}
 
-	// CertSource for TLS configs.
 	certSource := workloadapi.NewCertSource(svidStore)
 
 	// SPIFFE ID resolver shared by both proxy handlers. Empty until the ADS
@@ -226,7 +225,6 @@ func startADSClient(ctx context.Context, adsAddr string, writer datapath.Writer,
 // listenerAdapter wraps a net.Listener to satisfy proxy.Listener.
 type listenerAdapter struct{ net.Listener }
 
-// Ensure net.Listener already satisfies proxy.Listener (same method set).
 var _ proxy.Listener = listenerAdapter{}
 
 // noopPolicySource satisfies proxy.PolicySource with an empty snapshot.

@@ -39,10 +39,10 @@ func TestClassify(t *testing.T) {
 	w := NewNetlinkWatcher(PrefixSelector("mh-"))
 
 	tests := []struct {
-		name     string
-		update   netlink.LinkUpdate
-		wantEv   Event
-		wantOK   bool
+		name   string
+		update netlink.LinkUpdate
+		wantEv Event
+		wantOK bool
 	}{
 		{
 			name:   "new veth matching prefix → EventAdded",

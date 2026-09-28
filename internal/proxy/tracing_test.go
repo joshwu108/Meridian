@@ -18,8 +18,7 @@ import (
 )
 
 // TestNewTracerProviderNoopWithoutEndpoint verifies that without
-// OTEL_EXPORTER_OTLP_ENDPOINT the provider is a no-op (spans not recorded),
-// so existing behavior and tests are unchanged.
+// OTEL_EXPORTER_OTLP_ENDPOINT the provider is a no-op (spans not recorded).
 func TestNewTracerProviderNoopWithoutEndpoint(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	tp, shutdown, err := NewTracerProvider(context.Background())
@@ -92,8 +91,8 @@ func TestConnSpanAttributes(t *testing.T) {
 	}
 }
 
-// TestConnSpanNilSafe verifies handlers can call span helpers unconditionally
-// when tracing is disabled.
+// TestConnSpanNilSafe: with no tracer, startConnSpan returns a nil connSpan
+// whose methods are no-ops.
 func TestConnSpanNilSafe(t *testing.T) {
 	ctx, cs := startConnSpan(context.Background(), nil, "proxy.inbound")
 	if ctx == nil {
@@ -102,7 +101,7 @@ func TestConnSpanNilSafe(t *testing.T) {
 	if cs != nil {
 		t.Fatalf("nil tracer: connSpan = %v, want nil", cs)
 	}
-	cs.end(0, 0, 0, "deny") // must not panic
+	cs.end(0, 0, 0, "deny")
 	if tp := cs.traceparent(); tp != "" {
 		t.Fatalf("nil connSpan traceparent = %q, want empty", tp)
 	}

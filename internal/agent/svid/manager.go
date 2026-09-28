@@ -19,8 +19,8 @@ type Signer interface {
 	Sign(ctx context.Context, csrDER []byte, spiffeID string) ([]*x509.Certificate, error)
 }
 
-// rotateAt controls when rotation is scheduled: 2/3 of the remaining TTL,
-// matching the architecture decision (D7 / subsystem-04 PKI-1).
+// rotateFraction schedules rotation at 2/3 of the remaining TTL
+// (D7 / subsystem-04 PKI-1).
 const rotateFraction = 2.0 / 3.0
 
 // nearExpiryFraction is the fail-closed window: when less than 1/6 of the
@@ -97,9 +97,6 @@ func withAfter(fn func(time.Duration) <-chan time.Time) Option {
 	}
 }
 
-// NewManager constructs a Manager for spiffeID. Call Start to begin the
-// lifecycle loop.
-// compile-time proof that SVIDManager satisfies the Manager interface.
 var _ Manager = (*SVIDManager)(nil)
 
 // NewManager constructs a SVIDManager for spiffeID. Call Start to begin the

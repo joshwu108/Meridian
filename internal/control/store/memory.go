@@ -60,8 +60,7 @@ func (m *Memory) DeleteIdentity(_ context.Context, id wire.IdentityID) error {
 	return nil
 }
 
-// ListIdentities returns an immutable snapshot of all identities. wire.Identity
-// is a value type, so the returned slice shares no mutable state with the store.
+// ListIdentities returns a snapshot of all identities.
 func (m *Memory) ListIdentities(_ context.Context) ([]wire.Identity, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -104,8 +103,8 @@ func (m *Memory) ListPolicies(_ context.Context) ([]wire.PolicyRule, error) {
 
 // Watch registers a subscriber and returns a coalescing notification channel.
 // The channel emits a control.StoreEvent after each committed mutation and is
-// closed when ctx is done. Slow subscribers may coalesce events (see
-// watchBuffer); they never block a writer and never observe a stale view.
+// closed when ctx is done. Slow subscribers coalesce events (see watchBuffer)
+// rather than blocking writers.
 func (m *Memory) Watch(ctx context.Context) <-chan control.StoreEvent {
 	ch := make(chan control.StoreEvent, watchBuffer)
 
@@ -126,9 +125,8 @@ func (m *Memory) Watch(ctx context.Context) <-chan control.StoreEvent {
 	return ch
 }
 
-// notify delivers ev to every live subscriber without blocking. Sends are
-// non-blocking: if a subscriber's buffer is full, the event is dropped because
-// a pending notification already tells it to re-read current state.
+// notify delivers ev to every live subscriber without blocking: a full buffer
+// means a notification is already pending, so the event is dropped.
 func (m *Memory) notify(ev control.StoreEvent) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

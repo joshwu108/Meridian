@@ -76,14 +76,12 @@ func WithL7Policy(l7 L7PolicySource) InboundOption {
 	return func(h *InboundHandler) { h.l7Policy = l7 }
 }
 
-// WithL7Events wires an event ring that receives one L7Event per observed
-// HTTP request, feeding the admin /http/watch stream (P5.3).
+// WithL7Events wires the event ring behind the admin /http/watch stream (P5.3).
 func WithL7Events(ring *L7EventRing) InboundOption {
 	return func(h *InboundHandler) { h.l7Events = ring }
 }
 
-// WithInboundTracer attaches an OpenTelemetry tracer that records one span
-// per accepted connection (P5.4). Obtain one from NewTracerProvider.
+// WithInboundTracer records one span per accepted connection (P5.4).
 func WithInboundTracer(t trace.Tracer) InboundOption {
 	return func(h *InboundHandler) { h.tracer = t }
 }
@@ -134,12 +132,12 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 	start := time.Now()
 	defer raw.Close()
 
-	// One span per connection (P5.4). Identity/verdict attributes are filled
-	// in as the steps below resolve them; every return path ends the span.
+	// One span per connection (P5.4); attributes fill in as the steps below
+	// resolve them.
 	ctx, span := startConnSpan(ctx, h.tracer, "meridian.proxy.inbound")
 	srcID, dstID := wire.IdentityUnknown, wire.IdentityUnknown
 	var dstPort uint16
-	verdict := "deny" // fail-closed default; flipped on the allow path
+	verdict := "deny" // fail-closed default
 	defer func() { span.end(srcID, dstID, dstPort, verdict) }()
 
 	// Step 1: mTLS handshake.
@@ -228,8 +226,8 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 	h.metrics.RecordRequest("inbound", "allow", srcIDStr, dstIDStr, time.Since(start))
 }
 
-// publishL7Event emits an L7 telemetry event for an observed HTTP request.
-// No-op when the event ring is unset or the stream was not HTTP (req == nil).
+// publishL7Event emits a telemetry event for an observed HTTP request; no-op
+// when the ring is unset or the stream was not HTTP (req == nil).
 func (h *InboundHandler) publishL7Event(req *http.Request, srcID, dstID wire.IdentityID, dstPort uint16, action wire.PolicyAction) {
 	if h.l7Events == nil || req == nil {
 		return

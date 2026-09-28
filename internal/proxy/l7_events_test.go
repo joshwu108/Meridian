@@ -67,7 +67,7 @@ func TestL7EventRingSlowSubscriberDropsNotBlocks(t *testing.T) {
 
 func TestL7EventRingNilSafe(t *testing.T) {
 	var ring *L7EventRing
-	ring.Publish(L7Event{Method: "GET"}) // must not panic
+	ring.Publish(L7Event{Method: "GET"})
 }
 
 // TestPublishL7Event verifies the inbound handler's event emission: a parsed
@@ -105,5 +105,5 @@ func TestPublishL7Event(t *testing.T) {
 		t.Fatalf("unexpected event for nil request: %q", line)
 	default:
 	}
-	(&InboundHandler{}).publishL7Event(req, 0, 0, 0, wire.PolicyActionAllow) // no panic
+	(&InboundHandler{}).publishL7Event(req, 0, 0, 0, wire.PolicyActionAllow)
 }

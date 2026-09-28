@@ -122,13 +122,9 @@ func TestBootstrapIssueAndLoad(t *testing.T) {
 			t.Fatalf("SignWorkloadSVID: %v", err)
 		}
 
-		// Re-encode the workload SVID chain.
 		certPEM := ca.EncodeCertPEM(chain...)
-		// We need a P-256 key PEM to pass key-matching check — but LoadBootstrap
-		// should fail on the SPIFFE ID path check before reaching key match.
-		// Generate a dummy P-256 key and cert that match. Actually, to avoid
-		// depending on which check fires first, just test that some error is
-		// returned for a workload cert.
+		// Don't depend on which check fires first (key match vs SPIFFE path);
+		// any error will do for a workload cert.
 		_, err = ca.LoadBootstrap(certPEM, []byte("not a real key"))
 		if err == nil {
 			t.Fatal("expected error loading workload SVID as bootstrap cert, got nil")

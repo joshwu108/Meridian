@@ -51,7 +51,6 @@ meridian_proxy_circuit_breaker_state{upstream="10.0.0.2"} 1
 
 func TestProxyMetricsNilSafe(t *testing.T) {
 	var m *ProxyMetrics
-	// Must not panic.
 	m.RecordRequest("inbound", "allow", "1", "2", time.Second)
 	m.UpdateCBState("upstream", CBOpen)
 }

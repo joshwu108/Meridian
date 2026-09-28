@@ -26,15 +26,14 @@ func NewFeed() *Feed {
 	return &Feed{}
 }
 
-// Publish atomically stores a new snapshot. All concurrent Current() calls
-// after this returns will see the new snapshot; no partial state is visible.
+// Publish atomically replaces the current snapshot.
 func (f *Feed) Publish(_ context.Context, snap wire.ProxyPolicySnapshot) error {
 	f.ptr.Store(&snap)
 	return nil
 }
 
-// Current returns the latest published snapshot. If Publish has not been called
-// yet it returns a zero-value ProxyPolicySnapshot (empty policies, empty version).
+// Current returns the latest published snapshot, or a zero-value snapshot
+// before the first Publish.
 func (f *Feed) Current(_ context.Context) (wire.ProxyPolicySnapshot, error) {
 	p := f.ptr.Load()
 	if p == nil {
