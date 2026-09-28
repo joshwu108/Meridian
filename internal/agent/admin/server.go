@@ -32,14 +32,24 @@ type MapDumper interface {
 	Dump() any
 }
 
+// CertRotator triggers an immediate SVID rotation, bypassing the 2/3-TTL
+// schedule, and returns the new certificate's expiry. The agent wires the
+// svid.SVIDManager here; the /cert/rotate endpoint (meridian cert rotate)
+// calls it.
+type CertRotator interface {
+	ForceRotate(ctx context.Context) (time.Time, error)
+}
+
 // httpServer implements Server as an HTTP server.
 type httpServer struct {
-	addr       string
-	status     StatusSource
-	flowSource FlowSource
-	mapDumper  MapDumper
-	logf       func(string, ...any)
-	srv        *http.Server
+	addr        string
+	status      StatusSource
+	flowSource  FlowSource
+	httpEvents  FlowSource // L7 event stream for /http/watch (P5.3)
+	mapDumper   MapDumper
+	certRotator CertRotator
+	logf        func(string, ...any)
+	srv         *http.Server
 }
 
 // Option configures an admin server.
@@ -58,6 +68,19 @@ func WithFlowSource(fs FlowSource) Option {
 // WithMapDumper attaches a MapDumper for the /maps/dump endpoint.
 func WithMapDumper(md MapDumper) Option {
 	return func(s *httpServer) { s.mapDumper = md }
+}
+
+// WithHTTPEventSource attaches the L7 event source for the /http/watch SSE
+// endpoint (meridian http watch, P5.3). The proxy's L7EventRing satisfies
+// this interface.
+func WithHTTPEventSource(src FlowSource) Option {
+	return func(s *httpServer) { s.httpEvents = src }
+}
+
+// WithCertRotator attaches the SVID rotator for the POST /cert/rotate
+// endpoint (meridian cert rotate).
+func WithCertRotator(cr CertRotator) Option {
+	return func(s *httpServer) { s.certRotator = cr }
 }
 
 // NewServer returns an admin HTTP server listening on addr.
@@ -80,7 +103,9 @@ func (s *httpServer) Serve(ctx context.Context) error {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/flows/watch", s.handleFlowsWatch)
+	mux.HandleFunc("/http/watch", s.handleHTTPWatch)
 	mux.HandleFunc("/maps/dump", s.handleMapsDump)
+	mux.HandleFunc("/cert/rotate", s.handleCertRotate)
 
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -155,6 +180,79 @@ func (s *httpServer) handleFlowsWatch(w http.ResponseWriter, r *http.Request) {
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", ev)
 			flusher.Flush()
 		}
+	}
+}
+
+// handleHTTPWatch serves a Server-Sent Events stream of L7 (HTTP) events for
+// `meridian http watch`. Returns 501 when no L7 event source is wired — the
+// CLI turns that into a "pending Phase 5 wiring" message.
+func (s *httpServer) handleHTTPWatch(w http.ResponseWriter, r *http.Request) {
+	if s.httpEvents == nil {
+		http.Error(w, "L7 event stream not configured", http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	ch := s.httpEvents.Subscribe()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", ev)
+			flusher.Flush()
+		}
+	}
+}
+
+// handleCertRotate triggers an immediate SVID rotation via the wired
+// CertRotator (POST /cert/rotate, backing `meridian cert rotate`) and replies
+// with the new certificate's expiry.
+func (s *httpServer) handleCertRotate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed; use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if s.certRotator == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		s.encodeEnvelope(w, map[string]any{
+			"success": false,
+			"error":   "cert rotator not configured (agent started without an SVID manager)",
+		})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	expiry, err := s.certRotator.ForceRotate(ctx)
+	if err != nil {
+		s.logf("admin: cert rotate failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		s.encodeEnvelope(w, map[string]any{
+			"success": false,
+			"error":   fmt.Sprintf("rotate: %v", err),
+		})
+		return
+	}
+	s.encodeEnvelope(w, map[string]any{
+		"success": true,
+		"data":    map[string]string{"expires_at": expiry.UTC().Format(time.RFC3339)},
+	})
+}
+
+// encodeEnvelope writes a JSON envelope, logging (not masking) encode errors.
+func (s *httpServer) encodeEnvelope(w http.ResponseWriter, envelope map[string]any) {
+	if err := json.NewEncoder(w).Encode(envelope); err != nil {
+		s.logf("admin: encode response: %v", err)
 	}
 }
 

@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// streamClient has no total timeout: watch streams are long-lived and are
+// bounded by the request context instead (the shared httpClient's 10s timeout
+// would cut the stream off).
+var streamClient = &http.Client{}
+
 // HTTPWatch connects to the agent's /http/watch SSE endpoint and streams L7
 // trace events (method, path, src/dst identity, status, latency) to w until
 // ctx is cancelled. The endpoint is served by the agent admin server when
@@ -24,7 +29,7 @@ func HTTPWatch(ctx context.Context, cfg Config, w io.Writer) error {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := httpClient.Do(req)
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("http watch: connect: %w", err)
 	}

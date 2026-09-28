@@ -9,8 +9,14 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"strconv"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/joshuawu/meridian/internal/agent/workloadapi"
+	"github.com/joshuawu/meridian/pkg/wire"
 )
 
 // RemoteProxyPort is the inbound mTLS port on the destination node proxy.
@@ -66,11 +72,20 @@ func (d *MTLSDialer) Dial(ctx context.Context, addr netip.AddrPort) (net.Conn, e
 //	    → verify peer SPIFFE ID (shortcoming #5)
 //	    → bidirectional copy
 type OutboundHandler struct {
-	listener Listener
-	resolver OriginalDestinationResolver
-	dialer   OutboundDialer
-	cb       *CircuitBreaker // nil = no circuit breaking
-	logf     func(string, ...any)
+	listener     Listener
+	resolver     OriginalDestinationResolver
+	dialer       OutboundDialer
+	spiffeLookup SpiffeIDLookup // nil = no peer identity cross-check
+	metrics      *ProxyMetrics  // nil = no metrics
+	tracer       trace.Tracer   // nil = no tracing (P5.4)
+	logf         func(string, ...any)
+
+	// Per-upstream circuit breakers (P5.2): each upstream address gets its
+	// own breaker so one failing node cannot open the circuit for all
+	// destinations. cbTemplate carries the configuration; nil = disabled.
+	cbTemplate *CircuitBreaker
+	cbMu       sync.Mutex
+	cbs        map[netip.Addr]*CircuitBreaker
 }
 
 // OutboundOption configures an OutboundHandler.
@@ -81,9 +96,62 @@ func WithOutboundLogf(logf func(string, ...any)) OutboundOption {
 	return func(h *OutboundHandler) { h.logf = logf }
 }
 
-// WithCircuitBreaker attaches a circuit breaker that gates every upstream dial.
+// WithOutboundSpiffeIDLookup enables the peer identity cross-check
+// (shortcoming #5): after the mTLS handshake the remote proxy's SPIFFE URI is
+// compared against the URI registered for the flow's dst_identity, and the
+// connection is closed on mismatch.
+func WithOutboundSpiffeIDLookup(l SpiffeIDLookup) OutboundOption {
+	return func(h *OutboundHandler) { h.spiffeLookup = l }
+}
+
+// WithOutboundMetrics attaches Prometheus metrics to the outbound handler.
+func WithOutboundMetrics(m *ProxyMetrics) OutboundOption {
+	return func(h *OutboundHandler) { h.metrics = m }
+}
+
+// WithOutboundTracer attaches an OpenTelemetry tracer that records one span
+// per tunneled connection (P5.4). Obtain one from NewTracerProvider.
+func WithOutboundTracer(t trace.Tracer) OutboundOption {
+	return func(h *OutboundHandler) { h.tracer = t }
+}
+
+// WithCircuitBreaker enables per-upstream circuit breaking. The passed breaker
+// is used as a configuration template (Threshold, ResetAfter): each upstream
+// address lazily gets its own breaker with the same parameters.
 func WithCircuitBreaker(cb *CircuitBreaker) OutboundOption {
-	return func(h *OutboundHandler) { h.cb = cb }
+	return func(h *OutboundHandler) { h.cbTemplate = cb }
+}
+
+// cbFor returns the circuit breaker for the given upstream address, creating
+// it from the template on first access. Returns nil when circuit breaking is
+// disabled (no template configured).
+func (h *OutboundHandler) cbFor(addr netip.Addr) *CircuitBreaker {
+	if h.cbTemplate == nil {
+		return nil
+	}
+	h.cbMu.Lock()
+	defer h.cbMu.Unlock()
+	if h.cbs == nil {
+		h.cbs = make(map[netip.Addr]*CircuitBreaker)
+	}
+	cb, ok := h.cbs[addr]
+	if !ok {
+		cb = NewCircuitBreaker(h.cbTemplate.Threshold, h.cbTemplate.ResetAfter)
+		h.cbs[addr] = cb
+	}
+	return cb
+}
+
+// CircuitStates returns the current state of every per-upstream breaker, for
+// metrics and the admin surface (shortcoming #7: expose per-upstream CB state).
+func (h *OutboundHandler) CircuitStates() map[netip.Addr]CBState {
+	h.cbMu.Lock()
+	defer h.cbMu.Unlock()
+	states := make(map[netip.Addr]CBState, len(h.cbs))
+	for addr, cb := range h.cbs {
+		states[addr] = cb.State()
+	}
+	return states
 }
 
 // NewOutboundHandler constructs the :15001 outbound intercept handler.
@@ -120,18 +188,29 @@ func (h *OutboundHandler) Serve(ctx context.Context) error {
 }
 
 func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
+	start := time.Now()
 	defer conn.Close()
 
+	// One span per connection (P5.4); every return path ends it.
+	ctx, span := startConnSpan(ctx, h.tracer, "meridian.proxy.outbound")
+	var srcID, dstID wire.IdentityID
+	var dstPort uint16
+	verdict := "deny" // fail-closed default; flipped once tunneling starts
+	defer func() { span.end(srcID, dstID, dstPort, verdict) }()
+
 	// Recover original destination from the transparent connection.
-	origDst, _, dstID, err := h.resolver.Resolve(conn)
+	origDst, srcID, dstID, err := h.resolver.Resolve(conn)
 	if err != nil {
 		h.logf("proxy outbound: resolve orig_dst: %v", err)
 		return
 	}
+	dstPort = origDst.Port()
 
-	// Circuit breaker check (P5.2) before paying the dial cost.
-	if h.cb != nil {
-		if err := h.cb.Allow(); err != nil {
+	// Circuit breaker check (P5.2) before paying the dial cost. Each
+	// upstream address has its own breaker (per-upstream isolation).
+	cb := h.cbFor(origDst.Addr())
+	if cb != nil {
+		if err := cb.Allow(); err != nil {
 			h.logf("proxy outbound: circuit open for orig_dst=%s: %v", origDst, err)
 			return
 		}
@@ -143,28 +222,40 @@ func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
 	if err != nil {
 		h.logf("proxy outbound: dial remote proxy %s (orig_dst %s, dst_id %d): %v",
 			remoteProxy, origDst, dstID, err)
-		if h.cb != nil {
-			h.cb.RecordFailure()
+		if cb != nil {
+			cb.RecordFailure()
 		}
 		return
 	}
 	defer upstream.Close()
 
 	// Verify the remote proxy's SPIFFE ID (shortcoming #5): the peer must
-	// present a valid SPIFFE cert. We log the peer ID for audit; a future
-	// revision should cross-check against the expected dst_identity.
+	// present a valid SPIFFE cert, and — when the resolver knows the expected
+	// URI for dst_identity — that cert's URI SAN must match it exactly.
 	if tlsUpstream, ok := upstream.(*tls.Conn); ok {
 		state := tlsUpstream.ConnectionState()
 		if len(state.PeerCertificates) > 0 {
-			if peerID, err := SPIFFEIDFromCert(state.PeerCertificates[0]); err == nil {
-				h.logf("proxy outbound: remote proxy SPIFFE ID=%s dst_id=%d", peerID, dstID)
-			} else {
+			peerID, err := SPIFFEIDFromCert(state.PeerCertificates[0])
+			if err != nil {
 				h.logf("proxy outbound: remote proxy sent non-SPIFFE cert: %v", err)
-				if h.cb != nil {
-					h.cb.RecordFailure()
+				if cb != nil {
+					cb.RecordFailure()
 				}
 				return
 			}
+			if h.spiffeLookup != nil {
+				if expected, known := h.spiffeLookup.LookupID(dstID); known && expected != peerID {
+					h.logf("proxy outbound: peer identity mismatch: dst_id=%d expects %s, peer presented %s — closing",
+						dstID, expected, peerID)
+					h.metrics.RecordRequest("outbound", "peer-mismatch",
+						"0", strconv.FormatUint(uint64(dstID), 10), time.Since(start))
+					if cb != nil {
+						cb.RecordFailure()
+					}
+					return
+				}
+			}
+			h.logf("proxy outbound: remote proxy SPIFFE ID=%s dst_id=%d", peerID, dstID)
 		}
 	}
 
@@ -173,15 +264,19 @@ func (h *OutboundHandler) handle(ctx context.Context, conn net.Conn) {
 
 	// Bidirectional copy — the remote proxy reads from the upstream direction
 	// and forwards to the application; we forward the pod's bytes upstream.
+	// When tracing is active and the pod speaks HTTP/1.1, a W3C traceparent
+	// header is injected into the request for cross-node trace propagation.
+	verdict = "allow"
+	downstream := injectTraceparent(conn, span.traceparent())
 	errc := make(chan error, 2)
-	go func() { _, e := io.Copy(upstream, conn); errc <- e }()
+	go func() { _, e := io.Copy(upstream, downstream); errc <- e }()
 	go func() { _, e := io.Copy(conn, upstream); errc <- e }()
 	copyErr := <-errc
-	if h.cb != nil {
+	if cb != nil {
 		if copyErr != nil && !isClosedErr(copyErr) {
-			h.cb.RecordFailure()
+			cb.RecordFailure()
 		} else {
-			h.cb.RecordSuccess()
+			cb.RecordSuccess()
 		}
 	}
 }

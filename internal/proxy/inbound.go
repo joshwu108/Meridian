@@ -8,8 +8,11 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/joshuawu/meridian/internal/agent/workloadapi"
 	"github.com/joshuawu/meridian/pkg/wire"
@@ -41,8 +44,10 @@ type InboundHandler struct {
 	resolver       OriginalDestinationResolver
 	policy         PolicySource
 	l7Policy       L7PolicySource   // nil = no L7 enforcement
+	l7Events       *L7EventRing     // nil = no L7 telemetry
 	spiffeResolver SpiffeIDResolver // nil = src always IdentityUnknown
 	metrics        *ProxyMetrics    // nil = no metrics
+	tracer         trace.Tracer     // nil = no tracing (P5.4)
 	logf           func(string, ...any)
 }
 
@@ -69,6 +74,18 @@ func WithInboundMetrics(m *ProxyMetrics) InboundOption {
 // WithL7Policy wires an L7 policy source for HTTP rule enforcement (P5.1).
 func WithL7Policy(l7 L7PolicySource) InboundOption {
 	return func(h *InboundHandler) { h.l7Policy = l7 }
+}
+
+// WithL7Events wires an event ring that receives one L7Event per observed
+// HTTP request, feeding the admin /http/watch stream (P5.3).
+func WithL7Events(ring *L7EventRing) InboundOption {
+	return func(h *InboundHandler) { h.l7Events = ring }
+}
+
+// WithInboundTracer attaches an OpenTelemetry tracer that records one span
+// per accepted connection (P5.4). Obtain one from NewTracerProvider.
+func WithInboundTracer(t trace.Tracer) InboundOption {
+	return func(h *InboundHandler) { h.tracer = t }
 }
 
 // NewInboundHandler constructs a handler for the :15008 listener.
@@ -117,6 +134,14 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 	start := time.Now()
 	defer raw.Close()
 
+	// One span per connection (P5.4). Identity/verdict attributes are filled
+	// in as the steps below resolve them; every return path ends the span.
+	ctx, span := startConnSpan(ctx, h.tracer, "meridian.proxy.inbound")
+	srcID, dstID := wire.IdentityUnknown, wire.IdentityUnknown
+	var dstPort uint16
+	verdict := "deny" // fail-closed default; flipped on the allow path
+	defer func() { span.end(srcID, dstID, dstPort, verdict) }()
+
 	// Step 1: mTLS handshake.
 	tlsConn, srcSpiffeID, err := h.handshake(raw)
 	if err != nil {
@@ -131,11 +156,11 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 		h.logf("proxy inbound: resolve orig_dst: %v", err)
 		return
 	}
+	dstPort = origDst.Port()
 
 	// Step 3: Resolve src_identity from the peer's SPIFFE URI (ADR-0006 D-D).
 	// The SPIFFE URI is the authoritative source — it comes from the verified
 	// mTLS peer cert, not from a forgeable kernel mark.
-	srcID := wire.IdentityUnknown
 	if h.spiffeResolver != nil {
 		if id, ok := h.spiffeResolver.ResolveSpiffeID(srcSpiffeID); ok {
 			srcID = id
@@ -172,8 +197,9 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 				rule.Verdict.Flags&wire.PolicyFlagL7Required != 0 {
 				l7Snap, l7Err := h.l7Policy.CurrentL7(ctx)
 				if l7Err == nil && len(l7Snap.Rules) > 0 {
-					l7Action, remainder := peekAndMatchL7(tlsConn, l7Snap.Rules)
+					l7Action, httpReq, remainder := peekAndMatchL7(tlsConn, l7Snap.Rules)
 					streamConn = remainder
+					h.publishL7Event(httpReq, srcID, dstID, origDst.Port(), l7Action)
 					if l7Action == wire.PolicyActionDeny {
 						h.logf("proxy inbound: L7 DENY src_id=%d dst=%s", srcID, origDst)
 						h.metrics.RecordRequest("inbound", "l7-deny", srcIDStr, dstIDStr, time.Since(start))
@@ -194,11 +220,33 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 	defer upstream.Close()
 
 	// Step 6: Bidirectional stream (streamConn replays any bytes peeked for L7).
+	verdict = "allow"
 	errc := make(chan error, 2)
 	go func() { _, err := io.Copy(upstream, streamConn); errc <- err }()
 	go func() { _, err := io.Copy(tlsConn, upstream); errc <- err }()
 	<-errc
 	h.metrics.RecordRequest("inbound", "allow", srcIDStr, dstIDStr, time.Since(start))
+}
+
+// publishL7Event emits an L7 telemetry event for an observed HTTP request.
+// No-op when the event ring is unset or the stream was not HTTP (req == nil).
+func (h *InboundHandler) publishL7Event(req *http.Request, srcID, dstID wire.IdentityID, dstPort uint16, action wire.PolicyAction) {
+	if h.l7Events == nil || req == nil {
+		return
+	}
+	verdict := "allow"
+	if action == wire.PolicyActionDeny {
+		verdict = "deny"
+	}
+	h.l7Events.Publish(L7Event{
+		Time:        time.Now(),
+		SrcIdentity: srcID,
+		DstIdentity: dstID,
+		DstPort:     dstPort,
+		Method:      req.Method,
+		Path:        req.URL.Path,
+		Verdict:     verdict,
+	})
 }
 
 // handshake wraps raw in a TLS server, performs the handshake, and returns the
