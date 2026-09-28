@@ -139,3 +139,32 @@ func TestStoreSetReplacesAndNotifies(t *testing.T) {
 		t.Fatal("Current() should return e2 after rotation")
 	}
 }
+
+func TestStoreUnsubscribeStopsDelivery(t *testing.T) {
+	s := NewStore()
+	ch := s.Subscribe()
+	s.Unsubscribe(ch)
+
+	s.Set(makeTestEntry(t, "spiffe://x/svc", 24*time.Hour))
+	select {
+	case e := <-ch:
+		if e != nil {
+			t.Fatal("received rotation after Unsubscribe")
+		}
+	default:
+	}
+}
+
+func TestStoreUnsubscribeUnknownChannelIsNoop(t *testing.T) {
+	s := NewStore()
+	other := make(chan *Entry, 1)
+	s.Unsubscribe(other) // must not panic or disturb real subscribers
+
+	ch := s.Subscribe()
+	s.Set(makeTestEntry(t, "spiffe://x/svc", 24*time.Hour))
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber missed rotation after unrelated Unsubscribe")
+	}
+}

@@ -46,9 +46,10 @@ type snapshot struct {
 
 // Client is the agent's ADS client. Construct with NewClient; Run drives it.
 type Client struct {
-	ads    discoveryv3.AggregatedDiscoveryServiceClient
-	writer datapath.Writer
-	logf   func(string, ...any)
+	ads       discoveryv3.AggregatedDiscoveryServiceClient
+	writer    datapath.Writer
+	logf      func(string, ...any)
+	postApply PostApplyFunc // nil = no post-apply hook
 
 	mu       sync.Mutex
 	applied  snapshot          // last successfully applied desired state
@@ -63,6 +64,24 @@ func WithLogf(logf func(string, ...any)) Option {
 	return func(c *Client) {
 		if logf != nil {
 			c.logf = logf
+		}
+	}
+}
+
+// PostApplyFunc observes the CommitPlan of a snapshot that was successfully
+// applied through the datapath writer and ACKed to the server. It runs on the
+// stream goroutine, so implementations must be fast and non-blocking.
+type PostApplyFunc func(plan wire.CommitPlan)
+
+// WithPostApply registers fn to run after every successful Apply + ACK. It is
+// the userspace fan-out seam: components that mirror kernel state (e.g. the
+// proxy's SPIFFE ID resolver) refresh themselves here. A NACKed push never
+// reaches fn — nothing was applied, so there is nothing to announce. A nil fn
+// is ignored.
+func WithPostApply(fn PostApplyFunc) Option {
+	return func(c *Client) {
+		if fn != nil {
+			c.postApply = fn
 		}
 	}
 }
@@ -154,11 +173,17 @@ func (c *Client) handle(ctx context.Context, stream discoveryv3.AggregatedDiscov
 	c.commit(typeURL, resp.GetVersionInfo(), candidate)
 	c.logf("ads-client: ACK type=%s version=%s nonce=%s (policies=%d identities=%d)",
 		typeURL, resp.GetVersionInfo(), resp.GetNonce(), len(candidate.policies), len(candidate.identities))
-	return c.send(stream, &discoveryv3.DiscoveryRequest{
+	if err := c.send(stream, &discoveryv3.DiscoveryRequest{
 		TypeUrl:       typeURL,
 		VersionInfo:   resp.GetVersionInfo(),
 		ResponseNonce: resp.GetNonce(),
-	})
+	}); err != nil {
+		return err
+	}
+	if c.postApply != nil {
+		c.postApply(plan)
+	}
+	return nil
 }
 
 // candidateFor decodes the pushed channel and returns the full desired snapshot

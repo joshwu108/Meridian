@@ -61,7 +61,8 @@ func (s *Store) Current() *Entry {
 // Subscribe returns a buffered channel (cap 1) that receives a copy of every
 // new entry after the subscription point. If the store already holds an entry
 // it is sent immediately so the subscriber does not block until the next
-// rotation.
+// rotation. Callers with a bounded lifetime (e.g. one per connection) must
+// call Unsubscribe when done, or the subscriber list grows without bound.
 func (s *Store) Subscribe() <-chan *Entry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,4 +72,18 @@ func (s *Store) Subscribe() <-chan *Entry {
 	}
 	s.subs = append(s.subs, ch)
 	return ch
+}
+
+// Unsubscribe removes ch from the subscriber list. It is a no-op for a
+// channel the store does not know. The channel is not closed (the subscriber
+// owns its read side and simply stops receiving).
+func (s *Store) Unsubscribe(ch <-chan *Entry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, sub := range s.subs {
+		if sub == ch {
+			s.subs = append(s.subs[:i], s.subs[i+1:]...)
+			return
+		}
+	}
 }

@@ -47,6 +47,19 @@ type SVIDManager struct {
 	store    *Store
 	logf     func(string, ...any)
 	nowFn    func() time.Time
+	afterFn  func(time.Duration) <-chan time.Time
+	forceCh  chan *rotateRequest
+}
+
+// rotateRequest is one ForceRotate call in flight; the rotation loop sends
+// exactly one result on reply.
+type rotateRequest struct {
+	reply chan rotateResult
+}
+
+type rotateResult struct {
+	expiry time.Time
+	err    error
 }
 
 // Option configures a SVIDManager.
@@ -66,6 +79,12 @@ func withNow(fn func() time.Time) Option {
 	return func(m *SVIDManager) { m.nowFn = fn }
 }
 
+// withAfter overrides the rotation/backoff timer — for unit tests only (D7:
+// paired with withNow so the whole lifecycle runs on a fake clock).
+func withAfter(fn func(time.Duration) <-chan time.Time) Option {
+	return func(m *SVIDManager) { m.afterFn = fn }
+}
+
 // NewManager constructs a Manager for spiffeID. Call Start to begin the
 // lifecycle loop.
 // compile-time proof that SVIDManager satisfies the Manager interface.
@@ -80,6 +99,8 @@ func NewManager(spiffeID string, signer Signer, store *Store, opts ...Option) *S
 		store:    store,
 		logf:     log.Printf,
 		nowFn:    time.Now,
+		afterFn:  time.After,
+		forceCh:  make(chan *rotateRequest),
 	}
 	for _, o := range opts {
 		o(m)
@@ -99,27 +120,73 @@ func (m *SVIDManager) Start(ctx context.Context) error {
 
 	for {
 		delay := m.nextRotateDelay(entry)
+		var req *rotateRequest
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(delay):
+		case <-m.afterFn(delay):
+		case req = <-m.forceCh:
 		}
 
 		next, err := m.issue(ctx)
 		if err != nil {
+			if req != nil {
+				req.reply <- rotateResult{err: err}
+			}
 			m.logf("svid: rotation failed for %q: %v; will retry", m.spiffeID, err)
 			// Back off by a small fixed window; the next iteration re-computes delay.
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(30 * time.Second):
+			case <-m.afterFn(30 * time.Second):
 			}
 			continue
 		}
 		m.store.Set(next)
 		m.logf("svid: rotated %q expires=%s", m.spiffeID, next.ExpiresAt.Format(time.RFC3339))
+		if req != nil {
+			req.reply <- rotateResult{expiry: next.ExpiresAt}
+		}
 		entry = next
 	}
+}
+
+// ForceRotate asks the rotation loop to rotate NOW, bypassing the 2/3-TTL
+// schedule, and returns the new SVID's expiry. It backs the agent admin
+// POST /cert/rotate endpoint (meridian cert rotate). If the rotation loop is
+// not running, it fails when ctx expires rather than rotating out-of-band —
+// the loop stays the sole writer of the store.
+func (m *SVIDManager) ForceRotate(ctx context.Context) (time.Time, error) {
+	req := &rotateRequest{reply: make(chan rotateResult, 1)}
+	select {
+	case m.forceCh <- req:
+	case <-ctx.Done():
+		return time.Time{}, fmt.Errorf("svid: force rotate %q: rotation loop not accepting requests: %w", m.spiffeID, ctx.Err())
+	}
+	select {
+	case res := <-req.reply:
+		if res.err != nil {
+			return time.Time{}, fmt.Errorf("svid: force rotate %q: %w", m.spiffeID, res.err)
+		}
+		return res.expiry, nil
+	case <-ctx.Done():
+		return time.Time{}, fmt.Errorf("svid: force rotate %q: %w", m.spiffeID, ctx.Err())
+	}
+}
+
+// GetSVID returns the current SVID, failing closed when none has been issued
+// yet or the current one is inside the near-expiry window (CC-5): callers are
+// never handed a cert that could expire mid-handshake.
+func (m *SVIDManager) GetSVID() (*Entry, error) {
+	e := m.store.Current()
+	if e == nil {
+		return nil, fmt.Errorf("svid: no SVID issued yet for %q (fail closed)", m.spiffeID)
+	}
+	if m.NearExpiry() {
+		return nil, fmt.Errorf("svid: SVID for %q is near expiry (expires %s); refusing to serve it (fail closed)",
+			m.spiffeID, e.ExpiresAt.Format(time.RFC3339))
+	}
+	return e, nil
 }
 
 // Stop is a no-op; cancel the context passed to Start to stop the manager.

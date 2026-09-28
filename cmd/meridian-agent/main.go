@@ -42,6 +42,7 @@ func main() {
 	// Phase 4 flags.
 	standalone := flag.Bool("standalone", false, "run with an embedded ephemeral CA (dev mode)")
 	controlAddr := flag.String("control-addr", "", "control-plane REST address for RemoteSigner (e.g. https://control:9443)")
+	adsAddr := flag.String("ads-addr", "", "control-plane ADS gRPC address (e.g. control:9443); empty = ADS disabled")
 	bootstrapCert := flag.String("bootstrap-cert", "", "path to node bootstrap certificate PEM (CC-4)")
 	bootstrapKey := flag.String("bootstrap-key", "", "path to node bootstrap private key PEM (CC-4)")
 	workloadSocket := flag.String("workload-api-socket", "/run/meridian/workload.sock", "SPIFFE Workload API Unix socket path")
@@ -59,12 +60,12 @@ func main() {
 		bootstrapKey:      *bootstrapKey,
 		standalone:        *standalone,
 	}
-	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, p4opts); err != nil {
+	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, p4opts); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr string, p4 phase4Options) error {
+func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr string, p4 phase4Options) error {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -169,8 +170,18 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr string, p4 pha
 	}
 
 	// Phase 4: proxy, SVID, TPROXY, Workload API.
-	if err := startPhase4(ctx, p4); err != nil {
+	spiffeRes, err := startPhase4(ctx, p4)
+	if err != nil {
 		log.Printf("phase4 startup error (continuing without proxy): %v", err)
+	}
+
+	// ADS client (A-3): stream desired state from the control plane and apply
+	// it to the kernel maps via the datapath writer. The post-apply hook keeps
+	// the proxy's SPIFFE ID resolver in lockstep with the applied identities.
+	if adsAddr != "" {
+		if err := startADSClient(ctx, adsAddr, startupRuntime.Writer(), spiffeRes, p4); err != nil {
+			log.Printf("ads client startup error (continuing without ADS): %v", err)
+		}
 	}
 
 	// Admin HTTP server (phase 6).

@@ -1,17 +1,23 @@
 package workloadapi
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
-	"io"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	gospiffe "github.com/spiffe/go-spiffe/v2/workloadapi"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/joshuawu/meridian/internal/agent/svid"
 	"github.com/joshuawu/meridian/internal/control/ca"
@@ -50,7 +56,31 @@ func makeEntry(t *testing.T, auth *ca.Authority) *svid.Entry {
 	}
 }
 
-func TestServerSendsInitialBundle(t *testing.T) {
+// startServer launches the Workload API server on a fresh socket and waits
+// for the socket file to appear.
+func startServer(t *testing.T, store *svid.Store, auth *ca.Authority) (string, context.Context) {
+	t.Helper()
+	socketPath := shortTempSocket(t, "w.sock")
+	srv := NewServer(socketPath, store, auth)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = srv.Serve(ctx) }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(socketPath); err == nil {
+			return socketPath, ctx
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("workload API socket %s did not appear", socketPath)
+	return "", nil
+}
+
+// TestGoSpiffeX509SourceConsumesServer is the acceptance test for the gRPC
+// Workload API: go-spiffe's X509Source (the standard SPIFFE client) must be
+// able to fetch the SVID served from the SVIDStore.
+func TestGoSpiffeX509SourceConsumesServer(t *testing.T) {
 	auth, err := ca.NewTestAuthority("cluster.local")
 	if err != nil {
 		t.Fatalf("NewTestAuthority: %v", err)
@@ -59,95 +89,167 @@ func TestServerSendsInitialBundle(t *testing.T) {
 	entry := makeEntry(t, auth)
 	store.Set(entry)
 
-	socketPath := shortTempSocket(t, "w.sock")
+	socketPath, _ := startServer(t, store, auth)
 
-	srv := NewServer(socketPath, store, auth)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	ready := make(chan struct{})
-	go func() {
-		// Signal readiness after a short delay (listener is up).
-		time.AfterFunc(50*time.Millisecond, func() { close(ready) })
-		_ = srv.Serve(ctx)
-	}()
-	<-ready
-
-	conn, err := net.Dial("unix", socketPath)
+	src, err := gospiffe.NewX509Source(ctx,
+		gospiffe.WithClientOptions(gospiffe.WithAddr("unix://"+socketPath)))
 	if err != nil {
-		t.Fatalf("dial: %v", err)
+		t.Fatalf("NewX509Source: %v", err)
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	defer src.Close()
 
-	// Read until the sentinel.
-	var buf bytes.Buffer
-	tmp := make([]byte, 4096)
-	for {
-		n, err := conn.Read(tmp)
-		buf.Write(tmp[:n])
-		if bytes.Contains(buf.Bytes(), []byte("---\n")) {
-			break
-		}
-		if err != nil {
-			if err != io.EOF {
-				t.Fatalf("read: %v", err)
-			}
-			break
-		}
+	got, err := src.GetX509SVID()
+	if err != nil {
+		t.Fatalf("GetX509SVID: %v", err)
 	}
-
-	// Must contain the leaf cert PEM.
-	if !bytes.Contains(buf.Bytes(), []byte("-----BEGIN CERTIFICATE-----")) {
-		t.Fatal("bundle contains no CERTIFICATE PEM block")
+	if got.ID.String() != entry.SpiffeID {
+		t.Fatalf("SVID ID = %s, want %s", got.ID, entry.SpiffeID)
 	}
-	// Must contain the root cert.
-	certCount := bytes.Count(buf.Bytes(), []byte("-----BEGIN CERTIFICATE-----"))
-	if certCount < 2 {
-		t.Fatalf("expected >= 2 CERTIFICATE blocks (leaf + root), got %d", certCount)
+	if len(got.Certificates) == 0 ||
+		got.Certificates[0].SerialNumber.Cmp(entry.Leaf.SerialNumber) != 0 {
+		t.Fatalf("SVID leaf does not match the stored entry")
+	}
+	if got.PrivateKey == nil {
+		t.Fatal("SVID has no private key")
 	}
 }
 
-func TestServerSendsRotationToSubscriber(t *testing.T) {
+// TestGoSpiffeX509SourceSeesRotation verifies a store rotation propagates to
+// a connected go-spiffe client.
+func TestGoSpiffeX509SourceSeesRotation(t *testing.T) {
 	auth, err := ca.NewTestAuthority("cluster.local")
 	if err != nil {
 		t.Fatalf("NewTestAuthority: %v", err)
 	}
 	store := svid.NewStore()
+	e1 := makeEntry(t, auth)
+	store.Set(e1)
 
-	socketPath := shortTempSocket(t, "w.sock")
+	socketPath, _ := startServer(t, store, auth)
 
-	srv := NewServer(socketPath, store, auth)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	go func() { _ = srv.Serve(ctx) }()
-	time.Sleep(50 * time.Millisecond) // wait for listener
-
-	conn, err := net.Dial("unix", socketPath)
+	src, err := gospiffe.NewX509Source(ctx,
+		gospiffe.WithClientOptions(gospiffe.WithAddr("unix://"+socketPath)))
 	if err != nil {
-		t.Fatalf("dial: %v", err)
+		t.Fatalf("NewX509Source: %v", err)
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	defer src.Close()
 
-	// Send the initial SVID now (subscriber should get it via rotation).
+	// Rotate.
+	e2 := makeEntry(t, auth)
+	store.Set(e2)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := src.GetX509SVID()
+		if err == nil && got.Certificates[0].SerialNumber.Cmp(e2.Leaf.SerialNumber) == 0 {
+			return // rotation observed
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("client never observed the rotated SVID")
+}
+
+// TestGoSpiffeBundleServed verifies FetchX509Bundles serves the trust bundle
+// for the trust domain.
+func TestGoSpiffeBundleServed(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	store := svid.NewStore()
 	store.Set(makeEntry(t, auth))
 
-	var buf bytes.Buffer
-	tmp := make([]byte, 8192)
-	for {
-		n, readErr := conn.Read(tmp)
-		buf.Write(tmp[:n])
-		if bytes.Contains(buf.Bytes(), []byte("---\n")) {
+	socketPath, _ := startServer(t, store, auth)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	src, err := gospiffe.NewX509Source(ctx,
+		gospiffe.WithClientOptions(gospiffe.WithAddr("unix://"+socketPath)))
+	if err != nil {
+		t.Fatalf("NewX509Source: %v", err)
+	}
+	defer src.Close()
+
+	td := spiffeid.RequireTrustDomainFromString("cluster.local")
+	bundle, err := src.GetX509BundleForTrustDomain(td)
+	if err != nil {
+		t.Fatalf("GetX509BundleForTrustDomain: %v", err)
+	}
+	if len(bundle.X509Authorities()) == 0 {
+		t.Fatal("bundle has no X.509 authorities")
+	}
+	if !bundle.X509Authorities()[0].Equal(auth.RootCert()) {
+		t.Fatal("bundle authority is not the CA root certificate")
+	}
+}
+
+// TestFetchX509SVIDRejectsMissingSecurityHeader verifies the SPIFFE-mandated
+// security header check: a raw gRPC client that omits the
+// workload.spiffe.io metadata must be rejected with InvalidArgument.
+func TestFetchX509SVIDRejectsMissingSecurityHeader(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	store := svid.NewStore()
+	store.Set(makeEntry(t, auth))
+
+	socketPath, _ := startServer(t, store, auth)
+
+	conn, err := grpc.NewClient("unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := workload.NewSpiffeWorkloadAPIClient(conn).
+		FetchX509SVID(ctx, &workload.X509SVIDRequest{})
+	if err != nil {
+		t.Fatalf("FetchX509SVID open: %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Recv error = %v (code %s), want InvalidArgument", err, status.Code(err))
+	}
+}
+
+// TestServeStopsOnContextCancel verifies Serve returns promptly when the
+// context is cancelled and does not report a spurious error.
+func TestServeStopsOnContextCancel(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	store := svid.NewStore()
+	socketPath := shortTempSocket(t, "w.sock")
+	srv := NewServer(socketPath, store, auth)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, statErr := os.Stat(socketPath); statErr == nil {
 			break
 		}
-		if readErr != nil {
-			t.Fatalf("read: %v", readErr)
-		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("-----BEGIN CERTIFICATE-----")) {
-		t.Fatal("received no CERTIFICATE PEM block after SVID set")
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Serve returned %v after cancel, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Serve did not return after context cancel")
 	}
 }
 
@@ -240,62 +342,4 @@ func TestCertSourceUpdatesTLSCertOnRotation(t *testing.T) {
 		string(cert1.Certificate[0]) == string(cert2.Certificate[0]) {
 		t.Fatal("GetCertificate returned same cert after rotation")
 	}
-}
-
-// TestBundleParseRoundTrip verifies the PEM payload sent by the server can be
-// parsed back into certificates.
-func TestBundleParseRoundTrip(t *testing.T) {
-	auth, err := ca.NewTestAuthority("cluster.local")
-	if err != nil {
-		t.Fatalf("NewTestAuthority: %v", err)
-	}
-	store := svid.NewStore()
-	entry := makeEntry(t, auth)
-	store.Set(entry)
-
-	socketPath := shortTempSocket(t, "w2.sock")
-	srv := NewServer(socketPath, store, auth)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = srv.Serve(ctx) }()
-	time.Sleep(50 * time.Millisecond)
-
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-
-	rawPEM, err := io.ReadAll(conn)
-	if err != nil && err != io.EOF {
-		// May receive partial data; ignore EOF after sentinel.
-	}
-	// Strip sentinel.
-	rawPEM = bytes.TrimSuffix(bytes.TrimRight(rawPEM, "\n"), []byte("---"))
-	rawPEM = bytes.TrimSpace(rawPEM)
-
-	// Parse all certs.
-	var certs []*x509.Certificate
-	rest := rawPEM
-	for len(rest) > 0 {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		c, parseErr := x509.ParseCertificate(block.Bytes)
-		if parseErr != nil {
-			t.Fatalf("parse certificate: %v", parseErr)
-		}
-		certs = append(certs, c)
-	}
-	if len(certs) < 2 {
-		t.Fatalf("expected >= 2 certs (leaf + root), got %d", len(certs))
-	}
-
 }
