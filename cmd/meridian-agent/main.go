@@ -45,6 +45,8 @@ func main() {
 	adsAddr := flag.String("ads-addr", "", "control-plane ADS gRPC address (e.g. control:9443); empty = ADS disabled")
 	bootstrapCert := flag.String("bootstrap-cert", "", "path to node bootstrap certificate PEM (CC-4)")
 	bootstrapKey := flag.String("bootstrap-key", "", "path to node bootstrap private key PEM (CC-4)")
+	tokenPath := flag.String("token-path", "", "path to projected SA token file for token bootstrap (PKI-2b); used when --bootstrap-cert is not set")
+	trustDomain := flag.String("spiffe-trust-domain", "cluster.local", "SPIFFE trust domain for the node identity requested via token bootstrap")
 	workloadSocket := flag.String("workload-api-socket", "/run/meridian/workload.sock", "SPIFFE Workload API Unix socket path")
 	proxyIn := flag.Int("proxy-inbound-port", 15008, "inbound mTLS transparent listener port")
 	proxyOut := flag.Int("proxy-outbound-port", 15001, "outbound CONNECT transparent listener port")
@@ -58,6 +60,8 @@ func main() {
 		controlAddr:       *controlAddr,
 		bootstrapCert:     *bootstrapCert,
 		bootstrapKey:      *bootstrapKey,
+		tokenPath:         *tokenPath,
+		trustDomain:       *trustDomain,
 		standalone:        *standalone,
 	}
 	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, p4opts); err != nil {

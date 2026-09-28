@@ -84,6 +84,31 @@ func LoadBootstrap(certPEM, keyPEM []byte) (*Bootstrap, error) {
 	}, nil
 }
 
+// Save writes the credential to PEM files on disk: the full certificate
+// chain to certFile (0644) and the private key to keyFile (0600). It is the
+// persistence counterpart of LoadBootstrapFiles, used by the token-bootstrap
+// path (PKI-2b) so RemoteSigner can reload the credential on later starts.
+// The key is written first: a cert without a key is useless but harmless,
+// while the reverse could leave a stale cert paired with a missing key.
+func (b *Bootstrap) Save(certFile, keyFile string) error {
+	keyPEM, err := EncodeKeyPEM(b.Key)
+	if err != nil {
+		return fmt.Errorf("bootstrap: encode key: %w", err)
+	}
+	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("bootstrap: write key %q: %w", keyFile, err)
+	}
+	// WriteFile's mode applies only on creation; a pre-existing key file keeps
+	// its old (possibly looser) mode, so enforce 0600 explicitly.
+	if err := os.Chmod(keyFile, 0o600); err != nil {
+		return fmt.Errorf("bootstrap: chmod key %q: %w", keyFile, err)
+	}
+	if err := os.WriteFile(certFile, EncodeCertPEM(b.Chain...), 0o644); err != nil {
+		return fmt.Errorf("bootstrap: write cert %q: %w", certFile, err)
+	}
+	return nil
+}
+
 // TLSCertificate returns a tls.Certificate suitable for tls.Config.Certificates.
 func (b *Bootstrap) TLSCertificate() (tls.Certificate, error) {
 	certPEM := EncodeCertPEM(b.Chain...)

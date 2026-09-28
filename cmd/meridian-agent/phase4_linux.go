@@ -29,8 +29,18 @@ type phase4Options struct {
 	controlAddr       string
 	bootstrapCert     string
 	bootstrapKey      string
-	standalone        bool // if true, run embedded CA + LocalSigner
+	tokenPath         string // projected SA token file for token bootstrap (PKI-2b)
+	trustDomain       string // SPIFFE trust domain for the token-bootstrap node identity
+	standalone        bool   // if true, run embedded CA + LocalSigner
 }
+
+// Default location for the node bootstrap credential obtained via token
+// bootstrap, so RemoteSigner (and later --bootstrap-cert runs) can reload it.
+const (
+	defaultBootstrapDir      = "/run/meridian"
+	defaultBootstrapCertPath = defaultBootstrapDir + "/bootstrap.crt"
+	defaultBootstrapKeyPath  = defaultBootstrapDir + "/bootstrap.key"
+)
 
 // startPhase4 starts the Workload API socket, TPROXY rules, SVIDManager, and
 // node proxy inbound/outbound handlers. Each component runs in its own
@@ -47,6 +57,11 @@ type phase4Options struct {
 // Remote mode (--control-addr):
 //   - Loads the node bootstrap credential (--bootstrap-cert / --bootstrap-key).
 //   - Uses RemoteSigner that posts CSRs to control-plane /svid/sign over mTLS.
+//
+// Token bootstrap mode (--control-addr + --token-path, no --bootstrap-cert):
+//   - Trades the projected SA token for a node credential via the
+//     NodeBootstrap.BootstrapWithToken RPC (PKI-2b), persists it under
+//     /run/meridian, then proceeds exactly like remote mode.
 func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDResolver, *svid.SVIDManager, error) {
 	var (
 		svidStore *svid.Store
@@ -77,9 +92,28 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 			}
 		}()
 
-	} else if opts.controlAddr != "" && opts.bootstrapCert != "" {
+	} else if opts.controlAddr != "" && (opts.bootstrapCert != "" || opts.tokenPath != "") {
+		certPath, keyPath := opts.bootstrapCert, opts.bootstrapKey
+		if certPath == "" {
+			// Token bootstrap (PKI-2b): reuse the credential persisted under
+			// /run/meridian when still valid; otherwise trade the projected SA
+			// token for a fresh one and persist it for the next restart.
+			nodeID, err := bootstrapNodeID()
+			if err != nil {
+				return nil, nil, fmt.Errorf("phase4: %w", err)
+			}
+			certPath, keyPath = defaultBootstrapCertPath, defaultBootstrapKeyPath
+			boot, err := obtainNodeBootstrap(ctx, opts.controlAddr, opts.tokenPath,
+				opts.trustDomain, nodeID, certPath, keyPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("phase4: token bootstrap: %w", err)
+			}
+			log.Printf("phase4: token bootstrap credential ready: %s (%s)",
+				boot.NodeSpiffeID, certPath)
+		}
+
 		// Load bootstrap credential and dial control plane.
-		boot, err := ca.LoadBootstrapFiles(opts.bootstrapCert, opts.bootstrapKey)
+		boot, err := ca.LoadBootstrapFiles(certPath, keyPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("phase4: load bootstrap: %w", err)
 		}
@@ -90,7 +124,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 			trustPool.AddCert(c)
 		}
 
-		signer, err := newRemoteSigner(opts.controlAddr, opts.bootstrapCert, opts.bootstrapKey)
+		signer, err := newRemoteSigner(opts.controlAddr, certPath, keyPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("phase4: %w", err)
 		}

@@ -153,3 +153,90 @@ func TestBootstrapIssueAndLoad(t *testing.T) {
 		}
 	})
 }
+
+// TestBootstrapSave verifies Save persists the credential so that
+// LoadBootstrapFiles round-trips it, with the key file private (0600).
+func TestBootstrapSave(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	b, err := ca.IssueBootstrap(auth, "node-save")
+	if err != nil {
+		t.Fatalf("IssueBootstrap: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "bootstrap.crt")
+	keyPath := filepath.Join(dir, "bootstrap.key")
+	if err := b.Save(certPath, keyPath); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	reloaded, err := ca.LoadBootstrapFiles(certPath, keyPath)
+	if err != nil {
+		t.Fatalf("LoadBootstrapFiles: %v", err)
+	}
+	if reloaded.NodeSpiffeID != b.NodeSpiffeID {
+		t.Errorf("NodeSpiffeID = %q, want %q", reloaded.NodeSpiffeID, b.NodeSpiffeID)
+	}
+	if len(reloaded.Chain) != len(b.Chain) {
+		t.Errorf("chain length = %d, want %d", len(reloaded.Chain), len(b.Chain))
+	}
+
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat key file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("key file mode = %o, want 0600", perm)
+	}
+}
+
+// TestBootstrapSaveUnwritablePath verifies Save fails loudly instead of
+// silently dropping the credential.
+func TestBootstrapSaveUnwritablePath(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	b, err := ca.IssueBootstrap(auth, "node-save2")
+	if err != nil {
+		t.Fatalf("IssueBootstrap: %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+	if err := b.Save(filepath.Join(missing, "c.crt"), filepath.Join(missing, "k.key")); err == nil {
+		t.Fatal("expected error saving into missing directory, got nil")
+	}
+}
+
+// TestBootstrapSaveTightensExistingKeyPerms: os.WriteFile's mode applies only
+// on creation, so Save must chmod a pre-existing key file down to 0600.
+func TestBootstrapSaveTightensExistingKeyPerms(t *testing.T) {
+	auth, err := ca.NewTestAuthority("cluster.local")
+	if err != nil {
+		t.Fatalf("NewTestAuthority: %v", err)
+	}
+	b, err := ca.IssueBootstrap(auth, "node-save3")
+	if err != nil {
+		t.Fatalf("IssueBootstrap: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "bootstrap.crt")
+	keyPath := filepath.Join(dir, "bootstrap.key")
+	if err := os.WriteFile(keyPath, []byte("stale"), 0o644); err != nil {
+		t.Fatalf("seed loose-perm key file: %v", err)
+	}
+
+	if err := b.Save(certPath, keyPath); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat key file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("pre-existing key file mode = %o after Save, want 0600", perm)
+	}
+}
