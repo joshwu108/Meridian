@@ -76,7 +76,7 @@ func run(ctx context.Context, cfg cli.Config, args []string) error {
 
 	case "cert":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: meridian cert inspect|verify ...")
+			return fmt.Errorf("usage: meridian cert inspect|verify|rotate ...")
 		}
 		switch args[1] {
 		case "inspect":
@@ -89,6 +89,8 @@ func run(ctx context.Context, cfg cli.Config, args []string) error {
 				return fmt.Errorf("usage: meridian cert verify <cert.pem> <ca.pem>")
 			}
 			return cli.CertVerify(args[2], args[3], os.Stdout)
+		case "rotate":
+			return cli.CertRotate(cfg, os.Stdout)
 		default:
 			return fmt.Errorf("unknown cert subcommand %q", args[1])
 		}
@@ -128,6 +130,7 @@ Commands:
   services list            list registered service identities
   cert inspect <cert.pem>  display certificate details
   cert verify <cert.pem> <ca.pem>  verify certificate chain
+  cert rotate              trigger immediate SVID rotation on the agent
   flows watch              stream live flow events from agent
   http watch               stream L7 trace events (requires Phase 5 OTLP)
   map dump                 dump identity and policy maps from agent

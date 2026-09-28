@@ -294,6 +294,50 @@ func TestForceRotateImmediate(t *testing.T) {
 	}
 }
 
+// TestGetSVIDNeverServesNearExpiredEntry hammers GetSVID against concurrent
+// store rotations flipping between a near-expired and a fresh entry: a
+// successful GetSVID must never hand back the near-expired one (regression
+// for the check-then-return TOCTOU — the near-expiry check must be evaluated
+// on the very entry being returned).
+func TestGetSVIDNeverServesNearExpiredEntry(t *testing.T) {
+	clk := newFakeClock(time.Now())
+	store := NewStore()
+	stale := makeTestEntry(t, "spiffe://x/svc", time.Minute)  // near-expiry window: last 10s
+	fresh := makeTestEntry(t, "spiffe://x/svc", 24*time.Hour) // near-expiry window: last 4h
+	clk.Advance(55 * time.Second)                             // stale has 5s left → near-expired; fresh is fine
+	store.Set(fresh)
+
+	m := NewManager("spiffe://x/svc", &testSigner{}, store,
+		WithLogf(quietLogf), withNow(clk.Now))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 5000; i++ {
+			if i%2 == 0 {
+				store.Set(stale)
+			} else {
+				store.Set(fresh)
+			}
+		}
+		store.Set(fresh)
+	}()
+
+	for {
+		if e, err := m.GetSVID(); err == nil && e == stale {
+			t.Fatal("GetSVID returned the near-expired entry while a fresh one raced in; fail-closed check straddled the rotation")
+		}
+		select {
+		case <-done:
+			if e, err := m.GetSVID(); err != nil || e != fresh {
+				t.Fatalf("GetSVID after churn = (%v, %v), want the fresh entry", e, err)
+			}
+			return
+		default:
+		}
+	}
+}
+
 // TestForceRotateWithoutLoop: with no rotation loop running, ForceRotate must
 // fail once its context expires rather than hang or fabricate a rotation.
 func TestForceRotateWithoutLoop(t *testing.T) {

@@ -41,6 +41,20 @@ func getJSON(url string, dst any) error {
 	return json.NewDecoder(resp.Body).Decode(dst)
 }
 
+// postJSON POSTs to url (empty body) and decodes the JSON response into dst.
+func postJSON(url string, dst any) error {
+	resp, err := httpClient.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST %s: status %d: %s", url, resp.StatusCode, body)
+	}
+	return json.NewDecoder(resp.Body).Decode(dst)
+}
+
 // envelope is the REST server's standard response shape.
 type envelope struct {
 	Data  json.RawMessage `json:"data"`

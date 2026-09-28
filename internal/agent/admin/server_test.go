@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -111,4 +112,112 @@ func TestAdminContextCancellation(t *testing.T) {
 
 func TestAdminServerImplementsInterface(t *testing.T) {
 	var _ Server = NewServer("127.0.0.1:0", nil)
+}
+
+// fakeRotator implements CertRotator with a canned result.
+type fakeRotator struct {
+	expiry time.Time
+	err    error
+	calls  int
+}
+
+func (f *fakeRotator) ForceRotate(context.Context) (time.Time, error) {
+	f.calls++
+	return f.expiry, f.err
+}
+
+func newRotateServer(t *testing.T, rotator CertRotator) *httptest.Server {
+	t.Helper()
+	s := &httpServer{logf: func(string, ...any) {}}
+	if rotator != nil {
+		WithCertRotator(rotator)(s)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(s.handleCertRotate))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func decodeEnvelope(t *testing.T, r io.Reader) map[string]any {
+	t.Helper()
+	var env map[string]any
+	if err := json.NewDecoder(r).Decode(&env); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	return env
+}
+
+func TestAdminCertRotate(t *testing.T) {
+	expiry := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	rotator := &fakeRotator{expiry: expiry}
+	ts := newRotateServer(t, rotator)
+
+	resp, err := http.Post(ts.URL, "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /cert/rotate: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	env := decodeEnvelope(t, resp.Body)
+	if env["success"] != true {
+		t.Fatalf("success = %v, want true", env["success"])
+	}
+	data, ok := env["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data is %T, want map", env["data"])
+	}
+	if got, want := data["expires_at"], expiry.Format(time.RFC3339); got != want {
+		t.Fatalf("expires_at = %v, want %v", got, want)
+	}
+	if rotator.calls != 1 {
+		t.Fatalf("rotator calls = %d, want 1", rotator.calls)
+	}
+}
+
+func TestAdminCertRotateRejectsGET(t *testing.T) {
+	rotator := &fakeRotator{expiry: time.Now()}
+	ts := newRotateServer(t, rotator)
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("GET /cert/rotate: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
+	}
+	if rotator.calls != 0 {
+		t.Fatalf("rotator called %d times on GET, want 0", rotator.calls)
+	}
+}
+
+func TestAdminCertRotateNoRotator(t *testing.T) {
+	ts := newRotateServer(t, nil)
+
+	resp, err := http.Post(ts.URL, "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /cert/rotate: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when no rotator is configured", resp.StatusCode)
+	}
+}
+
+func TestAdminCertRotateRotatorError(t *testing.T) {
+	ts := newRotateServer(t, &fakeRotator{err: errors.New("signer down")})
+
+	resp, err := http.Post(ts.URL, "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /cert/rotate: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 on rotator failure", resp.StatusCode)
+	}
+	env := decodeEnvelope(t, resp.Body)
+	if env["success"] != false {
+		t.Fatalf("success = %v, want false", env["success"])
+	}
 }

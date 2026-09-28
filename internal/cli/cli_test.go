@@ -140,6 +140,55 @@ func TestCertInspectNoFile(t *testing.T) {
 	}
 }
 
+func TestCertRotate(t *testing.T) {
+	mux := http.NewServeMux()
+	var gotMethod string
+	mux.HandleFunc("/cert/rotate", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    map[string]string{"expires_at": "2026-09-29T12:00:00Z"},
+		})
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	var buf bytes.Buffer
+	if err := CertRotate(Config{AgentAddr: ts.URL}, &buf); err != nil {
+		t.Fatalf("CertRotate: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want POST", gotMethod)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "2026-09-29T12:00:00Z") {
+		t.Fatalf("expected new expiry in output:\n%s", out)
+	}
+	if !strings.Contains(out, "rotated") {
+		t.Fatalf("expected rotation confirmation in output:\n%s", out)
+	}
+}
+
+func TestCertRotateServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cert/rotate", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"success":false,"error":"signer down"}`, http.StatusInternalServerError)
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	if err := CertRotate(Config{AgentAddr: ts.URL}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected error when the agent reports rotation failure")
+	}
+}
+
+func TestCertRotateAgentUnreachable(t *testing.T) {
+	if err := CertRotate(Config{AgentAddr: "http://127.0.0.1:1"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected error when agent is unreachable")
+	}
+}
+
 func TestCertVerify(t *testing.T) {
 	auth, err := ca.NewTestAuthority("cluster.local")
 	if err != nil {

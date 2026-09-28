@@ -47,8 +47,16 @@ type SVIDManager struct {
 	store    *Store
 	logf     func(string, ...any)
 	nowFn    func() time.Time
-	afterFn  func(time.Duration) <-chan time.Time
+	timerFn  func(time.Duration) (<-chan time.Time, func())
 	forceCh  chan *rotateRequest
+}
+
+// stdTimer is the production timerFn: a stoppable timer, so a ForceRotate
+// that preempts the scheduled rotation does not strand a multi-hour runtime
+// timer the way time.After would.
+func stdTimer(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTimer(d)
+	return t.C, func() { t.Stop() }
 }
 
 // rotateRequest is one ForceRotate call in flight; the rotation loop sends
@@ -82,7 +90,11 @@ func withNow(fn func() time.Time) Option {
 // withAfter overrides the rotation/backoff timer — for unit tests only (D7:
 // paired with withNow so the whole lifecycle runs on a fake clock).
 func withAfter(fn func(time.Duration) <-chan time.Time) Option {
-	return func(m *SVIDManager) { m.afterFn = fn }
+	return func(m *SVIDManager) {
+		m.timerFn = func(d time.Duration) (<-chan time.Time, func()) {
+			return fn(d), func() {}
+		}
+	}
 }
 
 // NewManager constructs a Manager for spiffeID. Call Start to begin the
@@ -99,7 +111,7 @@ func NewManager(spiffeID string, signer Signer, store *Store, opts ...Option) *S
 		store:    store,
 		logf:     log.Printf,
 		nowFn:    time.Now,
-		afterFn:  time.After,
+		timerFn:  stdTimer,
 		forceCh:  make(chan *rotateRequest),
 	}
 	for _, o := range opts {
@@ -119,13 +131,15 @@ func (m *SVIDManager) Start(ctx context.Context) error {
 	m.logf("svid: issued %q expires=%s", m.spiffeID, entry.ExpiresAt.Format(time.RFC3339))
 
 	for {
-		delay := m.nextRotateDelay(entry)
+		timerC, stopTimer := m.timerFn(m.nextRotateDelay(entry))
 		var req *rotateRequest
 		select {
 		case <-ctx.Done():
+			stopTimer()
 			return nil
-		case <-m.afterFn(delay):
+		case <-timerC:
 		case req = <-m.forceCh:
+			stopTimer()
 		}
 
 		next, err := m.issue(ctx)
@@ -135,10 +149,12 @@ func (m *SVIDManager) Start(ctx context.Context) error {
 			}
 			m.logf("svid: rotation failed for %q: %v; will retry", m.spiffeID, err)
 			// Back off by a small fixed window; the next iteration re-computes delay.
+			backoffC, stopBackoff := m.timerFn(30 * time.Second)
 			select {
 			case <-ctx.Done():
+				stopBackoff()
 				return nil
-			case <-m.afterFn(30 * time.Second):
+			case <-backoffC:
 			}
 			continue
 		}
@@ -182,7 +198,7 @@ func (m *SVIDManager) GetSVID() (*Entry, error) {
 	if e == nil {
 		return nil, fmt.Errorf("svid: no SVID issued yet for %q (fail closed)", m.spiffeID)
 	}
-	if m.NearExpiry() {
+	if m.nearExpiry(e) {
 		return nil, fmt.Errorf("svid: SVID for %q is near expiry (expires %s); refusing to serve it (fail closed)",
 			m.spiffeID, e.ExpiresAt.Format(time.RFC3339))
 	}
@@ -196,7 +212,14 @@ func (m *SVIDManager) Stop(_ context.Context) error { return nil }
 // lifetime remaining. Callers (the node proxy) should fail-close new
 // connections when true, per CC-5.
 func (m *SVIDManager) NearExpiry() bool {
-	e := m.store.Current()
+	return m.nearExpiry(m.store.Current())
+}
+
+// nearExpiry evaluates the near-expiry window against one specific entry.
+// Callers that already hold an entry MUST use this rather than NearExpiry so
+// the check and the returned entry cannot straddle a concurrent rotation
+// (TOCTOU against store.Set).
+func (m *SVIDManager) nearExpiry(e *Entry) bool {
 	if e == nil {
 		return true
 	}

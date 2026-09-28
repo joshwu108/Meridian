@@ -59,18 +59,20 @@ package integration
 //     "module missing (modprobe fails)". The probe may report false negatives
 //     on kernels where xt_TPROXY is built-in (not a loadable module).
 //
-// 10. [T3 netns isolation] TestOriginalDestinationGate_P41 runs a single
-//     TPROXY listener in the root namespace. ADR-0006 D-B claims rules are
-//     netns-scoped so two nodes can run colliding :15001/:15008 listeners
-//     without cross-talk. That claim is not yet validated by a T3 test.
-//     A two-netns variant of this test should be added (similar to
-//     test/harness/TwoNode topology) to arm the netns-isolation gate.
+// 10. [T3 netns isolation] RESOLVED: TestTPROXYNetnsIsolation
+//     (tproxy_isolation_test.go) runs two netns, each with its own TPROXY
+//     rule and IP_TRANSPARENT listener on the same :15008, and asserts no
+//     cross-talk plus correct orig-dst in both — validating ADR-0006 D-B.
+//     Remaining: run on Lima and arm the netns-isolation gate in
+//     test/gates/manifest.txt once it passes there.
 //
 // 11. [Phase 6 CLI] RESOLVED: cmd/meridian implements status, policy list,
-//     services list, cert inspect/verify, flows watch, map dump subcommands.
-//     Remaining: meridian http watch (L7 trace stream, Phase 5), meridian doctor
-//     (probes TPROXY/BPF kernel features, Phase 8), meridian cert rotate
-//     (triggers RemoteSigner rotation RPC, PKI-3 completion).
+//     services list, cert inspect/verify/rotate, flows watch, map dump
+//     subcommands. meridian cert rotate posts to the agent's /cert/rotate
+//     admin endpoint, which calls SVIDManager.ForceRotate (bypassing the
+//     2/3-TTL schedule). Remaining: meridian http watch (L7 trace stream,
+//     Phase 5), meridian doctor (probes TPROXY/BPF kernel features, Phase 8);
+//     wire admin.WithCertRotator in cmd/meridian-agent startup.
 //
 // 12. [Phase 7 — K8s] PARTIAL: etcd backend implemented
 //     (internal/control/store/etcd.go), K8s pod informer implemented
@@ -91,12 +93,21 @@ package integration
 //     - Go benchmarks implemented (test/bench/): evaluator 7.6 ns/op,
 //       L7 matcher 4.9 ns/op, CB 3.7 ns/op — all well within PRD NFRs.
 //     - meridian doctor command implemented (internal/cli/doctor.go).
+//     - Cert expiry chaos T1 variant implemented
+//       (internal/agent/svid/expiry_chaos_test.go): fake-clock near-expiry
+//       fail-closed, 2/3-TTL rotation, control-plane-down retry, and
+//       make-before-break.
+//     - Agent restart pin-reopen T1 seam variant implemented
+//       (internal/agent/bpfobj/restart_test.go): re-open-not-recreate,
+//       state survival, schema-mismatch and partial-pin-set fail-closed.
 //     Remaining (MANUAL / needs dedicated infra):
 //     - Network partition test (agent holds last-known-good for >10 min).
-//     - Cert expiry chaos (rotate CA mid-flight; ensure no traffic drop).
+//     - Cert expiry chaos with live traffic (rotate CA mid-flight; ensure no
+//       traffic drop — the T1 variant covers the manager, not the datapath).
 //     - Ring-buffer drop rate benchmark at 1M pps (needs dedicated pinned host).
 //     - RSS benchmark at 10k identities / 16k policies (dedicated host).
-//     - Agent kill mid-connection survival (needs two-netns full proxy test).
+//     - Agent kill mid-connection survival (needs two-netns full proxy test;
+//       the T1 seam variant covers pin re-open logic only).
 //
 // 15. [PKI-4 / go-spiffe] UNCHANGED: workloadapi.socketServer custom PEM
 //     protocol cannot be consumed by go-spiffe X509Source. Full SPIFFE

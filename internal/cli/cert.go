@@ -2,12 +2,34 @@ package cli
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
 	"time"
 )
+
+// CertRotate asks the agent's admin server to rotate the workload SVID
+// immediately (POST /cert/rotate, bypassing the 2/3-TTL schedule) and prints
+// the new certificate's expiry.
+func CertRotate(cfg Config, w io.Writer) error {
+	var env envelope
+	if err := postJSON(cfg.AgentAddr+"/cert/rotate", &env); err != nil {
+		return err
+	}
+	var data struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		return fmt.Errorf("decode rotate response: %w", err)
+	}
+	if data.ExpiresAt == "" {
+		return fmt.Errorf("agent reported no expiry for the rotated certificate")
+	}
+	fmt.Fprintf(w, "certificate rotated; new expiry: %s\n", data.ExpiresAt)
+	return nil
+}
 
 // CertInspect reads a PEM certificate file and prints human-readable info.
 func CertInspect(certFile string, w io.Writer) error {

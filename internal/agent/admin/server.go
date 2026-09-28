@@ -71,8 +71,7 @@ func WithMapDumper(md MapDumper) Option {
 }
 
 // WithHTTPEventSource attaches the L7 event source for the /http/watch SSE
-// endpoint (meridian http watch, P5.3). The proxy's L7EventRing satisfies
-// this interface.
+// endpoint (P5.3). The proxy's L7EventRing satisfies this interface.
 func WithHTTPEventSource(src FlowSource) Option {
 	return func(s *httpServer) { s.httpEvents = src }
 }
@@ -183,9 +182,8 @@ func (s *httpServer) handleFlowsWatch(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleHTTPWatch serves a Server-Sent Events stream of L7 (HTTP) events for
-// `meridian http watch`. Returns 501 when no L7 event source is wired — the
-// CLI turns that into a "pending Phase 5 wiring" message.
+// handleHTTPWatch serves an SSE stream of L7 (HTTP) events for
+// `meridian http watch`. Returns 501 when no event source is wired.
 func (s *httpServer) handleHTTPWatch(w http.ResponseWriter, r *http.Request) {
 	if s.httpEvents == nil {
 		http.Error(w, "L7 event stream not configured", http.StatusNotImplemented)
@@ -227,7 +225,12 @@ func (s *httpServer) handleCertRotate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		s.encodeEnvelope(w, map[string]any{
 			"success": false,
-			"error":   "cert rotator not configured (agent started without an SVID manager)",
+			// Error shape matches the REST envelope the CLI decodes:
+			// an object with code + message, never a bare string.
+			"error": map[string]string{
+				"code":    "not_configured",
+				"message": "cert rotator not configured (agent started without an SVID manager)",
+			},
 		})
 		return
 	}
@@ -239,7 +242,10 @@ func (s *httpServer) handleCertRotate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		s.encodeEnvelope(w, map[string]any{
 			"success": false,
-			"error":   fmt.Sprintf("rotate: %v", err),
+			"error": map[string]string{
+				"code":    "rotate_failed",
+				"message": fmt.Sprintf("rotate: %v", err),
+			},
 		})
 		return
 	}
