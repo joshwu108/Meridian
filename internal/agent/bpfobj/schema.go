@@ -15,8 +15,8 @@ import (
 // ErrPartialPinSet is returned when a load re-opens a pin directory that
 // already holds Meridian pinned state but whose schema sentinel is still
 // unstamped (version 0). That state is only reachable if a previous load
-// crashed between creating/pinning the maps and stamping the sentinel
-// (review D-9). The pinned maps may have been created by an older,
+// crashed between creating/pinning the maps and stamping the sentinel.
+// The pinned maps may have been created by an older,
 // layout-incompatible build, so we refuse to either adopt them or silently
 // stamp the current version over them.
 //
@@ -39,7 +39,7 @@ func preparePinDir(pinDir string) (preExisting bool, err error) {
 	if err := os.MkdirAll(pinDir, 0o700); err != nil {
 		return false, fmt.Errorf("bpfobj: create pin dir %s: %w", pinDir, err)
 	}
-	// Ordering proof for the schema stamp (closes review D-9). Decide, BEFORE
+	// Ordering proof for the schema stamp. Decide, BEFORE
 	// any map is opened, whether this pin set already exists on disk. Stamping
 	// the sentinel is sound ONLY on a from-scratch creation: if the pin dir
 	// already holds Meridian state we are re-opening, and an unstamped sentinel
@@ -67,7 +67,7 @@ func pinDirPopulated(pinDir string) (bool, error) {
 
 // reconcileSchema enforces the schema contract across loads. It is the SOLE
 // writer of schema_sentinel_map and writes only on a verified-fresh pin set —
-// the ordering proof that closes review D-9. Index 0 is the only slot.
+// the ordering proof above. Index 0 is the only slot.
 //
 //   - Fresh creation (preExisting == false): the kernel zero-inits the ARRAY,
 //     so the sentinel reads 0 and no other build has touched these maps. Stamp

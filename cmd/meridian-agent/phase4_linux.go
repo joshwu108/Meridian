@@ -21,7 +21,7 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// phase4Options collects the Phase 4 flags.
+// phase4Options collects the node identity, proxy, and control-plane flags.
 type phase4Options struct {
 	workloadAPISocket string
 	proxyInPort       int
@@ -29,7 +29,7 @@ type phase4Options struct {
 	controlAddr       string
 	bootstrapCert     string
 	bootstrapKey      string
-	tokenPath         string // projected SA token file for token bootstrap (PKI-2b)
+	tokenPath         string // projected SA token file for token bootstrap
 	trustDomain       string // SPIFFE trust domain for the token-bootstrap node identity
 	standalone        bool   // if true, run embedded CA + LocalSigner
 }
@@ -60,7 +60,7 @@ const (
 //
 // Token bootstrap mode (--control-addr + --token-path, no --bootstrap-cert):
 //   - Trades the projected SA token for a node credential via the
-//     NodeBootstrap.BootstrapWithToken RPC (PKI-2b), persists it under
+//     NodeBootstrap.BootstrapWithToken RPC, persists it under
 //     /run/meridian, then proceeds exactly like remote mode.
 func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDResolver, *svid.SVIDManager, error) {
 	var (
@@ -95,7 +95,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 	} else if opts.controlAddr != "" && (opts.bootstrapCert != "" || opts.tokenPath != "") {
 		certPath, keyPath := opts.bootstrapCert, opts.bootstrapKey
 		if certPath == "" {
-			// Token bootstrap (PKI-2b): reuse the credential persisted under
+			// Token bootstrap: reuse the credential persisted under
 			// /run/meridian when still valid; otherwise trade the projected SA
 			// token for a fresh one and persist it for the next restart.
 			nodeID, err := bootstrapNodeID()
@@ -179,7 +179,7 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 			listenerAdapter{inLn},
 			certSource,
 			trustPool,
-			proxy.NewTPROXYResolver(nil), // IdentityLookup wired in Phase 7
+			proxy.NewTPROXYResolver(nil), // IdentityLookup not wired yet
 			&noopPolicySource{},
 			proxy.WithInboundLogf(log.Printf),
 			proxy.WithSpiffeIDResolver(spiffeRes),
@@ -221,9 +221,9 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 }
 
 // startADSClient dials the control plane's ADS gRPC endpoint and runs the
-// agent's ADS client (A-3) until ctx is cancelled. When a SPIFFE ID resolver
-// is present, a post-apply hook refreshes it from the applied identity table
-// after every ACKed snapshot (Task: SpiffeIDResolver ↔ ADS apply loop seam).
+// agent's ADS client until ctx is cancelled. When a SPIFFE ID resolver is
+// present, a post-apply hook refreshes it from the applied identity table
+// after every ACKed snapshot.
 func startADSClient(ctx context.Context, adsAddr string, writer datapath.Writer, spiffeRes *proxy.MapSpiffeIDResolver, p4 phase4Options) error {
 	if writer == nil {
 		return fmt.Errorf("ads client: no datapath writer available")

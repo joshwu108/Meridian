@@ -3,9 +3,9 @@
  * meridian_helpers.h — shared policy-resolution primitives for the socket-layer
  * programs (sock_ops, sk_msg).
  *
- * CC-6 single-source: identity resolution, the compiled-verdict lookup, and the
- * CC-5 SOCKMAP-eligibility predicate live here exactly once so MER-48 (sock_ops
- * gated population) and MER-50 (sk_msg redirect) cannot drift apart in how they
+ * Single-source: identity resolution, the compiled-verdict lookup, and the
+ * SOCKMAP-eligibility predicate live here exactly once so sock_ops (gated
+ * population) and sk_msg (redirect) cannot drift apart in how they
  * read identity_map / policy_map.
  *
  * The tc_ingress / tc_egress programs intentionally keep their own packet-context
@@ -64,7 +64,7 @@ meridian_policy_lookup(__u32 src_id, __u32 dst_id, __u16 dst_port_host,
 }
 
 /*
- * meridian_verdict_sockmap_eligible — the CC-5 gated-insertion invariant
+ * meridian_verdict_sockmap_eligible — the gated-insertion invariant
  * (ADR-0007): a socket may enter SOCKHASH only when the compiled verdict is a
  * plain-L4 ALLOW carrying POLICY_FLAG_SOCKMAP_ELIGIBLE. DENY, REDIRECT, ALLOW
  * with L7/mTLS required, ALLOW without the flag, and policy miss (NULL) are all

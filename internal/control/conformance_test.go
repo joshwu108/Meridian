@@ -35,7 +35,7 @@ func conformanceIterations(short bool) int {
 	return defaultConformanceIterations
 }
 
-// TestCompilerMatchesReferenceProperty is the CP-2 gate (MER-24): for random
+// TestCompilerMatchesReferenceProperty is a conformance gate: for random
 // compilable policy specs and random flow tuples, verdicts from the reference
 // evaluator built from Compile() output must match an independent declarative
 // spec oracle. PR CI runs 1e4 iterations (default); nightly runs 1e6 via

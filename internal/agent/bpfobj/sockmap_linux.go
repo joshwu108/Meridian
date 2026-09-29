@@ -10,12 +10,12 @@ import (
 	"github.com/joshuawu/meridian/bpf"
 )
 
-// SockOpsObjects is the bpf2go-generated sock_ops collection (MER-47/48).
+// SockOpsObjects is the bpf2go-generated sock_ops collection.
 // Re-exported so callers reach through bpfobj — the sole bpf/ opener — without
 // importing bpf/ directly (depguard wire-bpf-bridge).
 type SockOpsObjects = bpf.SockOpsObjects
 
-// SkMsgObjects is the bpf2go-generated sk_msg collection (MER-47/50).
+// SkMsgObjects is the bpf2go-generated sk_msg collection.
 type SkMsgObjects = bpf.SkMsgObjects
 
 // LoadSockOps loads the Phase-2 sock_ops collection, RE-OPENING the shared maps
@@ -23,7 +23,7 @@ type SkMsgObjects = bpf.SkMsgObjects
 // under pinDir by the primary load. It is a SECONDARY loader: the primary
 // LoadCounter / LoadTcIngress in the same startup owns and reconciles the schema
 // sentinel, so this loader neither stamps nor re-verifies it — it only needs the
-// shared pinned maps plus the sock_ops program for the cgroup attach (MER-57).
+// shared pinned maps plus the sock_ops program for the cgroup attach.
 func LoadSockOps(pinDir string) (*SockOpsObjects, error) {
 	if _, err := preparePinDir(pinDir); err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func LoadSockOps(pinDir string) (*SockOpsObjects, error) {
 // LoadSkMsg loads the Phase-2 sk_msg collection, re-opening the shared `sockhash`
 // (and metrics) maps pinned under pinDir. Secondary loader; see LoadSockOps on
 // the schema-sentinel ownership contract. The returned program + Sockhash map fd
-// drive the BPF_SK_MSG_VERDICT attach (MER-57).
+// drive the BPF_SK_MSG_VERDICT attach.
 func LoadSkMsg(pinDir string) (*SkMsgObjects, error) {
 	if _, err := preparePinDir(pinDir); err != nil {
 		return nil, err

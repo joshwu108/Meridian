@@ -40,7 +40,7 @@ const (
 // meridian-control must land in the real kernel policy_map — via store → ADS server
 // → agent xds.Client → datapath.Writer — within 500 ms (the ROADMAP week-5/6
 // success criterion). Pure end-to-end: it wires the shipped components and reads the
-// kernel map back. Must never t.Skip under root on 5.15 (MER-44).
+// kernel map back. Must never t.Skip under root on 5.15.
 func TestRestToKernelGate_MER73(t *testing.T) {
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {
@@ -110,7 +110,7 @@ func TestRestToKernelGate_MER73(t *testing.T) {
 	t.Logf("REST→kernel policy_map propagation: %v (budget %v)", elapsed, mer73Budget)
 
 	// Malformed input never reaches the kernel: REST fails closed (4xx) and the map
-	// is unchanged (CC-5 fail-closed, end to end).
+	// is unchanged (fail-closed, end to end).
 	bad, err := http.Post(httpSrv.URL+"/policies", "application/json", strings.NewReader(`{"Key":`))
 	if err != nil {
 		t.Fatalf("POST malformed: %v", err)

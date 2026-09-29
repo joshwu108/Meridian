@@ -315,7 +315,7 @@ func loadTcIngress(t *testing.T) *bpf.TcIngressObjects {
 }
 
 // seedAllowIngressPolicyFromPacket seeds an ALLOW rule keyed on the packet's
-// L4 tuple so identity-resolved flows pass default-deny enforcement (MER-17+).
+// L4 tuple so identity-resolved flows pass default-deny enforcement.
 func seedAllowIngressPolicyFromPacket(t *testing.T, m *ebpf.Map, pkt []byte, srcID, dstID uint32) {
 	t.Helper()
 	const ethHdrLen = 14

@@ -14,7 +14,7 @@ import (
 // C-side constants from bpf/include/meridian_types.h. bpf2go exports the
 // struct mirrors (CounterPolicyKey, CounterPolicyVerdict) but not the
 // POLICY_FLAG_* macros or _Static_assert sizes — this file pins wire↔C
-// equivalence at the datapath translation boundary (MER-15 / D17).
+// equivalence at the datapath translation boundary.
 const (
 	cPolicyKeySize     = 12 // sizeof(struct policy_key)
 	cPolicyVerdictSize = 4  // sizeof(struct policy_verdict)

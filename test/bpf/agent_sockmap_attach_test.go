@@ -20,8 +20,8 @@ import (
 // (CgroupSockOpsManager / SkMsgSockhashManager) that meridian-agent wires behind
 // --cgroup. It proves the managers are idempotent and that, once they have
 // attached sock_ops (cgroup) and sk_msg (sockhash), an eligible loopback flow is
-// actually redirected — i.e. the production wiring reproduces the MER-48+MER-50
-// behavior, not just "attach returned nil".
+// actually redirected — i.e. the production wiring reproduces the gated-insert
+// and redirect behavior, not just "attach returned nil".
 //
 // Lives in test/bpf (run by `make test-bpf`) rather than internal/agent/attach,
 // whose tests the gate runner does not execute; it reuses the shared sockops/

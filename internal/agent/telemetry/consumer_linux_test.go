@@ -48,9 +48,9 @@ func newTestRingbufMap(t *testing.T) *ebpf.Map {
 	return m
 }
 
-// TestConsumerCloseReleasesReaderWithoutRun is the MER-39 T1 gate (review
-// A-4 / D-8): New opens a ringbuf reader fd; if Run is never called, Close must
-// still release it, and Close must be idempotent.
+// TestConsumerCloseReleasesReaderWithoutRun: New opens a ringbuf reader fd; if
+// Run is never called, Close must still release it, and Close must be
+// idempotent.
 func TestConsumerCloseReleasesReaderWithoutRun(t *testing.T) {
 	m := newTestRingbufMap(t)
 	t.Cleanup(func() { _ = m.Close() })

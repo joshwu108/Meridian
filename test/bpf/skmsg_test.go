@@ -107,7 +107,7 @@ func TestSkMsgRedirect_MER50(t *testing.T) {
 		c, s, serverPort, _, closeFn := establishConns(t, sockObjs, clientIP, serverIP, idClient, idServer, verdict)
 		defer closeFn()
 
-		// MER-49 proves non-eligible never enters sockhash; reconfirm here so the
+		// The negative gate proves non-eligible never enters sockhash; reconfirm here so the
 		// fall-through assertion is unambiguous.
 		time.Sleep(200 * time.Millisecond)
 		if sockhashHasKey(t, sockObjs.Sockhash, sockKeyFor(serverIP, serverPort)) {
@@ -152,7 +152,7 @@ func loadSkMsg(t *testing.T, pinDir string) *bpf.SkMsgObjects {
 
 // establishConns opens a real loopback TCP connection (seeding both directions
 // of the policy first) and returns the live client/server conns so the caller
-// can drive sendmsg through the attached sk_msg program. Unlike establish (MER-48)
+// can drive sendmsg through the attached sk_msg program. Unlike establish,
 // it exposes the conns rather than only a closer.
 func establishConns(t *testing.T, objs *bpf.SockOpsObjects, clientIP, serverIP string,
 	idClient, idServer uint32, verdict wire.PolicyVerdict) (client, server net.Conn, serverPort, clientPort int, closeFn func()) {

@@ -90,7 +90,7 @@ func recvWithin(t *testing.T, stream adsStreamClient, d time.Duration) *discover
 	}
 }
 
-// decodePolicies decodes a CDS DiscoveryResponse — one CC-2 resource per policy.
+// decodePolicies decodes a CDS DiscoveryResponse — one cc2-encoded resource per policy.
 func decodePolicies(t *testing.T, resp *discoveryv3.DiscoveryResponse) []wire.PolicyRule {
 	t.Helper()
 	rules := make([]wire.PolicyRule, 0, len(resp.GetResources()))

@@ -1,10 +1,10 @@
-// Package xds implements the agent-side ADS client (A-3, MER-79): it streams the
-// CC-2 wire contract from meridian-control, decodes it via internal/cc2, diffs
-// each snapshot against the last-applied state into a wire.CommitPlan, and applies
-// it through the datapath.Writer (the sole wire↔bpf translator, D17). It ACKs only
-// after a snapshot is fully applied and NACKs (holding last-known-good) on any
-// decode/contract/apply failure — never partially applying and never transiently
-// widening (CC-5). It is the production replacement for the MER-55 in-memory stub.
+// Package xds implements the agent-side ADS client: it streams the
+// versioned-JSON wire contract (ADR-0008) from meridian-control, decodes it via
+// internal/cc2, diffs each snapshot against the last-applied state into a
+// wire.CommitPlan, and applies it through the datapath.Writer (the sole
+// wire↔bpf translator). It ACKs only after a snapshot is fully applied and
+// NACKs (holding last-known-good) on any decode/contract/apply failure — never
+// partially applying and never transiently widening.
 package xds
 
 import (
@@ -28,7 +28,7 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// subscribeTypes are the CC-2 channels the agent consumes: CDS carries policy,
+// subscribeTypes are the xDS channels the agent consumes: CDS carries policy,
 // EDS carries identity (ADR-0008 §1). LDS/RDS are reserved (Phase-5 L7) and not
 // subscribed — the server keeps them empty.
 var subscribeTypes = []string{resourcev3.ClusterType, resourcev3.EndpointType}
@@ -102,7 +102,7 @@ func NewClient(conn grpc.ClientConnInterface, writer datapath.Writer, opts ...Op
 
 // Run streams desired state and applies it until ctx is cancelled. On a stream
 // error it holds the last-applied kernel state and reconnects with jittered
-// backoff (last-known-good on control-plane loss, CC-5).
+// backoff (last-known-good on control-plane loss).
 func (c *Client) Run(ctx context.Context) error {
 	for {
 		err := c.runStream(ctx)
@@ -160,7 +160,7 @@ func (c *Client) handle(ctx context.Context, stream discoveryv3.AggregatedDiscov
 
 	plan := diff(c.snapshotCopy(), candidate)
 	if err := c.writer.Apply(ctx, plan); err != nil {
-		// Hold last-known-good: do not advance applied/accepted (CC-5).
+		// Hold last-known-good: do not advance applied/accepted.
 		c.logf("ads-client: NACK type=%s nonce=%s: apply failed: %v", typeURL, resp.GetNonce(), err)
 		return c.send(stream, &discoveryv3.DiscoveryRequest{
 			TypeUrl:       typeURL,

@@ -12,7 +12,7 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// MER-18 (P1.1 gate): verdict matrix against the reference evaluator.
+// Armed gate: verdict matrix against the reference evaluator.
 // Every row seeds the kernel maps the datapath would populate, runs
 // prog_test_run, and asserts the TC action equals the reference verdict
 // for the same tuple — no hand-written expected TC values.
@@ -288,7 +288,7 @@ func actionToTCAct(action wire.PolicyAction) (int, bool) {
 	case wire.PolicyActionDeny:
 		return tcActShot, true
 	case wire.PolicyActionRedirectProxy:
-		// MER-17 mark-only placeholder: data path still passes the packet.
+		// Mark-only placeholder: data path still passes the packet.
 		return tcActOK, true
 	default:
 		return 0, false

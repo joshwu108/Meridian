@@ -33,9 +33,9 @@ const (
 	mer51Payload  = 1 << 20 // 1 MiB
 )
 
-// MER-51 (P2.2 gate): the RUNTIME proof of the CC-5 invariant, complementing the
-// static MER-49 negative gate. With the agent's production attach managers
-// (MER-57) holding sock_ops on the cgroup and sk_msg on sockhash:
+// Armed gate: the RUNTIME proof of the sockhash-gating invariant,
+// complementing the static negative gate. With the agent's production attach
+// managers holding sock_ops on the cgroup and sk_msg on sockhash:
 //
 //   - an eligible (ALLOW + SOCKMAP_ELIGIBLE) flow transfers 1 MiB byte-for-byte
 //     identical (no corruption/truncation) AND is observably redirected
@@ -45,7 +45,7 @@ const (
 //     its bytes still flow over the normal kernel path.
 //
 // Note (design boundary): SOCKHASH membership is decided at TCP establish by
-// sock_ops; Phase 2 has no per-send re-evaluation or membership revocation, so a
+// sock_ops; there is no per-send re-evaluation or membership revocation, so a
 // flip cannot evict an already-established socket. This gate therefore asserts
 // the achievable, security-relevant invariant — a flow denied at establish never
 // redirects — which is what closes ROADMAP Top-risk #2 at runtime.
@@ -121,7 +121,7 @@ func TestSockmapIntegrityGate_MER51(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond) // allow any erroneous redirect to register
 	if after := readRedirected(t, reader); after != before {
-		t.Fatalf("denied flow was SOCKMAP-redirected: METRIC_FLOWS_REDIRECTED before=%d after=%d; CC-5 runtime invariant violated", before, after)
+		t.Fatalf("denied flow was SOCKMAP-redirected: METRIC_FLOWS_REDIRECTED before=%d after=%d; SOCKMAP gating invariant violated", before, after)
 	}
 }
 

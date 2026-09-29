@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: GPL-2.0
 /*
- * tc_egress.c — Geneve egress identity propagation (MER-20).
+ * tc_egress.c — Geneve egress identity propagation.
  *
  * Verifier notes:
  *   - Every packet dereference is guarded by data_end bounds checks.

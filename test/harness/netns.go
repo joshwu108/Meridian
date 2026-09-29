@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// VethPair is the Phase 0 network fixture: one netns ("mrdn-<run>-<name>")
+// VethPair is the single-node network fixture: one netns ("mrdn-<run>-<name>")
 // holding the peer end of a veth pair with an IP assigned, and the host end
 // left in the root namespace, brought up, with a clsact qdisc installed so a
 // TC BPF filter can later be attached to it.
@@ -21,14 +21,14 @@ import (
 //	└────────────────────┘              └────────────────────┘
 //
 // The counter program under test attaches to HostVeth's clsact ingress: every
-// packet the peer sends toward the host is counted. Phase 1 grows this into
-// the two-"node" pod-to-pod topology by adding pairs and routing.
+// packet the peer sends toward the host is counted. The TwoNode fixture grows
+// this into the two-"node" pod-to-pod topology by adding pairs and routing.
 //
-// Implementation note: Phase 0 drives the `ip` and `tc` binaries via os/exec
-// rather than vishvananda/netlink. It keeps the test tree free of a netlink
-// dependency, and the commands are exactly what an operator would run, so
-// failures reproduce by hand. The agent owns real netlink attach in Phase 1;
-// this fixture can swap mechanisms behind the same method signatures.
+// Implementation note: this fixture drives the `ip` and `tc` binaries via
+// os/exec rather than vishvananda/netlink. It keeps the test tree free of a
+// netlink dependency, and the commands are exactly what an operator would run,
+// so failures reproduce by hand. The agent owns real netlink attach; this
+// fixture can swap mechanisms behind the same method signatures.
 type VethPair struct {
 	Name     string // short fixture name (e.g. "p0")
 	Netns    string // full namespace name: mrdn-<run>-<name>
@@ -85,7 +85,7 @@ func (v *VethPair) setup() {
 // ExecInNS runs a one-shot command inside the namespace via `ip netns exec`
 // and returns its combined output, failing the test on non-zero exit. Use for
 // workload generators (ping, nc); long-lived processes the harness must
-// control will use setns with a locked OS thread (Phase 1+).
+// control will use setns with a locked OS thread.
 func (v *VethPair) ExecInNS(t *testing.T, cmd ...string) string {
 	t.Helper()
 	full := append([]string{"netns", "exec", v.Netns}, cmd...)
@@ -110,7 +110,7 @@ func (v *VethPair) TryExecInNS(cmd ...string) (string, error) {
 // ingress in direct-action mode and registers removal via t.Cleanup.
 // pinnedProg is the absolute bpffs path of the program (pin it under
 // PinDir(t) first) — `tc filter add ... object-pinned` consumes a pin path,
-// not a raw fd, which is why Phase 0 pins programs before attach.
+// not a raw fd, which is why the harness pins programs before attach.
 func (v *VethPair) AttachTC(t *testing.T, pinnedProg string) {
 	t.Helper()
 	v.run("tc", "filter", "add", "dev", v.HostVeth, "ingress",

@@ -58,10 +58,10 @@ func (p *ExampleProducer) eventFor(seq uint64) Event {
 		DstPort:      8080,
 		Proto:        6, // TCP
 		Verdict:      VerdictAllow,
-		SrcIdentity:  0, // Phase 0: no identity producer yet.
+		SrcIdentity:  0, // no identity producer yet.
 		DstIdentity:  0,
 		Bytes:        128 + uint32(seq%2048),
-		LatencyNs:    0, // Phase 0: no L7 proxy latency input.
-		L7StatusCode: 0, // Phase 0: no L7 status input.
+		LatencyNs:    0, // no L7 proxy latency input.
+		L7StatusCode: 0, // no L7 status input.
 	}
 }

@@ -18,7 +18,7 @@ func FlowsWatch(ctx context.Context, cfg Config, w io.Writer) error {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := httpClient.Do(req)
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("flows watch: connect: %w", err)
 	}

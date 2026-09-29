@@ -1,4 +1,4 @@
-// Package bpftest holds Phase 0 T2 tests: programs exercised with the
+// Package bpftest holds T2 tests: programs exercised with the
 // kernel's BPF_PROG_TEST_RUN facility (cilium/ebpf prog.Run) against
 // synthetic packets. No network, no netns — just load, inject, assert.
 //

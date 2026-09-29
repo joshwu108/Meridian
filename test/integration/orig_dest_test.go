@@ -3,17 +3,17 @@
 package integration
 
 // =============================================================================
-// KNOWN SHORTCOMINGS — update this list as items are resolved
+// KNOWN LIMITATIONS — update this list as items are resolved
 // =============================================================================
 //
-//  1. [PKI-3] RESOLVED (partial): POST /svid/sign REST endpoint implemented
+//  1. [SVID signing REST] RESOLVED (partial): POST /svid/sign REST endpoint implemented
 //     (internal/control/rest/issuance.go). RemoteSigner client implemented
 //     (internal/agent/svid/remote_signer.go). Not yet wired into the agent
 //     startup loop — still using LocalSigner in meridian-agent binary.
 //     Remaining: wire RemoteSigner in cmd/meridian-agent when --control-addr
 //     flag is added; add mTLS dial to control plane in agent main loop.
 //
-//  2. [PKI-4 / go-spiffe] RESOLVED: full SPIFFE Workload API gRPC server
+//  2. [Workload API / go-spiffe] RESOLVED: full SPIFFE Workload API gRPC server
 //     implemented with go-spiffe/v2 v2.7.0 (internal/agent/workloadapi/server.go);
 //     X509Source-consumable, security header enforced.
 //
@@ -29,22 +29,22 @@ package integration
 //     correct for SPIFFE — but this should be documented and verified against
 //     the peer's URI SAN, not DNS names.
 //
-//  5. [P4.4 peer identity] RESOLVED: peer identity cross-check implemented via
+//  5. [Peer identity] RESOLVED: peer identity cross-check implemented via
 //     WithOutboundSpiffeIDLookup and MapSpiffeIDResolver.LookupID
 //     (internal/proxy/outbound.go); closes on mismatch, unknown dst proceeds.
 //
-//  6. [P5.1] PARTIAL: L7 wire types (pkg/wire/l7.go) and MatchL7 matcher
+//  6. [L7 enforcement] PARTIAL: L7 wire types (pkg/wire/l7.go) and MatchL7 matcher
 //     (internal/proxy/l7_matcher.go, 14 tests) implemented. InboundHandler
 //     does NOT yet call MatchL7 because HTTP framing (extract method/path from
 //     raw stream) is deferred. Seam is ready: check PolicyFlagL7Required on
 //     authz verdict and branch into MatchL7 before proxying bytes.
 //
-//  7. [P5.2] RESOLVED: per-upstream CB map implemented — WithCircuitBreaker
+//  7. [Circuit breaker] RESOLVED: per-upstream CB map implemented — WithCircuitBreaker
 //     now takes a template, per-addr breakers via map[netip.Addr]*CircuitBreaker,
 //     state exposed via CircuitStates(). Note: Prometheus gauge for per-upstream
 //     CB state still pending.
 //
-//  8. [P5.3] RESOLVED: OTLP tracing implemented (internal/proxy/tracing.go:
+//  8. [Tracing] RESOLVED: OTLP tracing implemented (internal/proxy/tracing.go:
 //     NewTracerProvider, connSpan, injectTraceparent); noop unless
 //     OTEL_EXPORTER_OTLP_ENDPOINT is set.
 //
@@ -56,35 +56,35 @@ package integration
 // 10. [T3 netns isolation] RESOLVED: TestTPROXYNetnsIsolation
 //     (tproxy_isolation_test.go) runs two netns, each with its own TPROXY
 //     rule and IP_TRANSPARENT listener on the same :15008, and asserts no
-//     cross-talk plus correct orig-dst in both — validating ADR-0006 D-B.
+//     cross-talk plus correct orig-dst in both — validating ADR-0006.
 //     Runs and passes on Lima (T3); gate armed in test/gates/manifest.txt.
 //
-// 11. [Phase 6 CLI] RESOLVED: cmd/meridian implements status, policy list,
+// 11. [CLI] RESOLVED: cmd/meridian implements status, policy list,
 //     services list, cert inspect/verify/rotate, flows watch, map dump
 //     subcommands. meridian cert rotate posts to the agent's /cert/rotate
 //     admin endpoint, which calls SVIDManager.ForceRotate (bypassing the
-//     2/3-TTL schedule). Remaining: meridian http watch (L7 trace stream,
-//     Phase 5), meridian doctor (probes TPROXY/BPF kernel features, Phase 8);
-//     wire admin.WithCertRotator in cmd/meridian-agent startup.
+//     2/3-TTL schedule; wired into cmd/meridian-agent startup via
+//     admin.WithCertRotator). Remaining: meridian http watch (L7 trace
+//     stream) and meridian doctor (probes TPROXY/BPF kernel features).
 //
-// 12. [Phase 7 — K8s] PARTIAL: etcd backend implemented
+// 12. [K8s control plane] PARTIAL: etcd backend implemented
 //     (internal/control/store/etcd.go), K8s pod informer implemented
 //     (internal/control/k8s/informers.go, tested with fake clientset),
 //     Helm chart skeleton created (deploy/helm/meridian/).
 //     Remaining: MeridianPolicy CRD (needs controller-runtime or code-gen),
-//     TokenReview bootstrap PKI-2b (SVID issuance using projected SA tokens),
+//     TokenReview bootstrap (SVID issuance using projected SA tokens),
 //     K8s e2e demo test (Kind cluster or envtest), etcd integration test.
 //
-// 13. [Phase 7 — CP-4 mTLS wiring] RESOLVED: cmd/meridian-control now accepts
+// 13. [Control-plane mTLS wiring] RESOLVED: cmd/meridian-control now accepts
 //     --tls-cert / --tls-key flags and wraps the gRPC server with
 //     ServerTLSOption when they are provided. See cmd/meridian-control/main.go.
 //
-// 14. [Phase 8 — Chaos/benchmarks] PARTIAL:
+// 14. [Chaos/benchmarks] PARTIAL:
 //     - Policy swap no-transient-deny test implemented (chaos_test.go).
 //     - Agent restart pin-reopen test implemented (chaos_test.go).
 //     - SOCKMAP eligibility verification implemented (chaos_test.go).
 //     - Go benchmarks implemented (test/bench/): evaluator 7.6 ns/op,
-//       L7 matcher 4.9 ns/op, CB 3.7 ns/op — all well within PRD NFRs.
+//       L7 matcher 4.9 ns/op, CB 3.7 ns/op — all well within the performance targets.
 //     - meridian doctor command implemented (internal/cli/doctor.go).
 //     - Cert expiry chaos T1 variant implemented
 //       (internal/agent/svid/expiry_chaos_test.go): fake-clock near-expiry
@@ -102,13 +102,13 @@ package integration
 //     - Agent kill mid-connection survival (needs two-netns full proxy test;
 //       the T1 seam variant covers pin re-open logic only).
 //
-// 15. [PKI-4 / go-spiffe] UNCHANGED: workloadapi.socketServer custom PEM
+// 15. [Workload API PEM protocol] UNCHANGED: workloadapi.socketServer custom PEM
 //     protocol cannot be consumed by go-spiffe X509Source. Full SPIFFE
 //     Workload API gRPC needs go-spiffe/v2 in go.mod (no protoc required —
 //     pre-compiled stubs ship with the module). Add to go.mod, replace
 //     socketServer with the gRPC impl when the dep is provisioned.
 //
-// 16. [Binary wiring — RemoteSigner] cmd/meridian-agent Phase 4 components
+// 16. [Binary wiring — RemoteSigner] cmd/meridian-agent SVID/proxy components
 //     start correctly when --standalone or --control-addr+--bootstrap-cert are
 //     given. The LocalSigner path (standalone) is fully functional. The
 //     RemoteSigner path requires a running meridian-control with the CA
@@ -120,13 +120,13 @@ package integration
 //     is called via WithPostApply in the ADS client — fires after each ACKed
 //     snapshot apply (cmd/meridian-agent/adswire.go).
 //
-// 18. [MeridianPolicy CRD] Phase 7 requires a CRD for declarative policy in
+// 18. [MeridianPolicy CRD] Kubernetes support requires a CRD for declarative policy in
 //     Kubernetes. Needs controller-runtime or hand-written admission webhook.
 //     Not started — deferred to a future milestone.
 //
 // =============================================================================
 
-// TestOriginalDestinationGate_P41 is the CC-1 Phase-4 entry gate (ADR-0006):
+// TestOriginalDestinationGate_P41 is the TPROXY original-destination gate (ADR-0006):
 // it proves that a TCP connection intercepted by TPROXY arrives at the proxy's
 // IP_TRANSPARENT listener with the correct original destination address
 // recoverable via getsockname() (conn.LocalAddr() in Go).

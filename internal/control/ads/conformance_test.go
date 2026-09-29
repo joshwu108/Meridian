@@ -21,7 +21,7 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// propagationBudget is the CP-3 ROADMAP gate: a REST policy change must reach a
+// propagationBudget is the ROADMAP propagation gate: a REST policy change must reach a
 // subscribed agent in under 500 ms (measured end to end, in-process).
 const propagationBudget = 500 * time.Millisecond
 
@@ -63,10 +63,10 @@ func openRawStream(t *testing.T, conn *grpc.ClientConn, ctx context.Context) ads
 	return stream
 }
 
-// TestADSConformanceGate_MER56 is the CP-3 gate: it drives the MER-55 stub and
-// raw clients against the MER-54 server through the full xDS lifecycle, and
+// TestADSConformanceGate_MER56 is a conformance gate: it drives the stub and
+// raw clients against the ADS server through the full xDS lifecycle, and
 // proves REST→stub propagation stays within the 500 ms budget. Pure Go — it must
-// never t.Skip (MER-44 gate integrity).
+// never t.Skip (gate integrity).
 func TestADSConformanceGate_MER56(t *testing.T) {
 	t.Run("lifecycle_initial_add_delete", testConformanceLifecycle)
 	t.Run("nack_recovery", testConformanceNackRecovery)
@@ -280,7 +280,7 @@ func testConformanceRestPropagation(t *testing.T) {
 		t.Fatalf("policy never propagated to the stub within the 2s safety window")
 	}
 	if elapsed > propagationBudget {
-		t.Fatalf("REST→stub propagation took %v, exceeds the %v CP-3 budget", elapsed, propagationBudget)
+		t.Fatalf("REST→stub propagation took %v, exceeds the %v propagation budget", elapsed, propagationBudget)
 	}
 	t.Logf("REST→stub propagation: %v (budget %v)", elapsed, propagationBudget)
 }

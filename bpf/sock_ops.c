@@ -2,17 +2,17 @@
 
 // SPDX-License-Identifier: GPL-2.0
 /*
- * sock_ops.c — Phase-2 gated SOCKHASH population (MER-48 / ADR-0007).
+ * sock_ops.c — gated SOCKHASH population (ADR-0007).
  *
  * On TCP established (active or passive), the program resolves the flow's
  * compiled policy_verdict and inserts the socket into the shared `sockhash`
  * map ONLY when that verdict is a plain-L4 ALLOW carrying
- * POLICY_FLAG_SOCKMAP_ELIGIBLE — the CC-5 gated-insertion invariant. Every
+ * POLICY_FLAG_SOCKMAP_ELIGIBLE — the gated-insertion invariant. Every
  * other verdict class (DENY, REDIRECT, ALLOW+L7_REQUIRED, ALLOW+MTLS_REQUIRED,
  * ALLOW without the flag), and any unknown identity, policy miss, or non-IPv4
- * family, leaves `sockhash` untouched. This map write is ROADMAP Top-risk #2 /
- * eBPF R2: a wrongly inserted socket is exactly what would let sk_msg (MER-50)
- * later bypass mTLS, L7 policy, redirect, or deny.
+ * family, leaves `sockhash` untouched. This map write is the highest-risk
+ * write in the datapath: a wrongly inserted socket is exactly what would let
+ * sk_msg later bypass mTLS, L7 policy, redirect, or deny.
  *
  * Byte order (bpf_sock_ops, 5.15 UAPI): local_ip4/remote_ip4 are network order;
  * local_port is host order (low 16 bits); remote_port is network order but the
@@ -23,7 +23,7 @@
  * The ACTIVE/PASSIVE_ESTABLISHED callbacks fire unconditionally for sockets in
  * the attached cgroup on 5.15 — no bpf_sock_ops_cb_flags_set opt-in is needed
  * for them (that flag gates the optional state/retransmit callbacks we do not
- * use). The exhaustive negative matrix is the permanent gate MER-49 (P2.1-N).
+ * use). The exhaustive negative matrix lives in test/bpf.
  */
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
@@ -36,14 +36,14 @@
 
 /*
  * try_insert — insert THIS socket under its own local (dst_ip, dst_port) so a
- * peer redirecting toward it (sk_msg, MER-50) finds it. Gated on the CC-5
+ * peer redirecting toward it (sk_msg) finds it. Gated on the
  * eligibility check; a no-op for any ineligible or unknown-identity flow.
  */
 static __always_inline void try_insert(struct bpf_sock_ops *ctx,
 				       __u32 src_id, __u32 dst_id,
 				       __u16 dst_port_host, __u8 direction)
 {
-	/* Unknown identity on either end: fail closed, never insert (CC-5). */
+	/* Unknown identity on either end: fail closed, never insert. */
 	if (src_id == 0 || dst_id == 0)
 		return;
 

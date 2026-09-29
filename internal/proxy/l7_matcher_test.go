@@ -82,7 +82,7 @@ func TestMatchL7_PathPrefix(t *testing.T) {
 }
 
 func TestMatchL7_PRDExample(t *testing.T) {
-	// PRD §4.8 example: /api/ GET allowed; /admin/ denied.
+	// Spec example: /api/ GET allowed; /admin/ denied.
 	rules := []wire.CompiledL7Rule{
 		allowRule("GET", "", "/api/"),
 		denyRule("", "", "/admin/"),

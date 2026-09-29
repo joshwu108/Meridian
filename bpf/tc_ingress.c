@@ -2,12 +2,12 @@
 
 // SPDX-License-Identifier: GPL-2.0
 /*
- * tc_ingress.c — Phase 1 production ingress parser, identity resolution,
+ * tc_ingress.c — production ingress parser, identity resolution,
  * policy verdict enforcement, and decision-point telemetry.
  *
  * Scope:
  *   - Verifier-safe Ethernet / IPv4 / TCP / UDP parsing with explicit bounds checks.
- *   - Geneve pre-decap parse on underlay ingress (MER-21 / ADR-0002): recover
+ *   - Geneve pre-decap parse on underlay ingress (ADR-0002): recover
  *     remote src_identity from the Meridian identity TLV when the inner src IP
  *     is absent from the local identity_map.
  *   - src/dst identity lookups from identity_map (key = IPv4 BE bytes as loaded).
@@ -18,7 +18,7 @@
  *   - Decision-point event emission (TCP open / UDP first-sight / deny / redirect).
  *   - denied_flows_map upserts and flow/byte metrics accounting.
  *   - Non-IPv4 passthrough -> TC_ACT_OK.
- *   - 802.1Q VLAN unwrap for real pod links (MER-43): inner IPv4 parsed with
+ *   - 802.1Q VLAN unwrap for real pod links: inner IPv4 parsed with
  *     the same bounds discipline as untagged frames.
  */
 #include "vmlinux.h"
@@ -127,7 +127,7 @@ static __always_inline __u32 parse_geneve_identity(void *opts, void *data_end,
  * try_parse_geneve_inner attempts to peel a kernel-Geneve frame on underlay
  * ingress. On success it returns the inner IPv4 header and whether the Meridian
  * identity TLV was present. Missing TLV on a valid Geneve frame is surfaced via
- * geneve_tlv_found = 0 (MER-21 / ADR-0002).
+ * geneve_tlv_found = 0 (ADR-0002).
  */
 static __always_inline __u32 try_parse_geneve_inner(struct iphdr *outer_ip,
 						    void *data_end,
@@ -531,7 +531,7 @@ int meridian_tc_ingress(struct __sk_buff *skb)
 	/*
 	 * Geneve underlay ingress sees both directions.  Enforce policy only on
 	 * the initial client SYN once src_identity is known; non-SYN TCP
-	 * segments pass through (MER-21 gate).  Strip the identity TLV on all
+	 * segments pass through.  Strip the identity TLV on all
 	 * allowed Geneve packets so the kernel Geneve device (non-collect_metadata)
 	 * can decapsulate normally — Linux ≥ 5.15.0-181 drops opt_len > 0.
 	 */

@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package integration, e2e tag: MER-52 P2.2-BENCH. This is a NIGHTLY/self-hosted
+// Package integration, e2e tag: SOCKMAP latency benchmark. This is a NIGHTLY/self-hosted
 // benchmark, NOT a PR gate — it is excluded from `make test-integration`
 // (-tags=integration) and `make test-bpf` (-tags=bpf), arms no manifest row, and
 // reports data rather than passing/failing on a latency threshold.
@@ -144,7 +144,7 @@ func TestSockmapBench(t *testing.T) {
 	res.Verdict = verdictFor(res)
 
 	writeBenchResult(t, res)
-	t.Logf("MER-52 SOCKMAP bench (kernel %s, n=%d): baseline p50=%.1fµs p99=%.1fµs | sockmap p50=%.1fµs p99=%.1fµs | Δp50=%.1f%% Δp99=%.1f%% | redirected+%d | %s",
+	t.Logf("SOCKMAP bench (kernel %s, n=%d): baseline p50=%.1fµs p99=%.1fµs | sockmap p50=%.1fµs p99=%.1fµs | Δp50=%.1f%% Δp99=%.1f%% | redirected+%d | %s",
 		res.Kernel, res.Iterations, res.Baseline.P50us, res.Baseline.P99us,
 		res.Sockmap.P50us, res.Sockmap.P99us, res.DeltaP50Pct, res.DeltaP99Pct, res.RedirectedDelta, res.Verdict)
 
@@ -155,7 +155,7 @@ func TestSockmapBench(t *testing.T) {
 
 // verdictFor reports the honest outcome. A "win" requires BOTH p50 AND p99 to
 // improve — a p50 gain alongside a p99 regression is reported as "mixed", never
-// green-washed into a win (MER-52 honesty requirement).
+// green-washed into a win.
 func verdictFor(r benchResult) string {
 	if r.RedirectedDelta == 0 {
 		return "INVALID: SOCKMAP redirect did not engage"

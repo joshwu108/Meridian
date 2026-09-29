@@ -10,7 +10,7 @@ import (
 	"github.com/joshuawu/meridian/internal/control/ca"
 )
 
-// TestBootstrapIssueAndLoad verifies the MER-75 two-tier credential scheme:
+// TestBootstrapIssueAndLoad verifies the two-tier credential scheme:
 // the CA can issue a node bootstrap credential, and LoadBootstrap can round-trip it.
 func TestBootstrapIssueAndLoad(t *testing.T) {
 	auth, err := ca.NewTestAuthority(testTD)

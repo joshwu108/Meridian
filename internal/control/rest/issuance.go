@@ -1,13 +1,13 @@
 package rest
 
-// POST /svid/sign — PKI-3 SVID issuance endpoint.
+// POST /svid/sign — SVID issuance endpoint.
 //
 // The agent posts a PEM-encoded CSR and the desired SPIFFE workload ID; the
 // server validates the CSR, checks that the requesting node is authorised for
 // that workload identity, and returns the signed certificate chain as PEM.
 //
 // Authentication: the caller must present a valid node TLS certificate (the
-// bootstrap credential from PKI-2) on the mTLS channel. The node's SPIFFE ID
+// node bootstrap credential) on the mTLS channel. The node's SPIFFE ID
 // is extracted from the peer cert and used for authorisation checks.
 //
 // Depguard: this file lives in internal/control and may import ca/.
@@ -57,7 +57,7 @@ func (s *Server) handleSignSVID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Node identity comes from the TLS peer cert (the PKI-2 bootstrap
+	// Node identity comes from the TLS peer cert (the node bootstrap
 	// credential); the serving http.Server must require client certs.
 	nodeSpiffeID, err := nodeIDFromTLS(r.TLS)
 	if err != nil {
@@ -86,8 +86,8 @@ func (s *Server) handleSignSVID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Authorisation: node may only request workload identities (not node certs).
-	// Full cross-check against "which workloads run on this node" is a Phase 7
-	// addition when the identity registry binds workload→node; for now we
+	// Full cross-check against "which workloads run on this node" arrives once
+	// the identity registry binds workload→node; for now we
 	// enforce that the requested ID is a workload path (not /node/).
 	if err := assertWorkloadSpiffeID(req.SpiffeID); err != nil {
 		writeError(w, http.StatusForbidden, "unauthorized",

@@ -2,10 +2,9 @@
 // single bidirectional xDS stream that pushes Meridian's compiled policy state
 // to agents and tracks the xDS version/nonce handshake per resource type.
 //
-// MER-54 ships the ADS transport + the version/nonce state machine + a
+// This package ships the ADS transport + the version/nonce state machine + a
 // Store.Watch()-driven ordered push. The resource *payload* encoding is the
-// internal server↔stub contract for CP-1/CP-3 (MER-55/56); the real xDS
-// resource model is frozen later under CC-2 (compiled-policy wire contract).
+// frozen compiled-policy wire contract (ADR-0008, internal/cc2).
 package ads
 
 import (
@@ -24,7 +23,7 @@ const (
 	// the accepted version advances to the pushed version.
 	ackAck
 	// ackNack rejects the outstanding push (nonce matches, error_detail set):
-	// the accepted version is held at its prior last-known-good value (CC-5).
+	// the accepted version is held at its prior last-known-good value.
 	ackNack
 	// ackStale is an empty/mismatched nonce against the outstanding push and
 	// is ignored — it never changes accepted state.
@@ -98,7 +97,7 @@ func (s *streamState) classify(typeURL, responseNonce string, hasError bool) ack
 	ts.hasOutstanding = false
 	ts.lastNonce = ""
 	if hasError {
-		// CC-5: a rejected config never becomes accepted state.
+		// A rejected config never becomes accepted state.
 		return ackNack
 	}
 	ts.ackedVersion = ts.sentVersion

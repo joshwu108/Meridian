@@ -22,7 +22,7 @@ const (
 
 // StoreEvent is the change notification delivered to Watch subscribers. It
 // carries only the kind of change, not the mutated value: subscribers re-read
-// the authoritative state from the Store (the MER-54 ADS push re-snapshots on
+// the authoritative state from the Store (the ADS push re-snapshots on
 // any signal), so the seam stays a coalescing wake-up rather than a delta log.
 type StoreEvent struct {
 	Kind StoreEventKind
@@ -34,7 +34,7 @@ type StoreEvent struct {
 // mutation and closes when ctx is done. It is a coalescing seam — a slow
 // subscriber may observe fewer events than there were mutations, but never a
 // stale view, because every event is a prompt to re-read current state. The
-// MER-54 ADS server consumes Watch to drive snapshot pushes.
+// ADS server consumes Watch to drive snapshot pushes.
 type Store interface {
 	PutIdentity(context.Context, wire.Identity) error
 	DeleteIdentity(context.Context, wire.IdentityID) error

@@ -1,4 +1,4 @@
-// MeridianPolicy CRD types and validating admission webhook (CP-5 / Phase 7).
+// MeridianPolicy CRD types and validating admission webhook.
 //
 // The types are hand-written (no code-gen, no controller-runtime): the dynamic
 // client delivers unstructured objects that are converted with

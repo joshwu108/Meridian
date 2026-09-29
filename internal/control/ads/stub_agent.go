@@ -18,8 +18,8 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// StubAgent is an in-memory ADS client used to exercise the MER-54 server end to
-// end (and, in MER-56, to drive the CP-3 conformance gate). It opens a single
+// StubAgent is an in-memory ADS client used to exercise the server end to
+// end and to drive the conformance gate. It opens a single
 // StreamAggregatedResources stream, subscribes to the resource types, decodes
 // each pushed snapshot per the server's payload contract, and replies with an
 // ACK on success or a NACK on a contract violation. It is NOT the production
@@ -90,7 +90,7 @@ func (a *StubAgent) Run(ctx context.Context) error {
 		policies, decodeErr := decodeSnapshot(resp)
 		if decodeErr != nil {
 			// NACK: keep last-accepted version; never adopt a config we cannot
-			// decode (CC-5 fail-closed mirrored on the client side).
+			// decode (fail-closed mirrored on the client side).
 			a.logf("ads-stub: NACK type=%s nonce=%s: %v", resp.GetTypeUrl(), resp.GetNonce(), decodeErr)
 			nack := &discoveryv3.DiscoveryRequest{
 				TypeUrl:       resp.GetTypeUrl(),
@@ -158,14 +158,14 @@ func (a *StubAgent) acceptedVersion(typeURL string) string {
 }
 
 // decodeSnapshot decodes the policy set carried by one DiscoveryResponse per the
-// MER-54 server contract: one CC-2 resource per policy on the Cluster channel,
+// Server contract: one cc2-encoded resource per policy on the Cluster channel,
 // one per identity on the Endpoint channel; LDS/RDS are versioned-but-empty.
 // Any deviation is a contract violation and yields an error so the caller NACKs.
 func decodeSnapshot(resp *discoveryv3.DiscoveryResponse) ([]wire.PolicyRule, error) {
 	resources := resp.GetResources()
 	switch resp.GetTypeUrl() {
 	case resourcev3.ClusterType:
-		// CDS: one CC-2 resource per policy.
+		// CDS: one cc2-encoded resource per policy.
 		rules := make([]wire.PolicyRule, 0, len(resources))
 		for i, res := range resources {
 			r, err := cc2.DecodePolicyRule(res)
@@ -176,8 +176,8 @@ func decodeSnapshot(resp *discoveryv3.DiscoveryResponse) ([]wire.PolicyRule, err
 		}
 		return rules, nil
 	case resourcev3.EndpointType:
-		// EDS: one CC-2 resource per identity. The stub validates them
-		// (fail-closed) but does not track them — CP-3 only inspects policies.
+		// EDS: one cc2-encoded resource per identity. The stub validates them
+		// (fail-closed) but does not track them — the conformance gate only inspects policies.
 		for i, res := range resources {
 			if _, err := cc2.DecodeIdentity(res); err != nil {
 				return nil, fmt.Errorf("endpoint resource[%d]: %w", i, err)

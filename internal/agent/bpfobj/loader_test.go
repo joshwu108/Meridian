@@ -15,7 +15,7 @@ import (
 	"github.com/joshuawu/meridian/test/harness"
 )
 
-// TestSchemaVersionSingleSourced closes MER-33 / review D-1: the loader must
+// TestSchemaVersionSingleSourced asserts that the loader must
 // read MERIDIAN_SCHEMA_VERSION from bpf2go-generated bindings, not a
 // hand-mirrored Go literal. A drift between C and Go would otherwise only be
 // caught by humans.
@@ -28,11 +28,11 @@ func TestSchemaVersionSingleSourced(t *testing.T) {
 		t.Fatalf("loader schemaVersion = %d, want bpf2go constant %d", schemaVersion, want)
 	}
 	if want != 2 {
-		t.Fatalf("MERIDIAN_SCHEMA_VERSION = %d, want 2 (Phase 1 contract freeze)", want)
+		t.Fatalf("MERIDIAN_SCHEMA_VERSION = %d, want 2 (frozen map schema, ADR-0004)", want)
 	}
 }
 
-// TestSchemaSentinelFailsClosedOnV1Pins closes review T-2 via MER-33: a pin set
+// TestSchemaSentinelFailsClosedOnV1Pins asserts that a pin set
 // stamped with schema v1 must be refused by the v2 build. Distinct from the
 // partial-init case (ErrPartialPinSet) and from an arbitrary foreign version.
 func TestSchemaSentinelFailsClosedOnV1Pins(t *testing.T) {
@@ -132,7 +132,7 @@ func sockhashMapID(t *testing.T, m *ebpf.Map) ebpf.MapID {
 	return id
 }
 
-// mer58SockKey builds the canonical sock_key (CC-6 / D18: dst_ip + dst_port in
+// mer58SockKey builds the canonical sock_key (dst_ip + dst_port in
 // network byte order). Local copy so this loader test does not depend on the
 // test/bpf package's helpers.
 func mer58SockKey(ip string, port int) bpf.CounterSockKey {
@@ -208,7 +208,7 @@ func insertEstablishedSocket(t *testing.T, m *ebpf.Map, key bpf.CounterSockKey) 
 	}
 	var updErr error
 	if cErr := raw.Control(func(fd uintptr) {
-		// SOCKHASH update: value is the socket fd (value size is __u64, D18).
+		// SOCKHASH update: value is the socket fd (value size is __u64).
 		updErr = m.Update(key, uint64(fd), ebpf.UpdateAny)
 	}); cErr != nil {
 		t.Fatalf("raw control: %v", cErr)

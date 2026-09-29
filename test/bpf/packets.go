@@ -251,7 +251,7 @@ func synthGeneveIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte, rese
 }
 
 // synthGeneveTEBIPv4Packet mirrors the kernel geneve driver: proto ETH_P_TEB with
-// an inner Ethernet header wrapping the IPv4 payload (MER-28 live path).
+// an inner Ethernet header wrapping the IPv4 payload (matches the live path).
 func synthGeneveTEBIPv4Packet(innerProto uint8, innerSrcIP, innerDstIP []byte) []byte {
 	innerIP := synthInnerIPv4L4Payload(innerProto, innerSrcIP, innerDstIP)
 	innerEth := make([]byte, 14+len(innerIP))

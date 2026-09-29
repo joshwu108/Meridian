@@ -1,4 +1,4 @@
-// Package bench contains Phase 8 performance benchmarks.
+// Package bench contains performance benchmarks.
 // Run with: go test -bench=. -benchmem ./test/bench/...
 //
 // These benchmarks exercise pure-Go logic (compiler, evaluator, L7 matcher,
@@ -17,7 +17,7 @@ import (
 )
 
 // BenchmarkReferenceEvaluatorLookup measures policy lookup hot-path at 10k rules.
-// PRD NFR: lookup must complete in < 50 µs at 10k identities.
+// Performance target: lookup must complete in < 50 µs at 10k identities.
 func BenchmarkReferenceEvaluatorLookup(b *testing.B) {
 	const nRules = 10_000
 	rules := make([]reference.Rule, nRules)

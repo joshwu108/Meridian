@@ -1,5 +1,5 @@
 // Package svid manages SVID issuance and rotation for workload identities
-// served by this node (agent half of PKI-4). The Store holds the current SVID
+// served by this node. The Store holds the current SVID
 // atomically and notifies subscribers on rotation; the Manager drives the
 // keygen → CSR → Sign → store → rotate-at-2/3-TTL lifecycle.
 package svid

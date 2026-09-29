@@ -12,7 +12,7 @@ import (
 
 // CgroupSockOpsManager attaches the sock_ops program to a cgroup v2 directory
 // (BPF_CGROUP_SOCK_OPS) so the kernel runs it on every TCP established callback
-// for sockets in that cgroup — the MER-48 gated SOCKHASH population path.
+// for sockets in that cgroup — the gated SOCKHASH population path.
 //
 // It takes a *ebpf.Program (loaded via bpfobj — depguard forbids attach/ from
 // importing bpf/ directly) rather than the ProgramRef interface TCManager uses,

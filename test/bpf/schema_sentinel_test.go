@@ -18,7 +18,7 @@ import (
 // WITHOUT stamping the schema sentinel, then drops the Go handles. bpfobj — not
 // the raw loader — is what stamps the sentinel, so loading the objects directly
 // and closing them reproduces exactly the on-bpffs state a load that crashed
-// after LoadAndAssign but before the stamp would leave behind (review D-9's
+// after LoadAndAssign but before the stamp would leave behind (the
 // crash-between-create-and-stamp window). The pins survive Close; only the
 // per-test PinDir cleanup (or the reaper) unpins them.
 func seedUnstampedPinSet(t *testing.T, pinDir string) {
@@ -42,7 +42,7 @@ func seedUnstampedPinSet(t *testing.T, pinDir string) {
 	}
 }
 
-// TestSchemaSentinelFailsClosedOnPartialPinSet is the MER-36 / review D-9
+// TestSchemaSentinelFailsClosedOnPartialPinSet is the partial-init
 // regression: a crash between map creation and the sentinel stamp must NOT let
 // the next start silently stamp the current schema version over maps an older
 // build may have created. The next open must fail closed.
@@ -90,7 +90,7 @@ func TestSchemaSentinelStampsFreshThenSurvivesRestart(t *testing.T) {
 	second.Close()
 }
 
-// TestSchemaSentinelFailsClosedOnVersionMismatch closes review T-2: a pin set
+// TestSchemaSentinelFailsClosedOnVersionMismatch: a pin set
 // stamped with a different (incompatible) schema version is refused on re-open,
 // and the error is a version mismatch — distinct from the partial-init case.
 func TestSchemaSentinelFailsClosedOnVersionMismatch(t *testing.T) {

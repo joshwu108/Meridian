@@ -19,7 +19,7 @@ import (
 
 // InboundHandler accepts mTLS connections on :15008 (the inbound transparent
 // listener), enforces authz, and proxies allowed traffic to the local upstream
-// application (Phase 4.3 / P4.3).
+// application.
 //
 // On each accepted connection:
 //  1. Perform mTLS handshake — both sides present SPIFFE SVIDs.

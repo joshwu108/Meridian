@@ -1,4 +1,4 @@
-// Command meridian is the Meridian CLI (Phase 6).
+// Command meridian is the Meridian CLI.
 //
 // Usage:
 //
@@ -132,7 +132,7 @@ Commands:
   cert verify <cert.pem> <ca.pem>  verify certificate chain
   cert rotate              trigger immediate SVID rotation on the agent
   flows watch              stream live flow events from agent
-  http watch               stream L7 trace events (requires Phase 5 OTLP)
+  http watch               stream L7 trace events from agent
   map dump                 dump identity and policy maps from agent
   doctor                   run pre-flight probes (kernel, TPROXY, iptables)
 

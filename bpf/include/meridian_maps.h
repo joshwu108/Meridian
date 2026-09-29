@@ -47,7 +47,7 @@ struct {
  * closed instead of misinterpreting pinned state.
  *
  * The value type is the schema enum (4 bytes, same wire size as __u32) so
- * the version constant reaches BTF and bpf2go exports it to Go (review D-1).
+ * the version constant reaches BTF and bpf2go exports it to Go.
  */
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -75,8 +75,7 @@ struct {
 /*
  * policy_map — compiled exact-match L4 rules (ADR-0003 key incl. direction).
  * Agent (datapath.Writer) is the sole writer; miss = deny (default-deny,
- * PRD §8). sock_ops additionally reads it for the SOCKMAP_ELIGIBLE check
- * (CC-5) in Phase 2.
+ * ADR-0001). sock_ops additionally reads it for the SOCKMAP_ELIGIBLE check.
  */
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -90,7 +89,7 @@ struct {
 /*
  * runtime_config_map — single-slot ARRAY of runtime behavior flags
  * (MERIDIAN_CFG_* bits in meridian_consts.h). Agent writes, programs read
- * per packet. Phase 1 uses bit 0 = FALLOPEN_UNKNOWN (ADR-0001/D16):
+ * per packet. Bit 0 = FALLOPEN_UNKNOWN (ADR-0001):
  * unset (default) = fail closed on unknown identities.
  */
 struct {
@@ -102,7 +101,7 @@ struct {
 } runtime_config_map SEC(".maps");
 
 /*
- * denied_flows_map — recent drops for debugging/observability (D14); never
+ * denied_flows_map — recent drops for debugging/observability; never
  * policy input. LRU so it self-evicts under flood (note: LRU_HASH must NOT
  * set BPF_F_NO_PREALLOC — the kernel rejects that combination).
  */
@@ -118,7 +117,7 @@ struct {
  * sock_key — SOCKHASH key (ADR-0007 / ADR-0004 frozen shape): the destination
  * IPv4 and port of an established connection. dst_ip and dst_port are NETWORK
  * order (copied verbatim from packet/socket fields per the ARCHITECTURE
- * byte-order rule); pad is always zero. Declared once here (CC-6 single-source)
+ * byte-order rule); pad is always zero. Declared once here (single source)
  * and exported to Go via bpf2go under the Counter prefix (see bpf/gen.go).
  */
 struct sock_key {
@@ -128,12 +127,11 @@ struct sock_key {
 };
 
 /*
- * sockhash — Phase-2 intra-node fast-path map of established sockets keyed by
+ * sockhash — intra-node fast-path map of established sockets keyed by
  * sock_key (ADR-0007). sock_ops is the SOLE writer and inserts a socket ONLY
  * when the flow's compiled policy_verdict carries POLICY_FLAG_SOCKMAP_ELIGIBLE
- * (the CC-5 gated-insertion invariant; population lands in MER-48). sk_msg is
- * the SOLE reader and redirects on hit, falling through (SK_PASS) on miss
- * (MER-50). Instantiated by MER-47 (D18); the map type, key shape, byte order,
+ * (the gated-insertion invariant). sk_msg is the SOLE reader and redirects on
+ * hit, falling through (SK_PASS) on miss. The map type, key shape, byte order,
  * and pinning are frozen by ADR-0004 — changing them is a schema-contract bump.
  */
 struct {

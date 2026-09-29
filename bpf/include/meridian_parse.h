@@ -2,7 +2,7 @@
 /*
  * meridian_parse.h — shared L2/L3 parse helpers for tc_ingress / tc_egress.
  *
- * MER-43: unwrap a single 802.1Q tag and return the inner IPv4 header when
+ * Unwraps a single 802.1Q tag and returns the inner IPv4 header when
  * present. Non-IPv4 outer/inner ethertypes and truncated tags pass through
  * (caller returns TC_ACT_OK).
  */
@@ -61,7 +61,7 @@ static __always_inline __u32 parse_ipv4_after_eth(struct ethhdr *eth, void *data
  * Geneve frame. Test packets use proto 0x0800 with either a pre-reserved TLV
  * slot (MERIDIAN_GENEVE_OPT_BYTES before the inner IP) or none. The kernel
  * geneve driver uses proto ETH_P_TEB (0x6558) with an inner Ethernet header
- * (MER-28 / ADR-0002 live path).
+ * (ADR-0002 live path).
  */
 static __always_inline __u32 parse_ipv4_in_geneve_payload(void *payload, void *data_end,
 							  struct iphdr **ip_out,

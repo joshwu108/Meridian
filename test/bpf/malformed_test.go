@@ -15,7 +15,7 @@ import (
 	"github.com/joshuawu/meridian/internal/agent/metrics"
 )
 
-// MER-19 (T-3): parser-negative regression net for tc_ingress. Each case must
+// Parser-negative regression net for tc_ingress. Each case must
 // return TC_ACT_OK, bump METRIC_PACKETS_TOTAL, and emit no flow_event.
 func TestMalformedPacketsPassthrough(t *testing.T) {
 	cases := []struct {
@@ -28,7 +28,7 @@ func TestMalformedPacketsPassthrough(t *testing.T) {
 		{name: "ihl less than 5", packet: synthMalformedIPv4IHLPacket(4)},
 		{name: "ihl greater than 15", packet: synthMalformedIPv4IHLPacket(16)},
 		{name: "ihl 15 truncated options", packet: synthMalformedIPv4IHLOptionsTruncated()},
-		{name: "vlan tagged passthrough until MER-43", packet: synthVLANTaggedNonIPv4Packet(0x86dd)},
+		{name: "vlan tagged passthrough (VLAN parsing not yet implemented)", packet: synthVLANTaggedNonIPv4Packet(0x86dd)},
 		{name: "non-IPv4 ARP", packet: synthNonIPv4Packet(0x0806)},
 		{name: "non-IPv4 IPv6", packet: synthNonIPv4Packet(0x86dd)},
 	}

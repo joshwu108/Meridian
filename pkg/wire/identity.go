@@ -9,11 +9,11 @@ package wire
 
 // IdentityID is the numeric workload identity stored in the kernel
 // identity_map and policy_map keys, and carried across nodes in the Geneve
-// identity option. The control plane is the SOLE allocator (CC-3): IDs are
+// identity option. The control plane is the SOLE allocator: IDs are
 // cluster-global, allocated monotonically, and never reused within a
 // control-plane lifetime.
 type IdentityID uint32
 
 // IdentityUnknown is the reserved "unknown / not in identity_map" value.
-// Kernel programs treat it per the CC-5 unknown-identity posture.
+// Kernel programs treat it per the unknown-identity posture (ADR-0001).
 const IdentityUnknown IdentityID = 0

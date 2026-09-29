@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package e2e holds the Kubernetes control-plane demo test (Phase 7): a real
+// Package e2e holds the Kubernetes control-plane demo test: a real
 // kube-apiserver (envtest) with the MeridianPolicy CRD installed, exercising
 // the policy ingestion path CRD → dynamic informer → store.PutPolicy. No
 // agent, proxy, or eBPF involved.

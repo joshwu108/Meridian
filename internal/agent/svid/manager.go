@@ -19,13 +19,12 @@ type Signer interface {
 	Sign(ctx context.Context, csrDER []byte, spiffeID string) ([]*x509.Certificate, error)
 }
 
-// rotateFraction schedules rotation at 2/3 of the remaining TTL
-// (D7 / subsystem-04 PKI-1).
+// rotateFraction schedules rotation at 2/3 of the remaining TTL.
 const rotateFraction = 2.0 / 3.0
 
 // nearExpiryFraction is the fail-closed window: when less than 1/6 of the
 // total TTL remains the SVID is considered near-expired and new connections
-// must be refused (CC-5).
+// must be refused.
 const nearExpiryFraction = 1.0 / 6.0
 
 // SVIDManager drives the SVID lifecycle for one workload identity:
@@ -188,7 +187,7 @@ func (m *SVIDManager) ForceRotate(ctx context.Context) (time.Time, error) {
 }
 
 // GetSVID returns the current SVID, failing closed when none has been issued
-// yet or the current one is inside the near-expiry window (CC-5): callers are
+// yet or the current one is inside the near-expiry window: callers are
 // never handed a cert that could expire mid-handshake.
 func (m *SVIDManager) GetSVID() (*Entry, error) {
 	e := m.store.Current()
@@ -207,7 +206,7 @@ func (m *SVIDManager) Stop(_ context.Context) error { return nil }
 
 // NearExpiry reports whether the current SVID has less than 1/6 of its
 // lifetime remaining. Callers (the node proxy) should fail-close new
-// connections when true, per CC-5.
+// connections when true.
 func (m *SVIDManager) NearExpiry() bool {
 	return m.nearExpiry(m.store.Current())
 }

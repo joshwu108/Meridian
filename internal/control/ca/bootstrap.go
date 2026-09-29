@@ -10,12 +10,12 @@ import (
 	"strings"
 )
 
-// Bootstrap holds the two-tier node identity credential (CC-4 / MER-75):
+// Bootstrap holds the two-tier node identity credential:
 // a node certificate (P-384, 7d TTL) distinct from workload SVIDs (P-256, 24h).
 // This credential authenticates the agent↔control channel (ADS + SVID issuance).
 //
-// Standalone mode: operator provisions bootstrap.crt / bootstrap.key out-of-band
-// (PRD §8 config). K8s TokenReview bootstrap is deferred to Phase 7 (PKI-2b).
+// Standalone mode: the operator provisions bootstrap.crt / bootstrap.key
+// out-of-band. Kubernetes mode uses TokenReview bootstrap instead.
 type Bootstrap struct {
 	// Cert is the node leaf certificate.
 	Cert *x509.Certificate
@@ -87,7 +87,7 @@ func LoadBootstrap(certPEM, keyPEM []byte) (*Bootstrap, error) {
 // Save writes the credential to PEM files on disk: the full certificate
 // chain to certFile (0644) and the private key to keyFile (0600). It is the
 // persistence counterpart of LoadBootstrapFiles, used by the token-bootstrap
-// path (PKI-2b) so RemoteSigner can reload the credential on later starts.
+// path so RemoteSigner can reload the credential on later starts.
 // The key is written first: a cert without a key is useless but harmless,
 // while the reverse could leave a stale cert paired with a missing key.
 func (b *Bootstrap) Save(certFile, keyFile string) error {

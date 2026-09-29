@@ -31,8 +31,8 @@ func (s CBState) String() string {
 // ErrCircuitOpen is returned by CircuitBreaker.Allow when the circuit is open.
 var ErrCircuitOpen = fmt.Errorf("circuit breaker open")
 
-// CircuitBreaker implements the consecutive-error circuit breaker described in
-// PRD §4.8 (P5.2). It is safe for concurrent use.
+// CircuitBreaker implements a consecutive-error circuit breaker for the
+// outbound proxy. It is safe for concurrent use.
 //
 // State transitions:
 //

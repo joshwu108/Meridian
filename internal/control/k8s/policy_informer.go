@@ -1,4 +1,4 @@
-// MeridianPolicy informer (CP-5 / Phase 7): watches MeridianPolicy custom
+// MeridianPolicy informer: watches MeridianPolicy custom
 // resources through the dynamic client (no code-gen) and mirrors them into
 // the control-plane policy store as compiled wire.PolicyRule entries.
 package k8s

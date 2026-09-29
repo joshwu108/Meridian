@@ -66,7 +66,7 @@ func (c *Consumer) closeReader() error {
 
 // Close releases the ringbuf reader fd. It exists for the lifecycle path where
 // New succeeds but Run is never called: without it the reader fd would leak
-// until process exit (review A-4 / D-8, MER-39). Close is idempotent and safe
+// until process exit. Close is idempotent and safe
 // to call after — or concurrently with — Run, whose own shutdown also closes
 // the reader; the redundant close is a no-op.
 func (c *Consumer) Close() error {

@@ -32,7 +32,7 @@ const (
 	dropReasonPolicyDeny = 1
 )
 
-// MER-29 (P1.2 gate): full product-path policy integration — agent stub
+// Armed gate: full product-path policy integration — agent stub
 // (supervisor + YAML + datapath.Writer + attach.Manager), not raw map ops.
 func TestLivePolicyIntegrationGate_MER29(t *testing.T) {
 	harness.RequireRoot(t)

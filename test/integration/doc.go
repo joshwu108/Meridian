@@ -1,4 +1,4 @@
-// Package integration holds Phase 0 T3 (netns) tests: a real veth pair, real
+// Package integration holds T3 (netns) tests: a real veth pair, real
 // traffic, and assertions on the kernel-side PERCPU counter plus the Go
 // ring-buffer consumer end to end.
 //

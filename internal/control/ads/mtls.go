@@ -14,7 +14,7 @@ import (
 )
 
 // ServerTLSOption returns a grpc.ServerOption that enforces mTLS on the ADS
-// stream using auth as the trust anchor (CP-4). The node-cert mTLS requirement:
+// stream using auth as the trust anchor. The node-cert mTLS requirement:
 //   - Clients must present a certificate signed by auth's trust pool.
 //   - The peer certificate must carry a valid node SPIFFE ID
 //     (spiffe://<td>/node/<id>) — enforced by ServerPeerVerifier.

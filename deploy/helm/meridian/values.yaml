@@ -1,4 +1,4 @@
-## Meridian Helm chart values — Phase 7
+## Meridian Helm chart values.
 ## Override in your values file or with --set.
 
 ## Control plane deployment
@@ -48,7 +48,7 @@ agent:
   # hostNetwork: false  -- agent uses host netns for TPROXY rules
   hostPID: false
 
-## Validating admission webhook for MeridianPolicy (Phase 7)
+## Validating admission webhook for MeridianPolicy
 ## caBundle: base64-encoded PEM bundle the apiserver uses to verify the
 ## webhook's serving certificate — set by the deployer (e.g. cert-manager
 ## CA injection or manual --set webhook.caBundle=$(base64 < ca.crt)).
@@ -60,7 +60,7 @@ webhook:
 rbac:
   create: true
 
-## ServiceAccount for agent TokenReview bootstrap (Phase 7 PKI-2b)
+## ServiceAccount for agent TokenReview bootstrap
 serviceAccount:
   create: true
   name: meridian-agent

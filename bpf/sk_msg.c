@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: GPL-2.0
 /*
- * sk_msg.c — Phase-2 SOCKHASH redirect fast path (MER-50 / ADR-0007).
+ * sk_msg.c — SOCKHASH redirect fast path (ADR-0007).
  *
  * On sendmsg, redirect the message to the destination peer socket in `sockhash`
  * via bpf_msg_redirect_hash() with BPF_F_INGRESS (the peer receives on its
@@ -10,9 +10,9 @@
  * path (ADR-0007 fall-through contract).
  *
  * sk_msg is the SOLE READER of `sockhash`; it never inserts, repairs, or broadens
- * it — write authority stays in sock_ops (MER-48). Because sock_ops only inserts
- * ALLOW + SOCKMAP_ELIGIBLE sockets (CC-5, locked by the armed MER-49 gate), a hit
- * can never redirect a flow that required mTLS / L7 / proxy / deny handling.
+ * it — write authority stays in sock_ops. Because sock_ops only inserts
+ * ALLOW + SOCKMAP_ELIGIBLE sockets (locked by an armed negative-matrix gate), a
+ * hit can never redirect a flow that required mTLS / L7 / proxy / deny handling.
  *
  * Why redirect directly instead of peeking: a bpf_map_lookup_elem() on a SOCKHASH
  * returns a ref-counted socket the verifier requires us to release, and the
@@ -31,11 +31,11 @@
  * network-order 16-bit port is (u16)(remote_port >> 16) — the exact value
  * sock_ops wrote via bpf_htons(local_port).
  *
- * Telemetry (D13, bounded): a successful redirect bumps METRIC_FLOWS_REDIRECTED
+ * Telemetry (bounded): a successful redirect bumps METRIC_FLOWS_REDIRECTED
  * (a per-CPU, lock-free counter) only — NOT a ring flow_event per sendmsg, which
  * would be per-message volume. A latency-stamped redirect flow_event needs
- * send->recv correlation that does not exist yet and is deferred to the
- * observability phase (O-3/O-4); it is deliberately not added here.
+ * send->recv correlation that does not exist yet; it is deliberately not
+ * added here.
  */
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>

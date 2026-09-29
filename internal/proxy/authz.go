@@ -19,8 +19,8 @@ const (
 
 // EvalPolicy evaluates whether the flow (srcID, dstID, dst port, proto) is
 // permitted by snap. It mirrors the kernel's policy_map lookup: first-match
-// wins; no match → AuthzDeny (fail-closed, matching ADR-0001 unknown-identity
-// posture and CC-5).
+// wins; no match → AuthzDeny (fail-closed, matching the ADR-0001
+// unknown-identity posture).
 func EvalPolicy(snap wire.ProxyPolicySnapshot, srcID, dstID wire.IdentityID, dst netip.AddrPort, proto uint8) AuthzResult {
 	port := dst.Port()
 	for _, rule := range snap.Policies {

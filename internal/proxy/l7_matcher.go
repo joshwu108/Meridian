@@ -9,7 +9,7 @@ import (
 
 // MatchL7 evaluates rules against an HTTP request and returns the verdict of
 // the first matching rule. If no rule matches it returns a default-deny verdict
-// (fail-closed, matching CC-5 and ADR-0001).
+// (fail-closed, matching ADR-0001).
 //
 // Matching semantics (all conditions within a rule are AND'd):
 //   - Method: empty → any; non-empty → exact case-insensitive match.

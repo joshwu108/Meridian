@@ -23,7 +23,7 @@ func quietStub(conn grpc.ClientConnInterface) *StubAgent {
 	return NewStubAgent(conn, WithLogf(func(string, ...any) {}))
 }
 
-// dialServer starts a real MER-54 ADS server on a bufconn and returns a client
+// dialServer starts a real ADS server on a bufconn and returns a client
 // connection to it.
 func dialServer(t *testing.T, st *store.Memory) *grpc.ClientConn {
 	t.Helper()

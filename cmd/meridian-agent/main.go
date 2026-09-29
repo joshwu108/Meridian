@@ -1,11 +1,11 @@
 //go:build linux
 
-// meridian-agent — Phase 0 cut.
+// meridian-agent is the per-node data-plane agent.
 //
-// Loads the counter eBPF objects (pinning maps under --pin-dir) and tails the
-// flow_events ring buffer to stdout. The full agent (netlink
-// lifecycle, xDS, SVID) arrives in Phases 1-4; this binary exists to exercise
-// the Phase 0 pipeline end to end by hand:
+// It loads the eBPF objects (pinning maps under --pin-dir), attaches the TC
+// programs and optional SOCKMAP fast path, runs the SVID/proxy/TPROXY stack
+// and the ADS client, serves the admin HTTP endpoint, and tails the
+// flow_events ring buffer to stdout:
 //
 //	sudo ./bin/meridian-agent --pin-dir /sys/fs/bpf/meridian --iface <veth>
 package main
@@ -39,13 +39,13 @@ func main() {
 	cgroup := flag.String("cgroup", "", "cgroup v2 path to attach the SOCKMAP fast path (sock_ops + sk_msg); empty = disabled")
 	vethPrefix := flag.String("veth-prefix", "", "host-side pod veth name prefix for auto TC attach via RTNLGRP_LINK watcher (empty = disabled; e.g. 'mh-' or 'lxc')")
 
-	// Phase 4 flags.
+	// Node identity, proxy, and control-plane flags.
 	standalone := flag.Bool("standalone", false, "run with an embedded ephemeral CA (dev mode)")
 	controlAddr := flag.String("control-addr", "", "control-plane REST address for RemoteSigner (e.g. https://control:9443)")
 	adsAddr := flag.String("ads-addr", "", "control-plane ADS gRPC address (e.g. control:9443); empty = ADS disabled")
-	bootstrapCert := flag.String("bootstrap-cert", "", "path to node bootstrap certificate PEM (CC-4)")
-	bootstrapKey := flag.String("bootstrap-key", "", "path to node bootstrap private key PEM (CC-4)")
-	tokenPath := flag.String("token-path", "", "path to projected SA token file for token bootstrap (PKI-2b); used when --bootstrap-cert is not set")
+	bootstrapCert := flag.String("bootstrap-cert", "", "path to node bootstrap certificate PEM")
+	bootstrapKey := flag.String("bootstrap-key", "", "path to node bootstrap private key PEM")
+	tokenPath := flag.String("token-path", "", "path to projected SA token file for token bootstrap; used when --bootstrap-cert is not set")
 	trustDomain := flag.String("spiffe-trust-domain", "cluster.local", "SPIFFE trust domain for the node identity requested via token bootstrap")
 	workloadSocket := flag.String("workload-api-socket", "/run/meridian/workload.sock", "SPIFFE Workload API Unix socket path")
 	proxyIn := flag.Int("proxy-inbound-port", 15008, "inbound mTLS transparent listener port")
@@ -141,10 +141,10 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		log.Printf("linkwatch: watching pod veths with prefix %q for auto TC attach", vethPrefix)
 	}
 
-	// Phase-2 SOCKMAP fast path (MER-57): when --cgroup is set, load the sock_ops
-	// and sk_msg programs (sharing the already-pinned maps) and attach them — the
-	// gated SOCKHASH population (MER-48) and intra-node redirect (MER-50). Loaders
-	// live in bpfobj because depguard forbids cmd/ from importing bpf/ directly.
+	// SOCKMAP fast path: when --cgroup is set, load the sock_ops and sk_msg
+	// programs (sharing the already-pinned maps) and attach them — the gated
+	// SOCKHASH population and intra-node redirect (ADR-0007). Loaders live in
+	// bpfobj because depguard forbids cmd/ from importing bpf/ directly.
 	if cgroup != "" {
 		sockObjs, err := bpfobj.LoadSockOps(pinDir)
 		if err != nil {
@@ -173,13 +173,13 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		log.Printf("attached SOCKMAP fast path: sock_ops on cgroup=%s, sk_msg on sockhash", cgroup)
 	}
 
-	// Phase 4: proxy, SVID, TPROXY, Workload API.
+	// Node proxy stack: mTLS proxy, SVID rotation, TPROXY, Workload API.
 	spiffeRes, svidMgr, err := startPhase4(ctx, p4)
 	if err != nil {
 		log.Printf("phase4 startup error (continuing without proxy): %v", err)
 	}
 
-	// ADS client (A-3): stream desired state from the control plane and apply
+	// ADS client: stream desired state from the control plane and apply
 	// it to the kernel maps via the datapath writer. The post-apply hook keeps
 	// the proxy's SPIFFE ID resolver in lockstep with the applied identities.
 	if adsAddr != "" {
@@ -188,9 +188,16 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		}
 	}
 
-	// Admin HTTP server (phase 6).
+	// Broadcaster fans ring-buffer events to the admin /flows/watch SSE stream
+	// and to the stdout printer below. Both consumers see every event.
+	broadcaster := &telemetry.Broadcaster{}
+
+	// Admin HTTP server.
 	if adminAddr != "" {
-		adminOpts := []adminserver.Option{adminserver.WithLogf(log.Printf)}
+		adminOpts := []adminserver.Option{
+			adminserver.WithLogf(log.Printf),
+			adminserver.WithFlowSource(broadcaster),
+		}
 		// Guard: a nil *svid.SVIDManager in a CertRotator interface would be
 		// non-nil, so only attach the rotator when SVID rotation is enabled.
 		if svidMgr != nil {
@@ -203,6 +210,7 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 
 	log.Printf("consuming flow events (pin dir %s); Ctrl-C to exit", pinDir)
 	runErr := consumer.Run(ctx, func(ev telemetry.Event) {
+		broadcaster.Handle(ev)
 		fmt.Printf("%s  %s:%d -> %s:%d  proto=%d verdict=%d bytes=%d\n",
 			ev.Timestamp.Format("15:04:05.000000"),
 			ev.SrcIP, ev.SrcPort, ev.DstIP, ev.DstPort,

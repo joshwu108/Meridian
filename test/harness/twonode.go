@@ -17,7 +17,7 @@ const (
 	geneveVNI        = 100
 )
 
-// TwoNode models the Phase 1 integration topology:
+// TwoNode models the two-node integration topology:
 // - two virtual nodes (two netns)
 // - two root<->node veth pairs (underlay)
 // - node-to-node routing through the root namespace
@@ -294,7 +294,7 @@ func (t2 *TwoNode) run(name string, args ...string) {
 }
 
 // disableVethOffloads turns off segmentation offloads so TC BPF room growth on
-// Geneve UDP frames is not dropped as dodgy-GSO skbs (MER-21 live path).
+// Geneve UDP frames is not dropped as dodgy-GSO skbs.
 func (t2 *TwoNode) disableVethOffloads(netns, ifName string) {
 	t2.t.Helper()
 	args := []string{"-K", ifName, "gso", "off", "gro", "off", "tso", "off", "ufo", "off"}

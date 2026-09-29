@@ -8,7 +8,7 @@ import (
 // TestClassifyGroupFailsClosed verifies the per-gate classifier is fail-closed:
 // a genuine skip is counted, a genuine failure is flagged, a gate that never ran
 // is reported as not-ran, and unrelated tests do not bleed across. Grouping
-// gates into one process must not weaken any of this (MER-44 / MER-68).
+// gates into one process must not weaken any of this.
 func TestClassifyGroupFailsClosed(t *testing.T) {
 	const a = "TestSockmapIntegrityGate_MER51"
 	const b = "TestGeneveIngressIdentityPolicyGate_MER21"

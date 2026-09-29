@@ -14,7 +14,7 @@ import (
 )
 
 // fakeResolver is a test double for OriginalDestinationResolver.
-// It proves the D-E seam (ADR-0006): no proxy logic above Resolve() depends on
+// It proves the resolver seam (ADR-0006): no proxy logic above Resolve() depends on
 // whether the underlying mechanism is TPROXY or DNAT.
 type fakeResolver struct {
 	origDst  netip.AddrPort

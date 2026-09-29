@@ -1,10 +1,10 @@
 // Package store provides in-memory implementations of the control-plane
 // persistence contracts defined in package control.
 //
-// Memory is the default backend for the CP-1 control plane (MER-53): it holds
+// Memory is the default control-plane backend: it holds
 // identities and compiled policies, returns immutable snapshots to callers, and
-// exposes a coalescing Watch seam that the MER-54 ADS server consumes to drive
-// snapshot pushes. Durable backends (etcd, MER-CP-5) implement the same
+// exposes a coalescing Watch seam that the ADS server consumes to drive
+// snapshot pushes. Durable backends (etcd) implement the same
 // control.Store interface.
 package store
 

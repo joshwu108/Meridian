@@ -1,5 +1,5 @@
 // Package identity implements the control plane's monotonic allocator for the
-// cluster-global uint32 workload identity space (CC-3).
+// cluster-global uint32 workload identity space.
 //
 // The control plane is the SOLE allocator of identity IDs: they are allocated
 // strictly monotonically, never reused within a single process lifetime, and
@@ -78,7 +78,7 @@ func (r *Registry) LookupByID(id wire.IdentityID) (string, bool) {
 }
 
 // Release removes the name↔ID binding for name. The numeric ID is NOT returned
-// to the pool — a subsequent Allocate(name) receives a fresh, higher ID (CC-3:
+// to the pool — a subsequent Allocate(name) receives a fresh, higher ID (IDs are
 // never reused within a process lifetime). Releasing an unknown name is a no-op.
 func (r *Registry) Release(name string) {
 	r.mu.Lock()

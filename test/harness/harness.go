@@ -1,13 +1,13 @@
-// Package harness provides the Phase 0 test environment for Meridian's eBPF
+// Package harness provides the base test environment for Meridian's eBPF
 // data plane: per-run namespacing of every kernel resource, a netns/bpffs
 // reaper, root gating, and deadline-bounded condition waiting.
 //
-// Scope (Phase 0): just enough to bring up a veth pair across two netns, pin
+// Scope: just enough to bring up a veth pair across two netns, pin
 // maps under a per-run bpffs subtree, and assert on a packet counter plus
-// ring-buffer events. Policy maps, multi-node simulation, Geneve, and TPROXY
-// are Phase 1+ and deliberately absent. The fixture is structured to grow.
+// ring-buffer events. Multi-node simulation lives in the TwoNode fixture;
+// this base fixture is structured to grow.
 //
-// Design rules (binding, from the Phase 0 design rounds):
+// Design rules (binding):
 //   - Every resource is namespaced per run: netns "mrdn-<runID>-...", bpffs
 //     pins under /sys/fs/bpf/meridian-test/<runID>/<testname>/.
 //   - A reaper runs in TestMain before and after each suite.
@@ -61,8 +61,8 @@ func RunID() string {
 
 // RequireRoot skips the test unless the process runs as uid 0. eBPF program
 // loading, TC attach, netns creation, and bpffs pinning all require
-// CAP_SYS_ADMIN/CAP_NET_ADMIN; rather than probe individual capabilities in
-// Phase 0 we require root, which CI provides.
+// CAP_SYS_ADMIN/CAP_NET_ADMIN; rather than probe individual capabilities
+// we require root, which CI provides.
 func RequireRoot(t *testing.T) {
 	t.Helper()
 	if os.Geteuid() != 0 {

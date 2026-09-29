@@ -22,7 +22,7 @@ func (r *StartupRuntime) CounterObjects() (*bpfobj.CounterObjects, error) {
 }
 
 // Consumer returns the flow-event consumer the supervisor constructed over the
-// pinned flow_events ring buffer. The supervisor owns its lifecycle (MER-27)
+// pinned flow_events ring buffer. The supervisor owns its lifecycle
 // and releases its fd on Close; the agent main loop drives Run.
 func (r *StartupRuntime) Consumer() (*telemetry.Consumer, error) {
 	consumer, ok := r.resources.Telemetry.(*telemetry.Consumer)
@@ -40,10 +40,10 @@ func NewDefaultStartupRunner(opts StartupOptions) *StartupRunner {
 				return startupResources{}, err
 			}
 			// Construct the flow-event consumer now so the supervisor owns its
-			// lifecycle (MER-27). The supervisor never calls Run — that is the
+			// lifecycle. The supervisor never calls Run — that is the
 			// agent main loop's job — so the New-but-never-Run path is the norm
 			// here; Close releases the ringbuf reader fd on shutdown even when
-			// Run is never reached (review A-4 / D-8, MER-39).
+			// Run is never reached.
 			consumer, err := telemetry.New(objs.FlowEvents)
 			if err != nil {
 				_ = objs.Close()
@@ -93,9 +93,9 @@ func NewDefaultStartupRunner(opts StartupOptions) *StartupRunner {
 	return newStartupRunner(opts, deps)
 }
 
-// NewPolicyStartupRunner is the MER-29 product-path entry: it loads tc_ingress,
+// NewPolicyStartupRunner is the product-path entry: it loads tc_ingress,
 // seeds identity/policy maps from static YAML via datapath.Writer, then attaches
-// the production ingress program before any traffic is generated (D16 ordering).
+// the production ingress program before any traffic is generated.
 func NewPolicyStartupRunner(opts StartupOptions) *StartupRunner {
 	deps := startupDeps{
 		openResources: func(_ context.Context, opts StartupOptions) (startupResources, error) {

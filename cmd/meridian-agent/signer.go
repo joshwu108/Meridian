@@ -11,11 +11,11 @@ import (
 
 // newRemoteSigner builds the production SVID signer used when the agent is
 // pointed at a control plane (--control-addr): it loads the node bootstrap
-// credential (CC-4), presents it as the mTLS client certificate, and posts
-// CSRs to the control plane's POST /svid/sign endpoint (PKI-3).
+// credential, presents it as the mTLS client certificate, and posts
+// CSRs to the control plane's POST /svid/sign endpoint.
 //
-// The server is verified against the bootstrap certificate chain for now; the
-// full trust-bundle distribution RPC arrives in Phase 7.
+// The server is verified against the bootstrap certificate chain for now,
+// until a dedicated trust-bundle distribution RPC exists.
 func newRemoteSigner(controlAddr, bootstrapCertPath, bootstrapKeyPath string) (svid.Signer, error) {
 	if controlAddr == "" {
 		return nil, fmt.Errorf("remote signer: control address is empty")

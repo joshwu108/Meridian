@@ -1,5 +1,5 @@
-// Package workloadapi implements the SPIFFE Workload API server for Phase 4
-// (PKI-4). It serves the current node SVID and root trust bundle to workloads
+// Package workloadapi implements the SPIFFE Workload API server.
+// It serves the current node SVID and root trust bundle to workloads
 // over a Unix domain socket using the standard SPIFFE Workload API gRPC
 // contract, so any conformant client — in particular go-spiffe's X509Source —
 // can consume it directly. X.509 responses stream: each subscriber receives

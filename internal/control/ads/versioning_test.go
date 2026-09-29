@@ -55,7 +55,7 @@ func TestClassifyNackHoldsLastKnownGood(t *testing.T) {
 		t.Fatalf("precondition: accepted should be 1")
 	}
 
-	// Push v2 and NACK it: accepted must stay at 1 (CC-5 last-known-good).
+	// Push v2 and NACK it: accepted must stay at 1 (last-known-good).
 	_, n2 := s.preparePush(testCluster)
 	if got := s.classify(testCluster, n2, true); got != ackNack {
 		t.Fatalf("matching nonce + error should be ackNack, got %v", got)

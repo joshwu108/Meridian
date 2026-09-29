@@ -22,19 +22,19 @@
  *
  * Defined as an enum (not #define) and used as the sentinel map's value type
  * so it lands in the object's BTF and bpf2go exports it to Go — the Go side
- * must never hand-mirror this number (CC-6 / review D-1).
+ * must never hand-mirror this number.
  *
- * v1: Phase 0 (flow_event, metrics, sentinel).
- * v2: Phase 1 contract freeze (MER-14) — adds policy_key/policy_verdict/
+ * v1: initial cut (flow_event, metrics, sentinel).
+ * v2: contract freeze — adds policy_key/policy_verdict/
  *     flow_key/deny_info and identity/policy/denied_flows maps; policy_key
- *     pad byte becomes direction (ADR-0003). v1 pins are refused (D15).
+ *     pad byte becomes direction (ADR-0003). v1 pins are refused.
  */
 enum meridian_schema_version {
 	MERIDIAN_SCHEMA_VERSION = 2,
 };
 
 /*
- * struct flow_event — FROZEN canonical 56-byte layout (Phase 0 freeze).
+ * struct flow_event — FROZEN canonical 56-byte layout.
  *
  * Byte offsets are load-bearing and must remain byte-identical between this
  * C definition and the bpf2go-generated Go mirror. All padding fields MUST be
@@ -174,7 +174,7 @@ _Static_assert(sizeof(struct flow_key) == 16,
 	       "flow_key must be exactly 16 bytes (frozen v2 layout)");
 
 /*
- * struct deny_info — value of denied_flows_map (D14). FROZEN v2 layout.
+ * struct deny_info — value of denied_flows_map. FROZEN v2 layout.
  * Debug/observability surface only — never policy input.
  *
  *   off  size  field
@@ -193,8 +193,7 @@ _Static_assert(sizeof(struct deny_info) == 16,
 
 /*
  * drop_reason — why a flow was denied. Filling reserved values is a
- * compatible change (no schema bump) per the ARCHITECTURE versioning rule;
- * MER-17 assigns the producer side.
+ * compatible change (no schema bump) per the ARCHITECTURE versioning rule.
  */
 enum drop_reason {
 	DROP_REASON_UNSPECIFIED      = 0,
@@ -208,22 +207,22 @@ enum drop_reason {
 /*
  * metric_id — index space for metrics_map (PERCPU_ARRAY of __u64).
  *
- * The array is sized to METRIC_ID_MAX so the v1 metric set can grow WITHOUT
+ * The array is sized to METRIC_ID_MAX so the metric set can grow WITHOUT
  * resizing the map (resizing would invalidate pins and break agent restart).
  * Reserved slots below METRIC_ID_MAX are zero-initialised and inert until a
- * later phase assigns them. Phase 0 only uses the first two.
+ * producer assigns them. counter.c only uses the first two.
  */
 enum metric_id {
 	METRIC_PACKETS_TOTAL    = 0, /* every packet seen by counter.c */
 	METRIC_RINGBUF_DROPPED  = 1, /* kernel-side bpf_ringbuf_reserve failures */
 
-	/* --- reserved for v1 (Phase 1+); do not renumber the two above --- */
+	/* --- reserved; do not renumber the two above --- */
 	METRIC_BYTES_TOTAL      = 2,
 	METRIC_FLOWS_ALLOWED    = 3,
 	METRIC_FLOWS_DENIED     = 4,
 	METRIC_FLOWS_REDIRECTED = 5,
-	METRIC_GENEVE_ENCAP_FAIL = 6, /* egress identity TLV stamp failure (MER-20) */
-	METRIC_GENEVE_DECODE_FAIL = 7, /* ingress identity TLV missing/undecodable (MER-21) */
+	METRIC_GENEVE_ENCAP_FAIL = 6, /* egress identity TLV stamp failure */
+	METRIC_GENEVE_DECODE_FAIL = 7, /* ingress identity TLV missing/undecodable */
 	/* 8..15 reserved */
 
 	METRIC_ID_MAX           = 16,

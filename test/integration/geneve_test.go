@@ -32,10 +32,10 @@ const (
 	tcActStolen = 4
 )
 
-// TestGeneveIngressIdentityPolicyGate_MER21 is the P1.3 gate: node B's
-// tc_ingress decodes remote src_identity from a Geneve TLV (MER-21), and the
+// TestGeneveIngressIdentityPolicyGate_MER21 is the Geneve ingress gate: node
+// B's tc_ingress decodes remote src_identity from a Geneve TLV, and the
 // same policy/identity objects enforce allow and deny cases on the live
-// two-node Geneve harness (MER-28).
+// two-node Geneve harness.
 func TestGeneveIngressIdentityPolicyGate_MER21(t *testing.T) {
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {

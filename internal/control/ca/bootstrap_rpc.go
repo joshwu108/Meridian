@@ -1,10 +1,10 @@
-// Token-authenticated node bootstrap RPC (PKI-2b / Phase 7).
+// Token-authenticated node bootstrap RPC.
 //
 // BootstrapWithToken is the one control-plane endpoint reachable WITHOUT a
 // client certificate: the caller authenticates with a Kubernetes SA token
 // (validated via TokenReview) and presents a CSR for its node SPIFFE ID.
 // The private key never crosses the wire. Follows the repo's no-protoc gRPC
-// convention (ADR-0008 / CC-2): a hand-written grpc.ServiceDesc whose
+// convention (ADR-0008): a hand-written grpc.ServiceDesc whose
 // messages are versioned JSON inside wrapperspb.BytesValue.
 package ca
 
@@ -27,7 +27,7 @@ const (
 	BootstrapServiceName = "meridian.ca.NodeBootstrap"
 	// bootstrapMethodName is the single unary method.
 	bootstrapMethodName = "BootstrapWithToken"
-	// bootstrapWireVersion is the CC-2 JSON envelope version.
+	// bootstrapWireVersion is the JSON envelope version (ADR-0008 convention).
 	bootstrapWireVersion = 1
 	// bootstrapRPCTimeout bounds one bootstrap request server-side. This is
 	// the only endpoint reachable without a client cert, so a slow apiserver

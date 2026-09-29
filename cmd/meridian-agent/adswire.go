@@ -28,7 +28,7 @@ func newPostApply(applied func() []wire.Identity, res *proxy.MapSpiffeIDResolver
 
 // adsDialOption returns the gRPC transport credentials for the ADS stream.
 // With bootstrap credential files it dials mTLS, presenting the node cert and
-// verifying the server against the bootstrap chain (CC-4); without them it
+// verifying the server against the bootstrap chain; without them it
 // dials insecurely (dev/standalone against a plaintext control plane).
 func adsDialOption(bootstrapCertPath, bootstrapKeyPath string) (grpc.DialOption, error) {
 	if bootstrapCertPath == "" {

@@ -14,7 +14,7 @@ import (
 )
 
 // RemoteSigner implements Signer by posting CSRs to the control plane's
-// POST /svid/sign REST endpoint over mTLS (PKI-3). The agent presents its
+// POST /svid/sign REST endpoint over mTLS. The agent presents its
 // bootstrap TLS certificate on every request.
 //
 // Usage: replace LocalSigner in production; LocalSigner remains for dev/test.

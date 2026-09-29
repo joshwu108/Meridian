@@ -1,5 +1,5 @@
-// Package admin implements the local admin HTTP/JSON server for the agent
-// (Phase 6 CLI backing). It serves status, map dump, and health endpoints
+// Package admin implements the local admin HTTP/JSON server for the agent,
+// backing the meridian CLI. It serves status, map dump, and health endpoints
 // on a loopback address (default :9902). The admin surface is intentionally
 // minimal and never exposed beyond the node.
 package admin
@@ -152,7 +152,7 @@ func (s *httpServer) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // handleFlowsWatch serves a Server-Sent Events stream of flow events.
 // Consumers (meridian flows watch) read this line by line.
 // Currently returns a placeholder — the real implementation wires the
-// telemetry.Consumer fan-out channel via a FlowSource interface (Phase 5/6).
+// telemetry.Consumer fan-out channel via a FlowSource interface.
 func (s *httpServer) handleFlowsWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

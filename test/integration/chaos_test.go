@@ -2,11 +2,12 @@
 
 package integration
 
-// Phase 8 chaos tests. These validate the fail-closed / last-known-good
-// properties described in the PRD and ADR-0001/CC-5.
+// Chaos tests. These validate the fail-closed / last-known-good
+// properties described in ADR-0001.
 //
 // Tests that require a real multi-node environment (control-plane partition,
-// cert expiry with real TTLs) are noted as MANUAL in the shortcomings doc.
+// cert expiry with real TTLs) are noted as MANUAL in the known-limitations
+// list (orig_dest_test.go).
 // The tests here exercise what is automatable in the netns harness.
 
 import (
@@ -24,7 +25,7 @@ import (
 	"github.com/joshuawu/meridian/test/harness"
 )
 
-// TestAgentRestartPreservesPolicy verifies PRD chaos requirement §12:
+// TestAgentRestartPreservesPolicy verifies the agent-restart chaos requirement:
 // when the agent restarts, it re-opens pinned maps (not recreates them) so
 // the last-applied policy survives across a process restart.
 func TestAgentRestartPreservesPolicy(t *testing.T) {
@@ -139,8 +140,9 @@ func TestPolicySwapNoTransientDeny(t *testing.T) {
 
 // TestSockmapEligibilityAfterPolicyChange verifies that a flow that becomes
 // SOCKMAP-ineligible after a policy change is NOT still in the sockhash.
-// This is the P2.1-N property (CC-5 / eBPF R2) validated at the datapath
-// writer level (not requiring BPF prog test run).
+// This is the sockhash eligibility invariant (only ALLOW + SOCKMAP_ELIGIBLE
+// entries may be inserted) validated at the datapath writer level (not
+// requiring BPF prog test run).
 func TestSockmapEligibilityAfterPolicyChange(t *testing.T) {
 	harness.RequireRoot(t)
 	if err := rlimit.RemoveMemlock(); err != nil {

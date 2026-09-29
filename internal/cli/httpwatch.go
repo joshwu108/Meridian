@@ -32,8 +32,7 @@ func HTTPWatch(ctx context.Context, cfg Config, w io.Writer) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotImplemented {
-		fmt.Fprintln(w, "meridian http watch: not yet available — requires Phase 5 OTLP wiring")
-		fmt.Fprintln(w, "see shortcoming #8 in test/integration/orig_dest_test.go")
+		fmt.Fprintln(w, "meridian http watch: not yet available — this agent build has no L7 event stream")
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {

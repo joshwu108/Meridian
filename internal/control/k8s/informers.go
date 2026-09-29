@@ -1,10 +1,10 @@
-// Package k8s implements Kubernetes watchers for the Meridian control plane
-// (CP-5 / Phase 7). Pod and Service informers feed the identity registry and
+// Package k8s implements Kubernetes watchers for the Meridian control plane.
+// Pod and Service informers feed the identity registry and
 // policy store so Meridian tracks workload identities automatically.
 //
 // Testing note: these informers require a real or fake kube-apiserver.
 // Unit tests use fake.NewSimpleClientset from k8s.io/client-go/kubernetes/fake.
-// Integration tests (Phase 7 / not yet written) need envtest or a Kind cluster.
+// Integration tests need envtest or a Kind cluster.
 package k8s
 
 import (

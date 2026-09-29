@@ -1,12 +1,12 @@
-// Package ca implements the Meridian CA hierarchy for PKI-1 (MER-74):
+// Package ca implements the Meridian CA hierarchy:
 // an offline-style self-signed Root (P-384) and an in-process Intermediate
 // (P-384) that signs workload SVIDs (ECDSA P-256, 24h TTL) and node
 // certificates (ECDSA P-384, 7d TTL). All CSRs are validated fail-closed:
 // wrong key curve, missing or extra SANs, and SPIFFE ID mismatches are typed
 // errors, never silently ignored.
 //
-// Dependencies: stdlib crypto/x509, crypto/ecdsa only — no go-spiffe runtime
-// dep in Phase 3. go-spiffe (Workload API) is a Phase-4 addition (PKI-3/4).
+// Dependencies: stdlib crypto/x509, crypto/ecdsa only. go-spiffe is used by
+// the Workload API server, not by this package.
 //
 // Depguard: internal/control/ca is governed by the control-no-dataplane rule;
 // it must not import bpf/ or internal/agent.
@@ -30,9 +30,9 @@ import (
 const (
 	RootTTL         = 10 * 365 * 24 * time.Hour
 	IntermediateTTL = 365 * 24 * time.Hour
-	// SVIDTTL is the workload SVID lifetime (PRD §4.5 / subsystem-04 PKI-1).
+	// SVIDTTL is the workload SVID lifetime (see docs/subsystems/04-spiffe.md).
 	SVIDTTL = 24 * time.Hour
-	// NodeCertTTL is the node bootstrap credential lifetime (CC-4 / MER-75).
+	// NodeCertTTL is the node bootstrap credential lifetime.
 	NodeCertTTL = 7 * 24 * time.Hour
 	// clockSkew is backdated from notBefore to absorb peer clock drift.
 	clockSkew = 5 * time.Minute
@@ -49,7 +49,7 @@ func (e *CSRValidationError) Error() string {
 }
 
 // AuthorizationError is returned when a node is not permitted to request an
-// SVID for the given workload identity (issuance authorization, PKI-1 spec §3).
+// SVID for the given workload identity (issuance authorization).
 type AuthorizationError struct {
 	NodeID   string
 	SpiffeID string
@@ -74,7 +74,7 @@ type Authority struct {
 
 // New constructs an Authority from an already-generated Root and Intermediate.
 // interKey is the Intermediate's private signing key; it never leaves this
-// process (Architecture §4 / subsystem-04 risk #2).
+// process (docs/ARCHITECTURE.md §4, docs/subsystems/04-spiffe.md).
 func New(rootCert, interCert *x509.Certificate, interKey *ecdsa.PrivateKey, trustDomain string) *Authority {
 	pool := x509.NewCertPool()
 	pool.AddCert(rootCert)
@@ -159,7 +159,7 @@ func (a *Authority) SignWorkloadSVID(csr *x509.CertificateRequest, spiffeID stri
 
 // SignNodeCert validates csr against nodeSpiffeID and issues a node credential
 // with a 7d TTL, signed by the Intermediate. The CSR MUST use a P-384 key
-// (node identity — CC-4 two-tier scheme). Returns *CSRValidationError on violation.
+// (node identity — two-tier scheme). Returns *CSRValidationError on violation.
 func (a *Authority) SignNodeCert(csr *x509.CertificateRequest, nodeSpiffeID string) ([]*x509.Certificate, error) {
 	if err := a.validateNodeCSR(csr, nodeSpiffeID); err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func DecodeKeyPEM(pemBytes []byte) (*ecdsa.PrivateKey, error) {
 }
 
 // GenerateCSR generates a P-256 ECDSA key and a CSR for spiffeID. Intended
-// for workload SVID requests (PKI-3, agent keygen phase).
+// for workload SVID requests (the agent generates the key locally).
 func GenerateCSR(spiffeID string) (*ecdsa.PrivateKey, *x509.CertificateRequest, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -254,7 +254,7 @@ func GenerateCSR(spiffeID string) (*ecdsa.PrivateKey, *x509.CertificateRequest, 
 }
 
 // GenerateNodeCSR generates a P-384 ECDSA key and a CSR for nodeSpiffeID.
-// Intended for node bootstrap credential requests (CC-4 / MER-75).
+// Intended for node bootstrap credential requests.
 func GenerateNodeCSR(nodeSpiffeID string) (*ecdsa.PrivateKey, *x509.CertificateRequest, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {

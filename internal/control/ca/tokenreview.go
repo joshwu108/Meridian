@@ -1,4 +1,4 @@
-// Kubernetes TokenReview bootstrap authentication (PKI-2b / Phase 7).
+// Kubernetes TokenReview bootstrap authentication.
 //
 // In Kubernetes mode the agent has no pre-provisioned node cert; it presents
 // its ServiceAccount projected token (bound audience = meridian-control).

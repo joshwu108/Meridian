@@ -35,7 +35,7 @@ var (
 	metricCounterValue = regexp.MustCompile(`^([a-zA-Z0-9_:]+)(\{[^}]*\})?\s+([0-9]+(?:\.[0-9]+)?)\s*$`)
 )
 
-// MER-32 (O-2 gate): denied_flows_map join + Prometheus metrics for the MER-29
+// Armed gate: denied_flows_map join + Prometheus metrics for the live-policy
 // traffic pattern — exact allow/deny counters and SPIFFE labels on denied flows.
 func TestDeniedFlowsMetricsGate_MER32(t *testing.T) {
 	harness.RequireRoot(t)

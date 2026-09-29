@@ -100,7 +100,7 @@ func startManager(t *testing.T, m *SVIDManager, store *Store) context.CancelFunc
 }
 
 // TestNearExpiryFailsClosed: within 1 minute of expiry, GetSVID must return
-// an error rather than the stale cert (CC-5 fail-closed).
+// an error rather than the stale cert (fail-closed).
 func TestNearExpiryFailsClosed(t *testing.T) {
 	clk := newFakeClock(time.Now())
 	store := NewStore()

@@ -1,7 +1,7 @@
 // Command meridian-control runs the Meridian control plane:
-//   - REST API (CP-1): policy/identity CRUD
-//   - ADS gRPC server (CP-3): pushes compiled policy to agents
-//   - CA issuance (PKI-3): POST /svid/sign for workload SVID issuance
+//   - REST API: policy/identity CRUD
+//   - ADS gRPC server: pushes compiled policy to agents
+//   - CA issuance: POST /svid/sign for workload SVID issuance
 //
 // Standalone mode (--standalone, default): generates an ephemeral CA and
 // serves both REST and ADS over plain HTTP/gRPC (dev/test).
@@ -39,10 +39,10 @@ const (
 	defaultRESTAddr    = ":8080"
 	defaultADSAddr     = ":9443"
 	defaultWebhookAddr = ":9443"
-	readTimeout     = 10 * time.Second
-	writeTimeout    = 30 * time.Second
-	idleTimeout     = 60 * time.Second
-	shutdownTimeout = 5 * time.Second
+	readTimeout        = 10 * time.Second
+	writeTimeout       = 30 * time.Second
+	idleTimeout        = 60 * time.Second
+	shutdownTimeout    = 5 * time.Second
 )
 
 func main() {
@@ -123,7 +123,7 @@ func run(cfg runConfig) error {
 	st := store.NewMemory()
 	reg := identity.NewRegistry()
 
-	// REST server (CP-1) with CA issuance (PKI-3).
+	// REST server with CA issuance.
 	restSrv := rest.NewServer(st, reg).WithCA(auth)
 	httpServer := &http.Server{
 		Addr:         cfg.restAddr,
@@ -141,7 +141,7 @@ func run(cfg runConfig) error {
 		restErrCh <- nil
 	}()
 
-	// Validating admission webhook (CP-5 / Phase 7). Only started when both
+	// Validating admission webhook. Only started when both
 	// TLS flags are set — the apiserver requires HTTPS, so there is no plain
 	// mode. Absent flags mean the deployment does not use the webhook.
 	var webhookServer *http.Server

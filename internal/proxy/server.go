@@ -26,10 +26,11 @@ func WithServerLogf(logf func(string, ...any)) ServerOption {
 	return func(s *echoServer) { s.logf = logf }
 }
 
-// echoServer is the P4.1 no-TLS echo prototype (ADR-0006 testing requirement 1).
+// echoServer is a no-TLS echo prototype (ADR-0006 testing requirement 1).
 // It accepts connections on an IP_TRANSPARENT listener, recovers the original
 // destination via OriginalDestinationResolver, logs it, and echoes all bytes
-// back to the client. Phase 4.2 replaces the echo loop with mTLS tunneling.
+// back to the client. The mTLS inbound/outbound handlers supersede this echo
+// loop for real traffic.
 type echoServer struct {
 	listener Listener
 	resolver OriginalDestinationResolver
@@ -37,7 +38,7 @@ type echoServer struct {
 }
 
 // NewEchoServer returns a Server that accepts on listener and uses resolver to
-// recover original destinations (P4.1 gate). It implements the Server interface
+// recover original destinations. It implements the Server interface
 // defined in doc.go.
 func NewEchoServer(listener Listener, resolver OriginalDestinationResolver, opts ...ServerOption) Server {
 	s := &echoServer{

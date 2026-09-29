@@ -20,9 +20,9 @@
 
 /* Ethertypes (compared against eth->h_proto in network order via bpf_htons). */
 #define ETH_P_IP     0x0800   /* IPv4 */
-#define ETH_P_8021Q  0x8100   /* 802.1Q VLAN (MER-43: unwrap inner L3) */
+#define ETH_P_8021Q  0x8100   /* 802.1Q VLAN (unwrap inner L3) */
 #define ETH_P_TEB    0x6558   /* Transparent Ethernet Bridging (kernel Geneve) */
-#define ETH_P_IPV6   0x86DD   /* IPv6 (Phase 0: passthrough, not parsed) */
+#define ETH_P_IPV6   0x86DD   /* IPv6 (passthrough, not parsed) */
 
 /* 802.1Q tag after ethhdr: TCI (2) + inner ethertype (2). TPID is eth->h_proto. */
 #define VLAN_INNER_HDR_BYTES 4
@@ -39,9 +39,9 @@
 #define MERIDIAN_POLICY_MAP_ENTRIES   16384
 #define MERIDIAN_DENIED_FLOWS_ENTRIES 4096
 #define MERIDIAN_UDP_SEEN_FLOWS_ENTRIES 4096
-#define MERIDIAN_SOCKHASH_ENTRIES     65536 /* ADR-0007 SOCKHASH (Phase 2) */
+#define MERIDIAN_SOCKHASH_ENTRIES     65536 /* ADR-0007 SOCKHASH */
 
-/* runtime_config_map[0] bit flags (D16). Unset bits = fail-closed defaults. */
+/* runtime_config_map[0] bit flags. Unset bits = fail-closed defaults. */
 #define MERIDIAN_CFG_FALLOPEN_UNKNOWN (1u << 0)
 
 /* Geneve transport + Meridian identity option (ADR-0002 / ADR-0005). */
@@ -68,7 +68,7 @@
 #define MERIDIAN_STRIP_MAX_LEN 256
 
 /*
- * Redirect placeholder mark (MER-17): REDIRECT verdict marks skb but does not
+ * Redirect placeholder mark: REDIRECT verdict marks skb but does not
  * perform a tc redirect action yet.
  */
 #define MERIDIAN_MARK_REDIRECT_PLACEHOLDER (1u << 0)

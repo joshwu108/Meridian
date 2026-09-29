@@ -10,7 +10,7 @@
  * and emits ONE flow_event PER PACKET, then always returns TC_ACT_OK.
  *
  * This program remains intentionally simple and per-packet so CI can quickly
- * detect toolchain/verifier regressions independent of MER-17 policy logic.
+ * detect toolchain/verifier regressions independent of the policy logic.
  *
  * Verifier discipline (must stay clean on 5.15): every packet dereference is
  * bounds-checked against data_end before use; the IHL-derived L4 offset is
@@ -45,7 +45,7 @@ int meridian_counter(struct __sk_buff *skb)
 	if ((void *)(eth + 1) > data_end)
 		return TC_ACT_OK;
 
-	/* Phase 0 parses IPv4 only; everything else passes through unparsed. */
+	/* This program parses IPv4 only; everything else passes through unparsed. */
 	if (eth->h_proto != bpf_htons(ETH_P_IP))
 		return TC_ACT_OK;
 
@@ -96,13 +96,13 @@ int meridian_counter(struct __sk_buff *skb)
 	ev->src_port       = src_port;
 	ev->dst_port       = dst_port;
 	ev->proto          = proto;
-	ev->verdict        = FLOW_VERDICT_ALLOW;   /* Phase 0: always ALLOW */
+	ev->verdict        = FLOW_VERDICT_ALLOW;   /* smoke program: always ALLOW */
 	ev->_pad0          = 0;
-	ev->src_identity   = 0;                     /* Phase 0: no identity map */
+	ev->src_identity   = 0;                     /* no identity lookup here  */
 	ev->dst_identity   = 0;
 	ev->bytes          = skb->len;
 	ev->_pad1          = 0;
-	ev->latency_ns     = 0;                     /* no SOCKMAP in Phase 0 */
+	ev->latency_ns     = 0;                     /* no SOCKMAP path here */
 	ev->l7_status_code = 0;                     /* not an L7 event */
 	ev->_pad2[0]       = 0;
 	ev->_pad2[1]       = 0;

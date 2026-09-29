@@ -91,8 +91,8 @@ func TestTrafficHelpers(t *testing.T) {
 
 	top := NewTwoNode(t, "traffic", 70)
 	AssertAllowed(t, top.NodeA.Namespace, top.NodeB.Namespace, top.NodeB.OverlayIP, 18080)
-	// This negative path validates helper behavior before policy-map deny tests
-	// land (MER-29+). It is routing-denied, not policy-denied.
+	// This negative path validates helper behavior independently of the
+	// policy-map deny tests. It is routing-denied, not policy-denied.
 	AssertDenied(t, top.NodeA.Namespace, top.NodeB.Namespace, "10.255.255.254", 18081)
 }
 

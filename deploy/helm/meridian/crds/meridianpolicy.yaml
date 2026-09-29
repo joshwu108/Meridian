@@ -1,4 +1,4 @@
-# MeridianPolicy CRD (CP-5 / Phase 7).
+# MeridianPolicy CRD.
 # Schema mirrors internal/control/k8s/crd.go — keep the two in sync.
 # Helm installs files under crds/ before templates (no templating allowed here).
 apiVersion: apiextensions.k8s.io/v1

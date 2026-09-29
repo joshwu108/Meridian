@@ -1,7 +1,7 @@
 package wire
 
 // CompiledL7Rule is one HTTP policy rule carried from the control plane to the
-// node proxy via LDS/RDS (Phase 5). Rules are evaluated in order; first match
+// node proxy via LDS/RDS. Rules are evaluated in order; first match
 // wins. A rule with all zero/empty fields matches every request.
 type CompiledL7Rule struct {
 	// Method is the exact HTTP method to match ("GET", "POST", …).

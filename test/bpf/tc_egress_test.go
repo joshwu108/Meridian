@@ -64,7 +64,7 @@ func TestTcEgressSuccessfulEncapsulation(t *testing.T) {
 }
 
 // TestTcEgressAdjustRoomPath exercises the live kernel path where Geneve frames
-// arrive without pre-reserved TLV headroom (MER-28 / ADR-0002).
+// arrive without pre-reserved TLV headroom (ADR-0002).
 func TestTcEgressAdjustRoomPath(t *testing.T) {
 	objs := loadTcEgress(t)
 	reader := metrics.NewMapReader(objs.MetricsMap)

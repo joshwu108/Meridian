@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 // the counter TC program to the host-side veth, generates ICMP traffic from
 // the peer namespace, and asserts that (a) the PERCPU counter sums to >=
 // pingCount and (b) the real telemetry consumer decoded at least one event
-// with the expected peer->host addresses. This is the O-1/P0.2 gate: the
+// with the expected peer->host addresses. This gate covers the
 // whole pipeline, kernel hook through Go decode, in one test.
 func TestCounterCountsAndEmitsEvents(t *testing.T) {
 	harness.RequireRoot(t)
@@ -53,7 +53,7 @@ func TestCounterCountsAndEmitsEvents(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = objs.Close() })
 
-	// Pin the program so `tc` can attach it by path (Phase 0 mechanism).
+	// Pin the program so `tc` can attach it by path.
 	progPin := filepath.Join(pinDir, "counter_prog")
 	if err := objs.MeridianCounter.Pin(progPin); err != nil {
 		t.Fatalf("pin program: %v", err)

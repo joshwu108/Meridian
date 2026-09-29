@@ -23,14 +23,15 @@ import (
 	"github.com/joshuawu/meridian/test/harness"
 )
 
-// MER-48 (P2.1 core): sock_ops gated SOCKHASH population, the CC-5 insertion
+// sock_ops gated SOCKHASH population, the insertion
 // invariant (ADR-0007). The program attaches to the test's cgroup and, on TCP
 // established, inserts a socket into `sockhash` ONLY when the flow's compiled
 // policy_verdict is ALLOW carrying POLICY_FLAG_SOCKMAP_ELIGIBLE.
 //
 // This is the positive smoke (eligible flow present, DENY control absent). The
 // exhaustive non-eligible matrix — L7-required, mTLS-required, REDIRECT,
-// ALLOW-without-flag — is the permanent armed gate MER-49 (P2.1-N), not here.
+// ALLOW-without-flag — is the permanent armed negative gate
+// (TestSockmapNegativeGate_MER49), not here.
 //
 // Distinct loopback IPs give the two ends distinct identities so the policy
 // lookup is unambiguous: 127.0.0.1 = client (A), 127.0.0.2 = server (B).
@@ -89,7 +90,7 @@ func TestSockOpsGatedInsertion_MER48(t *testing.T) {
 		// Give any (erroneous) insertion time to land before asserting absence.
 		time.Sleep(200 * time.Millisecond)
 		if sockhashHasKey(t, objs.Sockhash, sockKeyFor(serverIP, serverPort)) {
-			t.Fatalf("DENY socket %s:%d present in sockhash; CC-5 invariant violated",
+			t.Fatalf("DENY socket %s:%d present in sockhash; SOCKMAP gating invariant violated",
 				serverIP, serverPort)
 		}
 	})

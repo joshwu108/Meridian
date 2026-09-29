@@ -18,7 +18,7 @@ import (
 
 const flowEventWireSize = int(unsafe.Sizeof(bpf.TcIngressFlowEvent{}))
 
-// MER-19 (T-4): byte-level ring record assertion after prog_test_run.
+// Byte-level ring record assertion after prog_test_run.
 func TestFlowEventRingRecordBytes(t *testing.T) {
 	objs := loadTcIngress(t)
 	reader := newRingReader(t, objs.FlowEvents)

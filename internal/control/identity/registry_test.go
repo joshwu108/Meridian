@@ -87,7 +87,7 @@ func TestReleaseDoesNotReuseID(t *testing.T) {
 		t.Fatalf("re-Allocate error: %v", err)
 	}
 	if reallocated <= first {
-		t.Fatalf("ID reused/decremented after Release: first=%d reallocated=%d (CC-3 violation)", first, reallocated)
+		t.Fatalf("ID reused/decremented after Release: first=%d reallocated=%d", first, reallocated)
 	}
 }
 

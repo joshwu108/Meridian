@@ -1,4 +1,4 @@
-// Etcd backend for control.Store (CP-5 / Phase 7).
+// Etcd backend for control.Store.
 //
 // Identities live under /meridian/identities/<id>, policies under
 // /meridian/policies/<key>. Watch events coalesce into the StoreEvent

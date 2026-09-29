@@ -13,19 +13,19 @@ import (
 	"github.com/joshuawu/meridian/pkg/wire"
 )
 
-// TestSockmapNegativeGate_MER49 is the permanent P2.1-N gate (CC-5 / eBPF R2,
-// ROADMAP top-risk #2): the kernel-side guard that a socket enters `sockhash`
+// TestSockmapNegativeGate_MER49 is the permanent negative gate
+// (ROADMAP top-risk #2): the kernel-side guard that a socket enters `sockhash`
 // ONLY for a plain-L4 ALLOW carrying POLICY_FLAG_SOCKMAP_ELIGIBLE. For every
 // other verdict class — DENY, ALLOW+L7_REQUIRED, ALLOW+MTLS_REQUIRED, REDIRECT,
 // and ALLOW without the flag — a real established flow must leave `sockhash`
-// untouched, or sk_msg (MER-50) could later redirect a socket that should have
+// untouched, or sk_msg could later redirect a socket that should have
 // gone through mTLS / L7 / proxy / deny handling.
 //
 // The eligible control row asserts PRESENCE so the gate cannot pass trivially by
-// never inserting anything. The test reuses the MER-48 sock_ops harness
+// never inserting anything. The test reuses the shared sock_ops harness
 // (loadSockOps / establish / currentCgroupV2Path / sockKeyFor / sockhashHasKey)
 // and runs a real loopback connect per row. This test must never be deleted or
-// skipped (manifest armed=yes); doing so re-opens CC-5.
+// skipped (manifest armed=yes); doing so re-opens the invariant.
 func TestSockmapNegativeGate_MER49(t *testing.T) {
 	const (
 		clientIP = "127.0.0.1"
@@ -83,7 +83,7 @@ func TestSockmapNegativeGate_MER49(t *testing.T) {
 			// Absence: let any erroneous insertion land before asserting it did not.
 			time.Sleep(200 * time.Millisecond)
 			if sockhashHasKey(t, objs.Sockhash, key) {
-				t.Fatalf("non-eligible verdict %q: server socket %s:%d present in sockhash; CC-5 invariant violated",
+				t.Fatalf("non-eligible verdict %q: server socket %s:%d present in sockhash; SOCKMAP gating invariant violated",
 					tc.name, serverIP, serverPort)
 			}
 		})

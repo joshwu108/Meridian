@@ -17,7 +17,7 @@ import (
 
 const testTD = "cluster.local"
 
-// TestCAPrimitivesGate_MER74 is the armed gate for MER-74 (PKI-1 CA primitives).
+// TestCAPrimitivesGate_MER74 is the armed gate for the CA primitives.
 //
 // Covers:
 //   - NewTestAuthority creates a Root+Intermediate that signs valid chains

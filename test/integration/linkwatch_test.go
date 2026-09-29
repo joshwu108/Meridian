@@ -24,7 +24,7 @@ import (
 // TestVethAttachLifecycleGate_MER71 is the Phase-3 A-2 gate: the RTNLGRP_LINK
 // watcher must EnsureAttach on every matching host-side veth within 100 ms of
 // creation (reconcile and event paths) and Detach within 100 ms of deletion.
-// The gate drives the REAL MER-57 TC attach manager — not a fake — so the
+// The gate drives the REAL TC attach manager — not a fake — so the
 // 100 ms budget covers actual qdisc/filter kernel operations, and the leak
 // check verifies real kernel state. Must never t.Skip under root on 5.15.
 func TestVethAttachLifecycleGate_MER71(t *testing.T) {
@@ -39,7 +39,7 @@ func TestVethAttachLifecycleGate_MER71(t *testing.T) {
 	)
 
 	// Load the real production TC ingress BPF objects. The gate exercises the
-	// EnsureAttached → clsact qdisc + direct-action filter kernel path (MER-57).
+	// EnsureAttached → clsact qdisc + direct-action filter kernel path.
 	pinDir := harness.PinDir(t)
 	objs, err := bpfobj.LoadTcIngress(pinDir)
 	if err != nil {
@@ -50,7 +50,7 @@ func TestVethAttachLifecycleGate_MER71(t *testing.T) {
 	progPin := filepath.Join(pinDir, "tc_ingress_prog")
 	tcMgr := attach.NewManager(objs.MeridianTcIngress, progPin)
 
-	// att delegates every call to the real MER-57 attach manager (kernel path
+	// att delegates every call to the real attach manager (kernel path
 	// exercised) while recording call counts so the 100 ms timing assertions
 	// can poll an in-process observable without busy-looping tc(8).
 	att := &tcAttacher{
@@ -153,7 +153,7 @@ func hasIngressBPFFilter(ifName string) bool {
 	return strings.Contains(string(out), "direct-action")
 }
 
-// tcAttacher wraps the real MER-57 TC attach manager with call-counting. Every
+// tcAttacher wraps the real TC attach manager with call-counting. Every
 // EnsureAttached and Detach is delegated to the real manager (kernel path
 // exercised) and recorded so the gate's 100 ms timing assertions can poll an
 // in-process observable instead of re-running tc(8) in a busy loop.

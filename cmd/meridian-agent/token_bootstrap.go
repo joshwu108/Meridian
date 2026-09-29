@@ -1,4 +1,4 @@
-// Token-authenticated node bootstrap client (PKI-2b / Phase 7).
+// Token-authenticated node bootstrap client.
 //
 // bootstrapFromToken is the agent side of the meridian.ca.NodeBootstrap RPC:
 // on a fresh node the agent has no bootstrap certificate yet, only a
@@ -101,7 +101,7 @@ func bootstrapFromToken(ctx context.Context, controlAddr, tokenPath, trustDomain
 	ctx, cancel := context.WithTimeout(ctx, tokenBootstrapTimeout)
 	defer cancel()
 
-	// TODO(PKI-2b, BLOCKING before production): the channel is insecure — mTLS
+	// TODO(BLOCKING before production): the channel is insecure — mTLS
 	// is impossible here because this RPC exists precisely to obtain the node
 	// certificate. The exposure is not limited to this call: the bearer SA
 	// token crosses in cleartext (passively capturable and redeemable for this

@@ -59,7 +59,7 @@ help: ## Print this help (targets with ## comments)
 # eBPF codegen
 # ---------------------------------------------------------------------------
 # NOTE: counter.c is retained as a toolchain/verifier smoke artifact only; the
-# production datapath verdict logic lives in tc_ingress.c (MER-17+).
+# production datapath verdict logic lives in tc_ingress.c.
 .PHONY: ebpf
 ebpf: ## Compile bpf/*.c and regenerate committed bpf2go Go bindings (Linux-only)
 	$(require_linux)
@@ -125,7 +125,7 @@ test-e2e: ## T4: nightly/self-hosted e2e benchmarks (tag 'e2e'); needs root, Lin
 	$(GO) test -tags=e2e -exec sudo -count=1 -parallel 1 -timeout=10m -run TestSockmapBench ./test/integration/...
 
 .PHONY: check-gate-skips
-check-gate-skips: ## MER-44: fail if any armed Phase-1 gate test reports skips
+check-gate-skips: ## Fail if any armed gate test reports skips
 	$(require_linux)
 	$(GO) run ./test/tools/checkgateskips -manifest test/gates/manifest.txt
 

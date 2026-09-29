@@ -1,4 +1,4 @@
-// Command checkgateskips is the MER-44 gate skip-integrity guard. It reads
+// Command checkgateskips is the gate skip-integrity guard. It reads
 // test/gates/manifest.txt and fails if any armed=yes gate skips or fails.
 //
 // Gates are grouped by (build-tags, package) and each group is run in a SINGLE
@@ -7,7 +7,7 @@
 // previous one-process-per-gate approach respawned privileged tests dozens of
 // times in rapid succession; the two-node integration tests leak RunID-scoped
 // netns + fixed host veths/underlay subnets between processes, so back-to-back
-// gate processes collided and flaked non-deterministically (MER-68). Running a
+// gate processes collided and flaked non-deterministically. Running a
 // package's gates together, serialized, lets each test's own t.Cleanup tear down
 // its kernel state before the next starts — no leak, no flake.
 package main
@@ -82,7 +82,7 @@ func main() {
 				failures++
 			case res.skips > 0:
 				fmt.Fprintf(os.Stderr,
-					"checkgateskips: FAIL gate %q (%s): %d skip(s) — armed gates must not skip (MER-44)\n",
+					"checkgateskips: FAIL gate %q (%s): %d skip(s) — armed gates must not skip\n",
 					entry.testName, entry.pkg, res.skips)
 				failures++
 			case res.failed:

@@ -1,4 +1,4 @@
-// PodResolver (Phase 7): the production IdentityResolver. It answers the
+// PodResolver is the production IdentityResolver. It answers the
 // policy compiler's selector and SPIFFE ID questions from the pod informer's
 // lister cache, so policy resolution never round-trips to the apiserver.
 package k8s

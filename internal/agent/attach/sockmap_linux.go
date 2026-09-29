@@ -12,7 +12,7 @@ import (
 
 // SkMsgSockhashManager attaches the sk_msg program to the `sockhash` map with
 // BPF_SK_MSG_VERDICT so the kernel runs it on sendmsg for every socket member of
-// the map — the MER-50 redirect fast path. The attach target is the sockhash map
+// the map — the intra-node redirect fast path. The attach target is the sockhash map
 // fd, not a cgroup.
 //
 // sk_msg verdict programs attach via the raw prog-attach syscall (no bpf_link on

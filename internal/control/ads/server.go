@@ -157,9 +157,9 @@ func (s *Server) push(srv stream, state *streamState, typeURL string) error {
 }
 
 // resourcesFor returns the xDS resources for a type_url, encoded per the frozen
-// CC-2 contract (ADR-0008 / internal/cc2): one resource per policy on the
+// wire contract (ADR-0008 / internal/cc2): one resource per policy on the
 // Cluster (CDS) channel and one per identity on the Endpoint (EDS) channel.
-// LDS/RDS are reserved and versioned-but-empty until Phase 5 (L7).
+// LDS/RDS are reserved and versioned-but-empty until L7 policy ships there.
 func (s *Server) resourcesFor(ctx context.Context, typeURL string) ([]*anypb.Any, error) {
 	switch typeURL {
 	case resourcev3.ClusterType:

@@ -1,7 +1,4 @@
 // Package supervisor coordinates agent components and their lifecycle.
-//
-// Phase 0 ticket P0-002 only introduces contracts. Runtime orchestration is
-// implemented in later phases.
 package supervisor
 
 import "context"

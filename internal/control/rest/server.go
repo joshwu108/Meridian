@@ -1,9 +1,9 @@
-// Package rest exposes the control plane's administrative REST surface (CP-1,
-// MER-53): policy and service (identity) definitions in, status out.
+// Package rest exposes the control plane's administrative REST surface:
+// policy and service (identity) definitions in, status out.
 //
 // The surface fails closed: malformed or invalid request bodies are rejected
 // with a 4xx and a structured error envelope, never partially applied. Service
-// IDs are allocated server-side by the identity registry (CC-3) — clients must
+// IDs are allocated server-side by the identity registry — clients must
 // not supply them. The server depends only on the control.Store and
 // identity.Registry interfaces, so the same handlers run against any backend.
 package rest
@@ -62,7 +62,7 @@ type apiError struct {
 }
 
 // serviceRequest is the POST /services body. ID is intentionally absent: the
-// control plane is the sole identity allocator (CC-3).
+// control plane is the sole identity allocator.
 type serviceRequest struct {
 	Name      string `json:"name"`
 	SpiffeID  string `json:"spiffeId"`
@@ -165,7 +165,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-// validatePolicyRule enforces the minimal CP-1 fail-closed invariants on an
+// validatePolicyRule enforces the minimal fail-closed invariants on an
 // inbound compiled rule. Full compiler-grade validation lives in package
 // control; this guards the REST boundary against obviously-unsafe entries.
 func validatePolicyRule(rule wire.PolicyRule) error {
