@@ -12,11 +12,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -27,7 +25,6 @@ import (
 	"github.com/joshuawu/meridian/internal/agent/attach"
 	"github.com/joshuawu/meridian/internal/agent/bpfobj"
 	"github.com/joshuawu/meridian/internal/agent/linkwatch"
-	"github.com/joshuawu/meridian/internal/agent/metrics"
 	"github.com/joshuawu/meridian/internal/agent/supervisor"
 	"github.com/joshuawu/meridian/internal/agent/telemetry"
 )
@@ -94,7 +91,7 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		}
 	}
 
-	startupRunner := supervisor.NewDefaultStartupRunner(opts)
+	startupRunner := supervisor.NewPolicyStartupRunner(opts)
 	startupRuntime, err := startupRunner.Startup(ctx)
 	if err != nil {
 		return fmt.Errorf("startup runner: %w", err)
@@ -103,11 +100,6 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		_ = startupRuntime.Close(context.Background())
 	}()
 
-	objs, err := startupRuntime.CounterObjects()
-	if err != nil {
-		return fmt.Errorf("startup runner objects: %w", err)
-	}
-
 	// The supervisor constructs and owns the consumer (its fd is released by
 	// startupRuntime.Close above); we only drive Run here.
 	consumer, err := startupRuntime.Consumer()
@@ -115,22 +107,12 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 		return fmt.Errorf("startup runner consumer: %w", err)
 	}
 
-	metricsServer := metrics.NewServer(":9901", metrics.NewRegistry(metrics.NewMapReader(objs.MetricsMap)))
-	metricsErr := make(chan error, 1)
-	go func() {
-		if serveErr := metricsServer.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			metricsErr <- serveErr
-			cancel()
-		}
-	}()
-	log.Printf("serving metrics endpoint on %s/metrics", metricsServer.Addr)
-
 	// Run the supervisor alongside the consumer loop. When --veth-prefix is set
 	// the supervisor drives the RTNLGRP_LINK watcher (with ENOBUFS-resilient
 	// retry) so every matching pod veth is automatically TC-attached. Without
 	// --veth-prefix the supervisor blocks on ctx and handles static interface
-	// teardown on shutdown. Either way we wait for its clean exit before metrics
-	// shutdown to preserve detach ordering.
+	// teardown on shutdown. Either way we wait for its clean exit before tearing
+	// down SOCKMAP.
 	supervisorDone := make(chan error, 1)
 	go func() { supervisorDone <- startupRunner.Run(ctx) }()
 
@@ -218,14 +200,5 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 	})
 	cancel()
 	<-supervisorDone // wait for clean watcher/attacher shutdown before tearing down SOCKMAP
-
-	if shutdownErr := metrics.Shutdown(metricsServer); shutdownErr != nil {
-		return fmt.Errorf("shutdown metrics server: %w", shutdownErr)
-	}
-	select {
-	case serveErr := <-metricsErr:
-		return fmt.Errorf("metrics endpoint failed: %w", serveErr)
-	default:
-	}
 	return runErr
 }

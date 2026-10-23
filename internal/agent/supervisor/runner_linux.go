@@ -103,12 +103,22 @@ func NewPolicyStartupRunner(opts StartupOptions) *StartupRunner {
 			if err != nil {
 				return startupResources{}, err
 			}
+			consumer, err := telemetry.New(objs.FlowEvents)
+			if err != nil {
+				_ = objs.Close()
+				return startupResources{}, fmt.Errorf("construct telemetry consumer: %w", err)
+			}
 			return startupResources{
 				IdentityMap:   objs.IdentityMap,
 				PolicyMap:     objs.PolicyMap,
 				AttachProgram: objs.MeridianTcIngress,
+				Telemetry:     consumer,
 				Close: func() error {
-					return objs.Close()
+					closeErr := consumer.Close()
+					if cerr := objs.Close(); cerr != nil && closeErr == nil {
+						closeErr = cerr
+					}
+					return closeErr
 				},
 				Opaque: objs,
 			}, nil
