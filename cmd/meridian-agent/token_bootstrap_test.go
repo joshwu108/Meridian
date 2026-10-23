@@ -77,7 +77,7 @@ func TestBootstrapFromTokenIssuesNodeCredential(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: testToken, nodeID: testNodeID})
 	tokenPath := writeTokenFile(t, testToken)
 
-	boot, err := bootstrapFromToken(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID)
+	boot, err := bootstrapFromToken(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID)
 	if err != nil {
 		t.Fatalf("bootstrapFromToken: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBootstrapFromTokenTrimsTokenWhitespace(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: testToken, nodeID: testNodeID})
 	tokenPath := writeTokenFile(t, testToken+"\n")
 
-	if _, err := bootstrapFromToken(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID); err != nil {
+	if _, err := bootstrapFromToken(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID); err != nil {
 		t.Fatalf("bootstrapFromToken with trailing newline: %v", err)
 	}
 }
@@ -114,7 +114,7 @@ func TestBootstrapFromTokenStripsURLScheme(t *testing.T) {
 
 	// Operators may reuse the REST-style --control-addr value (https://host:port);
 	// the helper must accept it as a gRPC target.
-	if _, err := bootstrapFromToken(testCtx(t), "https://"+addr, tokenPath, testTrustDomain, testNodeID); err != nil {
+	if _, err := bootstrapFromToken(testCtx(t), "https://"+addr, "", tokenPath, testTrustDomain, testNodeID); err != nil {
 		t.Fatalf("bootstrapFromToken with https:// prefix: %v", err)
 	}
 }
@@ -123,7 +123,7 @@ func TestBootstrapFromTokenRejectedToken(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: "other-token", nodeID: testNodeID})
 	tokenPath := writeTokenFile(t, testToken)
 
-	_, err := bootstrapFromToken(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID)
+	_, err := bootstrapFromToken(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID)
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("err = %v, want PermissionDenied", err)
 	}
@@ -132,7 +132,7 @@ func TestBootstrapFromTokenRejectedToken(t *testing.T) {
 func TestBootstrapFromTokenMissingTokenFile(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: testToken, nodeID: testNodeID})
 
-	if _, err := bootstrapFromToken(testCtx(t), addr, filepath.Join(t.TempDir(), "absent"), testTrustDomain, testNodeID); err == nil {
+	if _, err := bootstrapFromToken(testCtx(t), addr, "", filepath.Join(t.TempDir(), "absent"), testTrustDomain, testNodeID); err == nil {
 		t.Fatal("expected error for missing token file, got nil")
 	}
 }
@@ -141,7 +141,7 @@ func TestBootstrapFromTokenEmptyTokenFile(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: testToken, nodeID: testNodeID})
 	tokenPath := writeTokenFile(t, "  \n")
 
-	if _, err := bootstrapFromToken(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID); err == nil {
+	if _, err := bootstrapFromToken(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID); err == nil {
 		t.Fatal("expected error for empty token file, got nil")
 	}
 }
@@ -166,7 +166,7 @@ func TestObtainNodeBootstrapReusesPersistedCredential(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	boot, err := obtainNodeBootstrap(testCtx(t), "127.0.0.1:1",
+	boot, err := obtainNodeBootstrap(testCtx(t), "127.0.0.1:1", "",
 		filepath.Join(dir, "no-token"), testTrustDomain, testNodeID, certPath, keyPath)
 	if err != nil {
 		t.Fatalf("obtainNodeBootstrap with persisted credential: %v", err)
@@ -189,7 +189,7 @@ func TestObtainNodeBootstrapBootstrapsWhenMissing(t *testing.T) {
 	certPath := filepath.Join(dir, "bootstrap.crt")
 	keyPath := filepath.Join(dir, "bootstrap.key")
 
-	first, err := obtainNodeBootstrap(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
+	first, err := obtainNodeBootstrap(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
 	if err != nil {
 		t.Fatalf("obtainNodeBootstrap (first boot): %v", err)
 	}
@@ -197,7 +197,7 @@ func TestObtainNodeBootstrapBootstrapsWhenMissing(t *testing.T) {
 		t.Fatalf("credential not persisted: %v", err)
 	}
 
-	second, err := obtainNodeBootstrap(testCtx(t), "127.0.0.1:1", tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
+	second, err := obtainNodeBootstrap(testCtx(t), "127.0.0.1:1", "", tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
 	if err != nil {
 		t.Fatalf("obtainNodeBootstrap (restart): %v", err)
 	}
@@ -221,7 +221,7 @@ func TestObtainNodeBootstrapReplacesCorruptCredential(t *testing.T) {
 		t.Fatalf("seed corrupt key: %v", err)
 	}
 
-	boot, err := obtainNodeBootstrap(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
+	boot, err := obtainNodeBootstrap(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID, certPath, keyPath)
 	if err != nil {
 		t.Fatalf("obtainNodeBootstrap with corrupt files: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestBootstrapFromTokenSaveRoundTrip(t *testing.T) {
 	addr := startTokenBootstrapServer(t, &stubValidator{token: testToken, nodeID: testNodeID})
 	tokenPath := writeTokenFile(t, testToken)
 
-	boot, err := bootstrapFromToken(testCtx(t), addr, tokenPath, testTrustDomain, testNodeID)
+	boot, err := bootstrapFromToken(testCtx(t), addr, "", tokenPath, testTrustDomain, testNodeID)
 	if err != nil {
 		t.Fatalf("bootstrapFromToken: %v", err)
 	}

@@ -46,6 +46,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -80,6 +81,15 @@ const (
 	// Without this floor a host too slow to reach the target would pass the
 	// gate with zero drops and prove nothing.
 	o5RateTolerance = 0.90
+
+	// o5RateCeiling bounds overshoot above o5TargetRate. cilium/ebpf restarts an
+	// interrupted prog.Run with the FULL Repeat count again (its EINTR retry), so
+	// the kernel can execute more invocations than the pacer counted. Overshoot
+	// is rare here (~0.01% observed) and only makes the drop budget harder to
+	// meet, but left unbounded it would let the gate quietly measure the drop
+	// rate above the NFR's operating point and report a failure as if the NFR,
+	// rather than the harness, were at fault.
+	o5RateCeiling = 1.10
 
 	// o5RSSBudgetBytes is the agent's documented RSS budget (O-5: "stable RSS
 	// within the agent's 50 MB budget"). Asserted against the delta from the
@@ -121,11 +131,23 @@ const (
 	// against a ~5k shard, i.e. several full sweeps per window.
 	o5RunRepeat = 64
 
+	// o5MinSweeps is how many complete passes over its shard an emitter makes
+	// before the window deadline may end it. Two, not one, and deliberately:
+	// Consumer.Run bumps its Decoded counter BEFORE invoking the handler, so
+	// "all events decoded" does not prove the Aggregator has seen the last one.
+	// A second sweep means every identity was handled well before the final
+	// event, which is what actually makes the pair count deterministic rather
+	// than a race against that counter.
+	o5MinSweeps = 2
+
 	o5DstPort  uint16 = 8080
 	o5DstID           = wire.IdentityID(60_000)
-	o5DstIP           = "10.80.0.1"
 	o5ProtoTCP uint8  = 6
 )
+
+// o5DstAddr is the single destination every source identity talks to, so the
+// live pair count is exactly the source count.
+var o5DstAddr = netip.MustParseAddr("10.80.0.1")
 
 // TestRingBufDropRateGate_O5 is the O-5 load-validation gate.
 func TestRingBufDropRateGate_O5(t *testing.T) {
@@ -150,9 +172,26 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 	// pairs via LRU and understate both cardinality and RSS.
 	aggregator := telemetry.NewAggregator(o5SourceIdentities)
 	runCtx, cancelRun := context.WithCancel(ctx)
-	t.Cleanup(cancelRun)
 	runErr := make(chan error, 1)
-	go func() { runErr <- consumer.Run(runCtx, aggregator.Handle) }()
+	runDone := make(chan struct{})
+	go func() {
+		runErr <- consumer.Run(runCtx, aggregator.Handle)
+		close(runDone)
+	}()
+	// Registered AFTER the objs.Close cleanup, so LIFO runs it FIRST. On an
+	// abort path — any t.Fatalf below — cancelling is not sufficient:
+	// cancellation only signals Consumer.Run to close its reader, and
+	// objs.Close() unpins the flow_events map. Close must not run while the
+	// reader goroutine is still in ReadInto, so wait for Run to have RETURNED.
+	// Idempotent with the happy-path drain at the end of the test.
+	t.Cleanup(func() {
+		cancelRun()
+		select {
+		case <-runDone:
+		case <-time.After(10 * time.Second):
+			t.Errorf("consumer.Run did not return within 10s of cancel; skipping the wait would race objs.Close against the live ringbuf reader")
+		}
+	})
 
 	// Idle baseline: objects loaded, ring mapped, consumer running, no load and
 	// no cardinality yet. Everything asserted against the 50 MB budget is
@@ -160,10 +199,16 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 	rssIdle := o5SettledRSSBytes(t)
 
 	// --- Cardinality stress: fill the maps through the real single writer. ---
+	// Seeding is ~26k one-entry harness.Seed* calls rather than a few batched
+	// CommitPlans. Deliberate: those helpers are the repo's seeding path, and
+	// the whole fill measures ~0.2s against a 10s load, so batching would buy
+	// nothing and bypass them. ctx is unbounded because datapath.Writer.Apply
+	// ignores it (writer_linux.go) — a deadline here would be decorative; the
+	// test timeout is the real bound.
 	writer := datapath.NewWriter(objs.IdentityMap, objs.PolicyMap)
-	srcIPs := o5SeedIdentities(ctx, t, writer)
+	srcAddrs := o5SeedIdentities(ctx, t, writer)
 	o5SeedPolicies(ctx, t, writer)
-	packets := o5SynPackets(srcIPs)
+	packets := o5SynPackets(srcAddrs)
 
 	// --- Sustained, paced emission across o5LoadWindows windows. ---
 	reader := metrics.NewMapReader(objs.MetricsMap)
@@ -184,6 +229,14 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 	if allowed == 0 {
 		t.Fatalf("METRIC_FLOWS_ALLOWED flat after %s of emission: the ALLOW emit path never ran, so nothing was measured", elapsed)
 	}
+	// Guard the unsigned arithmetic below. METRIC_RINGBUF_DROPPED is bumped by
+	// every emit_flow_event path, METRIC_FLOWS_ALLOWED only by the ALLOW one, so
+	// drops exceeding allows means some other path (a DENY verdict, a policy
+	// miss) emitted during this window and the drop rate below would be
+	// attributed to the wrong denominator.
+	if dropped > allowed {
+		t.Fatalf("metrics_map inconsistent: %d ring-buffer drops exceed %d ALLOW-path emit attempts — an emit path this gate does not account for ran during the load window", dropped, allowed)
+	}
 	written := allowed - dropped
 	dropRate := float64(dropped) / float64(allowed)
 	rate := float64(allowed) / elapsed.Seconds()
@@ -198,7 +251,7 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 	}, fmt.Sprintf("consumer drained only %d of %d submitted flow events", consumer.Stats().Decoded, written))
 
 	stats := consumer.Stats()
-	pairs := aggregator.Size()
+	pairs := o5AwaitPairs(t, aggregator, o5SourceIdentities)
 	rssLoaded := rssPerWind[len(rssPerWind)-1]
 	rssCost := o5Sub(rssLoaded, rssIdle)
 	rssGrowth := o5Sub(rssLoaded, rssPerWind[0])
@@ -231,6 +284,10 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 		t.Errorf("achieved %.0f events/s, want at least %.0f (%.0f%% of the %.0f events/s NFR target): the drop-rate result is not a measurement at the NFR operating point",
 			rate, o5TargetRate*o5RateTolerance, o5RateTolerance*100, o5TargetRate)
 	}
+	if rate > o5TargetRate*o5RateCeiling {
+		t.Errorf("achieved %.0f events/s, above the %.0f events/s ceiling (%.0f%% of the %.0f events/s NFR target): the pacer overshot, so any drop-rate result below is measured past the NFR operating point, not at it",
+			rate, o5TargetRate*o5RateCeiling, o5RateCeiling*100, o5TargetRate)
+	}
 	if dropRate >= o5DropRateBudget {
 		t.Errorf("ring-buffer drop rate %.5f%% (%d of %d events) exceeds the O-5 budget of %.3f%% at %.0f events/s",
 			dropRate*100, dropped, allowed, o5DropRateBudget*100, rate)
@@ -261,6 +318,27 @@ func TestRingBufDropRateGate_O5(t *testing.T) {
 	}
 }
 
+// o5AwaitPairs gives the Aggregator a bounded chance to reach want live pairs
+// and returns the last count it saw, short or not.
+//
+// It does NOT fail: the caller asserts on the returned count so the full
+// measurement summary is still logged on a shortfall. The wait exists because
+// Consumer.Run increments Decoded before calling the handler, so a drained
+// ring does not by itself prove the last event has been aggregated —
+// o5MinSweeps makes a shortfall essentially impossible, and this closes the
+// remaining window instead of relying on that alone.
+func o5AwaitPairs(t *testing.T, aggregator *telemetry.Aggregator, want int) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := aggregator.Size()
+		if got >= want || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(harness.PollInterval)
+	}
+}
+
 // o5Emitters is the number of concurrent prog.Run drivers. Concurrency is kept
 // deliberately below the core count: the consumer is a single goroutine, and
 // saturating every core with emitters measures a starved reader rather than the
@@ -279,7 +357,7 @@ func o5Emitters() int {
 //
 // Each emitter owns a contiguous shard of the pool and sweeps it in order, so
 // one full pass across all emitters touches every source identity exactly once.
-// A window always completes at least one whole sweep before honouring its
+// A window always completes o5MinSweeps whole sweeps before honouring its
 // deadline, which is what makes the aggregator's pair count deterministic.
 //
 // Pacing is per-emitter against an absolute schedule (events emitted so far ÷
@@ -316,7 +394,7 @@ func o5Emit(t *testing.T, prog *ebpf.Program, packets [][]byte) time.Duration {
 						time.Sleep(ahead)
 					}
 				}
-				if sweep >= 1 && time.Now().After(deadline) {
+				if sweep+1 >= o5MinSweeps && time.Now().After(deadline) {
 					return
 				}
 			}
@@ -334,15 +412,15 @@ func o5Emit(t *testing.T, prog *ebpf.Program, packets [][]byte) time.Duration {
 // o5SeedIdentities writes o5SourceIdentities sources plus the shared
 // destination through datapath.Writer (the sole writer of identity_map) and
 // returns the source pod IPs in pool order.
-func o5SeedIdentities(ctx context.Context, t *testing.T, w datapath.Writer) []string {
+func o5SeedIdentities(ctx context.Context, t *testing.T, w datapath.Writer) []netip.Addr {
 	t.Helper()
 
-	srcIPs := make([]string, o5SourceIdentities)
-	for i := range srcIPs {
-		srcIPs[i] = o5SourceIP(i)
+	srcAddrs := make([]netip.Addr, o5SourceIdentities)
+	for i := range srcAddrs {
+		srcAddrs[i] = o5SourceAddr(i)
 		if err := harness.SeedIdentity(ctx, w, wire.Identity{
 			ID:        wire.IdentityID(i + 1),
-			PodIPv4:   srcIPs[i],
+			PodIPv4:   srcAddrs[i].String(),
 			SpiffeID:  "spiffe://meridian.test/ns/o5/sa/src-" + strconv.Itoa(i),
 			Namespace: "o5",
 			Name:      "src-" + strconv.Itoa(i),
@@ -352,14 +430,14 @@ func o5SeedIdentities(ctx context.Context, t *testing.T, w datapath.Writer) []st
 	}
 	if err := harness.SeedIdentity(ctx, w, wire.Identity{
 		ID:        o5DstID,
-		PodIPv4:   o5DstIP,
+		PodIPv4:   o5DstAddr.String(),
 		SpiffeID:  "spiffe://meridian.test/ns/o5/sa/dst",
 		Namespace: "o5",
 		Name:      "dst",
 	}); err != nil {
 		t.Fatalf("seed destination identity: %v", err)
 	}
-	return srcIPs
+	return srcAddrs
 }
 
 // o5SeedPolicies fills policy_map to capacity: one ingress ALLOW rule per
@@ -402,24 +480,25 @@ func o5SeedPolicies(ctx context.Context, t *testing.T, w datapath.Writer) {
 	}
 }
 
-// o5SourceIP maps a pool index to a distinct 10.64.0.0/12 address.
-func o5SourceIP(i int) string {
-	return fmt.Sprintf("10.64.%d.%d", i/256, i%256)
+// o5SourceAddr maps a pool index to a distinct address inside 10.64.0.0/16,
+// which o5SourceIdentities (10k) fits in with room to spare.
+func o5SourceAddr(i int) netip.Addr {
+	return netip.AddrFrom4([4]byte{10, 64, byte(i / 256), byte(i % 256)})
 }
 
 // o5SynPackets builds one immutable Ethernet+IPv4+TCP SYN frame per source IP.
 // SYN && !ACK is what makes meridian_tc_ingress treat each invocation as a
 // connection open and emit a flow_event on the ALLOW path (eBPF R6:
 // decision-point events only), giving exactly one event per prog.Run repeat.
-func o5SynPackets(srcIPs []string) [][]byte {
-	packets := make([][]byte, len(srcIPs))
-	for i, src := range srcIPs {
-		packets[i] = o5SynPacket(src, o5DstIP, o5DstPort)
+func o5SynPackets(srcAddrs []netip.Addr) [][]byte {
+	packets := make([][]byte, len(srcAddrs))
+	for i, src := range srcAddrs {
+		packets[i] = o5SynPacket(src, o5DstAddr, o5DstPort)
 	}
 	return packets
 }
 
-func o5SynPacket(srcIP, dstIP string, dstPort uint16) []byte {
+func o5SynPacket(srcAddr, dstAddr netip.Addr, dstPort uint16) []byte {
 	const (
 		ethLen = 14
 		ipLen  = 20
@@ -436,8 +515,10 @@ func o5SynPacket(srcIP, dstIP string, dstPort uint16) []byte {
 	binary.BigEndian.PutUint16(ip[2:4], ipLen+tcpLen)
 	ip[8] = 64
 	ip[9] = o5ProtoTCP
-	copy(ip[12:16], o5IPv4Bytes(srcIP))
-	copy(ip[16:20], o5IPv4Bytes(dstIP))
+	src4 := srcAddr.As4()
+	dst4 := dstAddr.As4()
+	copy(ip[12:16], src4[:])
+	copy(ip[16:20], dst4[:])
 
 	tcp := pkt[ethLen+ipLen:]
 	binary.BigEndian.PutUint16(tcp[0:2], 49152)
@@ -446,18 +527,6 @@ func o5SynPacket(srcIP, dstIP string, dstPort uint16) []byte {
 	tcp[13] = 0x02 // SYN, no ACK
 	binary.BigEndian.PutUint16(tcp[14:16], 0xffff)
 	return pkt
-}
-
-func o5IPv4Bytes(addr string) []byte {
-	var out [4]byte
-	for i, part := range strings.SplitN(addr, ".", 4) {
-		n, err := strconv.Atoi(part)
-		if err != nil {
-			panic("o5: malformed test IPv4 " + addr)
-		}
-		out[i] = byte(n)
-	}
-	return out[:]
 }
 
 func o5ReadMetric(t *testing.T, r *metrics.MapReader, id metrics.MetricID) uint64 {

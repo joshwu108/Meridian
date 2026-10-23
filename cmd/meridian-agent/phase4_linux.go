@@ -30,6 +30,7 @@ type phase4Options struct {
 	bootstrapCert     string
 	bootstrapKey      string
 	tokenPath         string // projected SA token file for token bootstrap
+	bootstrapCABundle string // PEM CA bundle verifying the control plane on the token-bootstrap RPC; empty = insecure dial (dev)
 	trustDomain       string // SPIFFE trust domain for the token-bootstrap node identity
 	standalone        bool   // if true, run embedded CA + LocalSigner
 }
@@ -62,6 +63,9 @@ const (
 //   - Trades the projected SA token for a node credential via the
 //     NodeBootstrap.BootstrapWithToken RPC, persists it under
 //     /run/meridian, then proceeds exactly like remote mode.
+//   - The RPC predates the node cert, so it runs over one-way TLS verified
+//     against --bootstrap-ca-bundle; without that flag the dial is insecure
+//     (dev only) and the agent logs a warning.
 func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDResolver, *svid.SVIDManager, error) {
 	var (
 		svidStore *svid.Store
@@ -103,8 +107,8 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 				return nil, nil, fmt.Errorf("phase4: %w", err)
 			}
 			certPath, keyPath = defaultBootstrapCertPath, defaultBootstrapKeyPath
-			boot, err := obtainNodeBootstrap(ctx, opts.controlAddr, opts.tokenPath,
-				opts.trustDomain, nodeID, certPath, keyPath)
+			boot, err := obtainNodeBootstrap(ctx, opts.controlAddr, opts.bootstrapCABundle,
+				opts.tokenPath, opts.trustDomain, nodeID, certPath, keyPath)
 			if err != nil {
 				return nil, nil, fmt.Errorf("phase4: token bootstrap: %w", err)
 			}

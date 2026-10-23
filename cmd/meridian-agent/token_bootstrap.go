@@ -11,6 +11,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/joshuawu/meridian/internal/control/ca"
@@ -51,7 +54,7 @@ func bootstrapNodeID() (string, error) {
 // reused — restarts must not re-spend the SA token or re-hit TokenReview —
 // otherwise (first boot, expired or unusable files) a fresh credential is
 // obtained via bootstrapFromToken and persisted for the next restart.
-func obtainNodeBootstrap(ctx context.Context, controlAddr, tokenPath, trustDomain, nodeID, certPath, keyPath string) (*ca.Bootstrap, error) {
+func obtainNodeBootstrap(ctx context.Context, controlAddr, caBundlePath, tokenPath, trustDomain, nodeID, certPath, keyPath string) (*ca.Bootstrap, error) {
 	if boot, err := ca.LoadBootstrapFiles(certPath, keyPath); err == nil {
 		if time.Now().Before(boot.Cert.NotAfter) {
 			log.Printf("token bootstrap: reusing persisted credential %s (%s, expires %s)",
@@ -62,7 +65,7 @@ func obtainNodeBootstrap(ctx context.Context, controlAddr, tokenPath, trustDomai
 			certPath, boot.Cert.NotAfter.Format(time.RFC3339))
 	}
 
-	boot, err := bootstrapFromToken(ctx, controlAddr, tokenPath, trustDomain, nodeID)
+	boot, err := bootstrapFromToken(ctx, controlAddr, caBundlePath, tokenPath, trustDomain, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +82,11 @@ func obtainNodeBootstrap(ctx context.Context, controlAddr, tokenPath, trustDomai
 // P-384 node key + CSR for spiffe://<trustDomain>/node/<nodeID>, and calls
 // BootstrapWithToken on the control plane at controlAddr (a gRPC target; a
 // leading http:// or https:// scheme from a reused --control-addr value is
-// stripped). The returned Bootstrap holds the locally generated key and the
-// signed chain; callers persist it with Bootstrap.Save so the RemoteSigner
-// flow can reload it on later starts.
-func bootstrapFromToken(ctx context.Context, controlAddr, tokenPath, trustDomain, nodeID string) (*ca.Bootstrap, error) {
+// stripped). caBundlePath selects the channel security — see
+// bootstrapTransportCreds. The returned Bootstrap holds the locally generated
+// key and the signed chain; callers persist it with Bootstrap.Save so the
+// RemoteSigner flow can reload it on later starts.
+func bootstrapFromToken(ctx context.Context, controlAddr, caBundlePath, tokenPath, trustDomain, nodeID string) (*ca.Bootstrap, error) {
 	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("token bootstrap: read token %q: %w", tokenPath, err)
@@ -101,18 +105,20 @@ func bootstrapFromToken(ctx context.Context, controlAddr, tokenPath, trustDomain
 	ctx, cancel := context.WithTimeout(ctx, tokenBootstrapTimeout)
 	defer cancel()
 
-	// TODO(BLOCKING before production): the channel is insecure — mTLS
-	// is impossible here because this RPC exists precisely to obtain the node
-	// certificate. The exposure is not limited to this call: the bearer SA
-	// token crosses in cleartext (passively capturable and redeemable for this
-	// node's cert), and the returned chain becomes the node's trust anchor for
-	// ADS, /svid/sign, AND workload mTLS peer verification, so a MITM here
-	// compromises the whole node's mesh trust for the cert TTL. Mitigation:
-	// one-way TLS verified against a pre-distributed root (kube-root-ca.crt
-	// from the token projection, or an operator-provisioned Meridian root),
-	// plus chain verification against that pinned root on the response.
+	// NOTE: this RPC cannot use mTLS — it exists precisely to obtain the node
+	// certificate — so the channel is one-way TLS, authenticating the server
+	// only. With --bootstrap-ca-bundle (production) the control plane is
+	// verified against that pre-distributed root, which is what keeps the
+	// bearer SA token off the wire in cleartext and keeps a MITM from minting
+	// the chain the node then trusts for ADS, /svid/sign, and workload mTLS.
+	// Without the flag (standalone/dev against a plaintext control plane) the
+	// dial is insecure and bootstrapTransportCreds logs a warning.
+	creds, err := bootstrapTransportCreds(caBundlePath)
+	if err != nil {
+		return nil, err
+	}
 	target := stripURLScheme(controlAddr)
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("token bootstrap: dial %q: %w", target, err)
 	}
@@ -143,6 +149,31 @@ func bootstrapFromToken(ctx context.Context, controlAddr, tokenPath, trustDomain
 			boot.NodeSpiffeID, nodeSpiffeID)
 	}
 	return boot, nil
+}
+
+// bootstrapTransportCreds returns the transport credentials for the bootstrap
+// dial. With caBundlePath set it is one-way TLS verifying the control plane
+// against that PEM root bundle (the pre-distributed kube-root-ca.crt from the
+// token projection, or an operator-provisioned Meridian root). An empty path
+// means standalone/dev and yields an insecure channel, which is logged loudly
+// because the SA token then crosses in cleartext. An unreadable or
+// certificate-less bundle is a configuration error and fails closed rather
+// than silently downgrading.
+func bootstrapTransportCreds(caBundlePath string) (credentials.TransportCredentials, error) {
+	if caBundlePath == "" {
+		log.Printf("token bootstrap: WARNING: bootstrap channel is unauthenticated — " +
+			"not safe for production (set --bootstrap-ca-bundle)")
+		return insecure.NewCredentials(), nil
+	}
+	bundlePEM, err := os.ReadFile(caBundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("token bootstrap: read CA bundle %q: %w", caBundlePath, err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(bundlePEM) {
+		return nil, fmt.Errorf("token bootstrap: CA bundle %q contains no PEM certificates", caBundlePath)
+	}
+	return credentials.NewTLS(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13}), nil
 }
 
 // stripURLScheme turns a REST-style address (https://host:port) into a plain
