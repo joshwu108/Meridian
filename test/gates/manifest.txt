@@ -70,3 +70,14 @@ yes integration ./test/integration/... TestOriginalDestinationGate_P41
 
 # D-B — netns isolation: two netns, same :15008 TPROXY listeners, no cross-talk (T3, Lima only)
 yes integration ./test/integration/... TestTPROXYNetnsIsolation
+
+# --- Phase 8 gates ---
+
+# P8 — full control-plane→kernel→TC enforcement: a REST policy flip ALLOW→DENY
+# changes real TCP reachability on lo (T3, Lima only)
+yes integration ./test/integration/... TestPolicyEnforcementGate_P8
+
+# O-5 — flow-events ring buffer load validation: < 0.1% kernel drops at the
+# 1M events/s NFR point, plus RSS cost and stability at 10k identity pairs and
+# a full 16k-entry policy map (T3, Lima only)
+yes integration ./test/integration/... TestRingBufDropRateGate_O5

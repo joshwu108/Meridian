@@ -170,6 +170,7 @@ func (h *InboundHandler) handle(ctx context.Context, raw net.Conn) {
 		h.logf("proxy inbound: policy snapshot: %v", err)
 		return
 	}
+	// TODO(P8-L7): check PolicyFlagL7Required and call MatchL7 here
 	result := EvalPolicy(snap, srcID, dstID, origDst, 6 /* TCP */)
 	srcIDStr := strconv.FormatUint(uint64(srcID), 10)
 	dstIDStr := strconv.FormatUint(uint64(dstID), 10)

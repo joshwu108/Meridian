@@ -1196,8 +1196,8 @@ struct task_struct {
 	void *security;
 	struct bpf_local_storage *bpf_storage;
 	struct bpf_run_ctx *bpf_ctx;
+	u32 kstack_offset;
 	struct llist_head kretprobe_instances;
-	long: 64;
 	struct thread_struct thread;
 	long: 64;
 	long: 64;
@@ -12221,6 +12221,7 @@ struct xdp_buff {
 	struct xdp_rxq_info *rxq;
 	struct xdp_txq_info *txq;
 	u32 frame_sz;
+	u32 flags;
 };
 
 struct xdp_frame {
@@ -12231,6 +12232,7 @@ struct xdp_frame {
 	u32 frame_sz: 24;
 	struct xdp_mem_info mem;
 	struct net_device *dev_rx;
+	u32 flags;
 };
 
 struct nlmsghdr {
@@ -12291,6 +12293,7 @@ struct netlink_callback {
 	u32 min_dump_alloc;
 	unsigned int prev_seq;
 	unsigned int seq;
+	int flags;
 	bool strict_check;
 	union {
 		u8 ctx[48];
@@ -25853,6 +25856,10 @@ struct compat_sigevent {
 	} _sigev_un;
 };
 
+typedef struct {
+	void *lock;
+} class_rcu_t;
+
 struct posix_clock;
 
 struct posix_clock_context;
@@ -27127,6 +27134,8 @@ struct multi_stop_data {
 
 typedef int __kernel_mqd_t;
 
+typedef __u16 __sum16;
+
 typedef __kernel_mqd_t mqd_t;
 
 enum audit_state {
@@ -27342,6 +27351,37 @@ struct audit_sig_info {
 	char ctx[0];
 };
 
+struct ethhdr {
+	unsigned char h_dest[6];
+	unsigned char h_source[6];
+	__be16 h_proto;
+};
+
+struct ip_ra_chain {
+	struct ip_ra_chain *next;
+	struct sock *sk;
+	union {
+		void (*destructor)(struct sock *);
+		struct sock *saved_sk;
+	};
+	struct callback_head rcu;
+};
+
+struct fib_table {
+	struct hlist_node tb_hlist;
+	u32 tb_id;
+	int tb_num_default;
+	struct callback_head rcu;
+	long unsigned int *tb_data;
+	long unsigned int __data[0];
+};
+
+struct inet_peer_base {
+	struct rb_root rb_root;
+	seqlock_t lock;
+	int total;
+};
+
 enum skb_drop_reason {
 	SKB_DROP_REASON_NOT_SPECIFIED = 0,
 	SKB_DROP_REASON_NO_SOCKET = 1,
@@ -27403,6 +27443,58 @@ struct netlink_kernel_cfg {
 	int (*bind)(struct net *, int);
 	void (*unbind)(struct net *, int);
 	bool (*compare)(struct net *, struct sock *);
+};
+
+struct lwtunnel_state {
+	__u16 type;
+	__u16 flags;
+	__u16 headroom;
+	atomic_t refcnt;
+	int (*orig_output)(struct net *, struct sock *, struct sk_buff *);
+	int (*orig_input)(struct sk_buff *);
+	struct callback_head rcu;
+	__u8 data[0];
+};
+
+struct iphdr {
+	__u8 ihl: 4;
+	__u8 version: 4;
+	__u8 tos;
+	__be16 tot_len;
+	__be16 id;
+	__be16 frag_off;
+	__u8 ttl;
+	__u8 protocol;
+	__sum16 check;
+	union {
+		struct {
+			__be32 saddr;
+			__be32 daddr;
+		};
+		struct {
+			__be32 saddr;
+			__be32 daddr;
+		} addrs;
+	};
+};
+
+struct ipv6hdr {
+	__u8 priority: 4;
+	__u8 version: 4;
+	__u8 flow_lbl[3];
+	__be16 payload_len;
+	__u8 nexthdr;
+	__u8 hop_limit;
+	union {
+		struct {
+			struct in6_addr saddr;
+			struct in6_addr daddr;
+		};
+		struct {
+			struct in6_addr saddr;
+			struct in6_addr daddr;
+		} addrs;
+	};
 };
 
 struct audit_netlink_list {
@@ -28212,7 +28304,6 @@ enum {
 struct genl_multicast_group {
 	char name[16];
 	u8 flags;
-	u8 cap_sys_admin: 1;
 };
 
 struct genl_ops;
@@ -28853,6 +28944,11 @@ struct ftrace_init_func {
 	struct list_head list;
 	long unsigned int ip;
 };
+
+typedef struct {
+	raw_spinlock_t *lock;
+	long unsigned int flags;
+} class_raw_spinlock_irqsave_t;
 
 enum ring_buffer_type {
 	RINGBUF_TYPE_DATA_TYPE_LEN_MAX = 28,
@@ -30235,6 +30331,7 @@ enum {
 	TP_ERR_DIFF_PROBE_TYPE = 53,
 	TP_ERR_DIFF_ARG_TYPE = 54,
 	TP_ERR_SAME_PROBE = 55,
+	TP_ERR_EVENT_TOO_BIG = 56,
 };
 
 struct trace_eprobe {
@@ -34686,31 +34783,6 @@ struct inet_hashinfo {
 	struct inet_listen_hashbucket *lhash2;
 };
 
-struct ip_ra_chain {
-	struct ip_ra_chain *next;
-	struct sock *sk;
-	union {
-		void (*destructor)(struct sock *);
-		struct sock *saved_sk;
-	};
-	struct callback_head rcu;
-};
-
-struct fib_table {
-	struct hlist_node tb_hlist;
-	u32 tb_id;
-	int tb_num_default;
-	struct callback_head rcu;
-	long unsigned int *tb_data;
-	long unsigned int __data[0];
-};
-
-struct inet_peer_base {
-	struct rb_root rb_root;
-	seqlock_t lock;
-	int total;
-};
-
 struct tcp_fastopen_context {
 	siphash_key_t key[2];
 	int num;
@@ -34778,17 +34850,6 @@ struct bpf_sk_lookup_kern {
 	} v6;
 	struct sock *selected_sk;
 	bool no_reuseport;
-};
-
-struct lwtunnel_state {
-	__u16 type;
-	__u16 flags;
-	__u16 headroom;
-	atomic_t refcnt;
-	int (*orig_output)(struct net *, struct sock *, struct sk_buff *);
-	int (*orig_input)(struct sk_buff *);
-	struct callback_head rcu;
-	__u8 data[0];
 };
 
 struct sock_reuseport {
@@ -34929,7 +34990,7 @@ struct sk_msg_sg {
 	u32 end;
 	u32 size;
 	u32 copybreak;
-	long unsigned int copy;
+	long unsigned int copy[1];
 	struct scatterlist data[19];
 };
 
@@ -35192,6 +35253,32 @@ enum net_device_flags {
 	IFF_LOWER_UP = 65536,
 	IFF_DORMANT = 131072,
 	IFF_ECHO = 262144,
+};
+
+typedef struct bio_vec skb_frag_t;
+
+struct skb_shared_hwtstamps {
+	ktime_t hwtstamp;
+};
+
+struct skb_shared_info {
+	__u8 flags;
+	__u8 meta_len;
+	__u8 nr_frags;
+	__u8 tx_flags;
+	short unsigned int gso_size;
+	short unsigned int gso_segs;
+	struct sk_buff *frag_list;
+	struct skb_shared_hwtstamps hwtstamps;
+	unsigned int gso_type;
+	u32 tskey;
+	atomic_t dataref;
+	void *destructor_arg;
+	skb_frag_t frags[17];
+};
+
+enum xdp_buff_flags {
+	XDP_FLAGS_HAS_FRAGS = 1,
 };
 
 enum netdev_priv_flags {
@@ -40901,7 +40988,7 @@ struct proc_dir_entry {
 };
 
 union proc_op {
-	int (*proc_get_link)(struct dentry *, struct path *);
+	int (*proc_get_link)(struct dentry *, struct path *, struct task_struct *);
 	int (*proc_show)(struct seq_file *, struct pid_namespace *, struct pid *, struct task_struct *);
 	const char *lsm;
 };
@@ -41771,7 +41858,7 @@ struct fscrypt_master_key {
 	struct callback_head mk_rcu_head;
 	struct fscrypt_master_key_secret mk_secret;
 	struct fscrypt_key_specifier mk_spec;
-	struct key *mk_users;
+	struct list_head mk_users;
 	struct list_head mk_decrypted_inodes;
 	spinlock_t mk_decrypted_inodes_lock;
 	struct fscrypt_prepared_key mk_direct_keys[10];
@@ -41894,6 +41981,12 @@ struct fscrypt_get_key_status_arg {
 	__u32 status_flags;
 	__u32 user_count;
 	__u32 __out_reserved[13];
+};
+
+struct fscrypt_master_key_user {
+	struct list_head link;
+	kuid_t uid;
+	struct key *quota_key;
 };
 
 struct skcipher_alg {
@@ -51400,6 +51493,7 @@ struct keyctl_pkey_params {
 
 struct request_key_auth {
 	struct callback_head rcu;
+	refcount_t usage;
 	struct key *target_key;
 	struct key *dest_keyring;
 	const struct cred *cred;
@@ -52426,12 +52520,6 @@ enum lsm_event {
 	LSM_POLICY_CHANGE = 0,
 };
 
-struct ethhdr {
-	unsigned char h_dest[6];
-	unsigned char h_source[6];
-	__be16 h_proto;
-};
-
 struct ethtool_drvinfo {
 	__u32 cmd;
 	char driver[32];
@@ -53304,8 +53392,6 @@ struct avc_callback_node {
 	struct avc_callback_node *next;
 };
 
-typedef __u16 __sum16;
-
 enum sctp_endpoint_type {
 	SCTP_EP_TYPE_SOCKET = 0,
 	SCTP_EP_TYPE_ASSOCIATION = 1,
@@ -53657,28 +53743,6 @@ struct tcphdr {
 	__be16 urg_ptr;
 };
 
-struct iphdr {
-	__u8 ihl: 4;
-	__u8 version: 4;
-	__u8 tos;
-	__be16 tot_len;
-	__be16 id;
-	__be16 frag_off;
-	__u8 ttl;
-	__u8 protocol;
-	__sum16 check;
-	union {
-		struct {
-			__be32 saddr;
-			__be32 daddr;
-		};
-		struct {
-			__be32 saddr;
-			__be32 daddr;
-		} addrs;
-	};
-};
-
 struct ipv6_rt_hdr {
 	__u8 nexthdr;
 	__u8 hdrlen;
@@ -53689,25 +53753,6 @@ struct ipv6_rt_hdr {
 struct ipv6_opt_hdr {
 	__u8 nexthdr;
 	__u8 hdrlen;
-};
-
-struct ipv6hdr {
-	__u8 priority: 4;
-	__u8 version: 4;
-	__u8 flow_lbl[3];
-	__be16 payload_len;
-	__u8 nexthdr;
-	__u8 hop_limit;
-	union {
-		struct {
-			struct in6_addr saddr;
-			struct in6_addr daddr;
-		};
-		struct {
-			struct in6_addr saddr;
-			struct in6_addr daddr;
-		} addrs;
-	};
 };
 
 struct udphdr {
@@ -54160,7 +54205,7 @@ struct sctp_cookie {
 	__u8 padding;
 	__u32 adaptation_ind;
 	__u8 auth_random[36];
-	__u8 auth_hmacs[10];
+	__u8 auth_hmacs[12];
 	__u8 auth_chunks[20];
 	__u32 raw_addr_list_len;
 };
@@ -94266,22 +94311,27 @@ struct rockchip_pcie_ep {
 	u8 irq_pending;
 };
 
+enum mtk_pcie_quirks {
+	MTK_PCIE_FIX_CLASS_ID = 1,
+	MTK_PCIE_FIX_DEVICE_ID = 2,
+	MTK_PCIE_NO_MSI = 4,
+};
+
 struct mtk_pcie_port;
 
 struct mtk_pcie_soc {
-	bool need_fix_class_id;
-	bool need_fix_device_id;
-	bool no_msi;
 	unsigned int device_id;
 	struct pci_ops *ops;
 	int (*startup)(struct mtk_pcie_port *);
 	int (*setup_irq)(struct mtk_pcie_port *, struct device_node *);
+	enum mtk_pcie_quirks quirks;
 };
 
 struct mtk_pcie;
 
 struct mtk_pcie_port {
 	void *base;
+	phys_addr_t phys_base;
 	struct list_head list;
 	struct mtk_pcie *pcie;
 	struct reset_control *reset;
@@ -96007,6 +96057,8 @@ struct fb_deferred_io_pageref;
 
 struct fb_deferred_io;
 
+struct fb_deferred_io_state;
+
 struct fb_ops;
 
 struct fb_tile_ops;
@@ -96036,6 +96088,7 @@ struct fb_info {
 	long unsigned int npagerefs;
 	struct fb_deferred_io_pageref *pagerefs;
 	struct fb_deferred_io *fbdefio;
+	struct fb_deferred_io_state *fbdefio_state;
 	const struct fb_ops *fbops;
 	struct device *device;
 	struct device *dev;
@@ -96072,7 +96125,6 @@ struct fb_deferred_io {
 	long unsigned int delay;
 	bool sort_pagereflist;
 	int open_count;
-	struct mutex lock;
 	struct list_head pagereflist;
 	void (*first_io)(struct fb_info *);
 	void (*deferred_io)(struct fb_info *, struct list_head *);
@@ -96345,6 +96397,12 @@ struct fb_cvt_data {
 	u32 active_pixels;
 	u32 flags;
 	u32 status;
+};
+
+struct fb_deferred_io_state {
+	struct kref ref;
+	struct mutex lock;
+	struct fb_info *info;
 };
 
 typedef unsigned char u_char;
@@ -122962,6 +123020,7 @@ struct udmabuf {
 	long unsigned int pagecount;
 	struct page **pages;
 	struct sg_table *sg;
+	enum dma_data_direction sg_dir;
 	struct miscdevice *device;
 };
 
@@ -127493,34 +127552,12 @@ enum {
 	NETDEV_FEATURE_COUNT = 64,
 };
 
-typedef struct bio_vec skb_frag_t;
-
-struct skb_shared_hwtstamps {
-	ktime_t hwtstamp;
-};
-
 enum {
 	SKBTX_HW_TSTAMP = 1,
 	SKBTX_SW_TSTAMP = 2,
 	SKBTX_IN_PROGRESS = 4,
 	SKBTX_WIFI_STATUS = 16,
 	SKBTX_SCHED_TSTAMP = 64,
-};
-
-struct skb_shared_info {
-	__u8 flags;
-	__u8 meta_len;
-	__u8 nr_frags;
-	__u8 tx_flags;
-	short unsigned int gso_size;
-	short unsigned int gso_segs;
-	struct sk_buff *frag_list;
-	struct skb_shared_hwtstamps hwtstamps;
-	unsigned int gso_type;
-	u32 tskey;
-	atomic_t dataref;
-	void *destructor_arg;
-	skb_frag_t frags[17];
 };
 
 struct mdio_board_info {
@@ -131925,6 +131962,7 @@ struct channel {
 	struct list_head clist;
 	rwlock_t upl;
 	struct channel *bridge;
+	struct callback_head rcu;
 	u8 avail;
 	u8 had_frag;
 	u32 lastseq;
@@ -134882,6 +134920,7 @@ struct xhci_hcd {
 	u32 isoc_bei_interval;
 	int event_ring_max;
 	int page_size;
+	unsigned int dma_mask_bits;
 	int page_shift;
 	int msix_count;
 	struct clk *clk;
@@ -137263,6 +137302,7 @@ struct thermal_hwmon_temp {
 	struct thermal_zone_device *tz;
 	struct thermal_hwmon_attr temp_input;
 	struct thermal_hwmon_attr temp_crit;
+	bool temp_crit_present;
 };
 
 struct thermal_trip {
@@ -146873,6 +146913,7 @@ typedef int (*rtnl_dumpit_func)(struct sk_buff *, struct netlink_callback *);
 enum rtnl_link_flags {
 	RTNL_FLAG_DOIT_UNLOCKED = 1,
 	RTNL_FLAG_BULK_DEL_SUPPORTED = 2,
+	RTNL_FLAG_DUMP_UNLOCKED = 4,
 };
 
 struct net_fill_args {
@@ -148003,6 +148044,7 @@ struct netlink_dump_control {
 	void *data;
 	struct module *module;
 	u32 min_dump_alloc;
+	int flags;
 };
 
 struct rtnl_link_stats {
@@ -152274,6 +152316,7 @@ struct tc_action {
 	struct tc_cookie *act_cookie;
 	struct tcf_chain *goto_chain;
 	u32 tcfa_flags;
+	struct callback_head tcfa_rcu;
 	u8 hw_stats;
 	u8 used_hw_stats;
 	bool used_hw_stats_valid;
@@ -152443,9 +152486,6 @@ struct tcf_police_params {
 struct tcf_police {
 	struct tc_action common;
 	struct tcf_police_params *params;
-	long: 64;
-	long: 64;
-	long: 64;
 	long: 64;
 	long: 64;
 	long: 64;
@@ -152760,8 +152800,8 @@ struct netlink_sock {
 	bool cb_running;
 	int dump_done_errno;
 	struct netlink_callback cb;
-	struct mutex *cb_mutex;
-	struct mutex cb_def_mutex;
+	struct mutex nl_cb_mutex;
+	struct mutex *dump_cb_mutex;
 	void (*netlink_rcv)(struct sk_buff *);
 	int (*netlink_bind)(struct net *, int);
 	void (*netlink_unbind)(struct net *, int);
@@ -155314,6 +155354,7 @@ struct fib_dump_filter {
 	bool filter_set;
 	bool dump_routes;
 	bool dump_exceptions;
+	bool rtnl_held;
 	unsigned char protocol;
 	unsigned char rt_type;
 	unsigned int flags;
@@ -156356,7 +156397,7 @@ struct xfrm_mgr {
 	int (*new_mapping)(struct xfrm_state *, xfrm_address_t *, __be16);
 	int (*notify_policy)(struct xfrm_policy *, int, const struct km_event *);
 	int (*report)(struct net *, u8, struct xfrm_selector *, xfrm_address_t *);
-	int (*migrate)(const struct xfrm_selector *, u8, u8, const struct xfrm_migrate *, int, const struct xfrm_kmaddress *, const struct xfrm_encap_tmpl *);
+	int (*migrate)(const struct xfrm_selector *, u8, u8, const struct xfrm_migrate *, int, const struct xfrm_kmaddress *, struct net *, const struct xfrm_encap_tmpl *);
 	bool (*is_alive)(const struct km_event *);
 };
 

@@ -8,7 +8,9 @@
 //	meridian cert inspect <cert.pem>
 //	meridian cert verify  <cert.pem> <ca.pem>
 //	meridian flows watch
+//	meridian http watch
 //	meridian map dump
+//	meridian doctor
 //
 // The CLI contacts the control plane REST API (--control) and the agent admin
 // server (--agent) via plain HTTP. Both servers are loopback-only by design;
@@ -114,7 +116,7 @@ func run(ctx context.Context, cfg cli.Config, args []string) error {
 		return cli.HTTPWatch(ctx, cfg, os.Stdout)
 
 	case "doctor":
-		return cli.Doctor(ctx, cfg, os.Stdout)
+		return cli.DoctorCheck(ctx, cfg, os.Stdout)
 
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -134,7 +136,8 @@ Commands:
   flows watch              stream live flow events from agent
   http watch               stream L7 trace events from agent
   map dump                 dump identity and policy maps from agent
-  doctor                   run pre-flight probes (kernel, TPROXY, iptables)
+  doctor                   run data plane pre-flight probes (kernel, bpffs,
+                           cgroup v2, TPROXY, capabilities)
 
 Flags:`)
 	flag.PrintDefaults()

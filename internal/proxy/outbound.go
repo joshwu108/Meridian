@@ -29,6 +29,10 @@ type OutboundDialer interface {
 }
 
 // MTLSDialer implements OutboundDialer using mTLS (SPIFFE SVIDs).
+//
+// ServerName is set to the remote IP address: SPIFFE certs carry URI SANs (not
+// DNS names), so peer identity is verified against the URI SAN and IP-based SNI
+// is correct here — no DNS resolution is required or performed.
 type MTLSDialer struct {
 	certSource CertSource
 	trustPool  *x509.CertPool

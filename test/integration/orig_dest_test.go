@@ -26,8 +26,9 @@ package integration
 //  4. [MTLSDialer SNI] MTLSDialer sets ServerName = remote IP address.
 //     Production deployments that use hostname-based certs (not SPIFFE) will
 //     fail TLS verification. SPIFFE certs carry URI SANs, so IP-based SNI is
-//     correct for SPIFFE — but this should be documented and verified against
-//     the peer's URI SAN, not DNS names.
+//     correct for SPIFFE — this is now documented on the MTLSDialer type
+//     (internal/proxy/outbound.go): peer identity is verified against the URI
+//     SAN, not DNS names, and no DNS resolution is required.
 //
 //  5. [Peer identity] RESOLVED: peer identity cross-check implemented via
 //     WithOutboundSpiffeIDLookup and MapSpiffeIDResolver.LookupID
@@ -38,6 +39,9 @@ package integration
 //     does NOT yet call MatchL7 because HTTP framing (extract method/path from
 //     raw stream) is deferred. Seam is ready: check PolicyFlagL7Required on
 //     authz verdict and branch into MatchL7 before proxying bytes.
+//     Exact seam: internal/proxy/inbound.go, the EvalPolicy call in
+//     InboundHandler's authz step — marked there with
+//     "// TODO(P8-L7): check PolicyFlagL7Required and call MatchL7 here".
 //
 //  7. [Circuit breaker] RESOLVED: per-upstream CB map implemented — WithCircuitBreaker
 //     now takes a template, per-addr breakers via map[netip.Addr]*CircuitBreaker,
@@ -67,13 +71,23 @@ package integration
 //     admin.WithCertRotator). Remaining: meridian http watch (L7 trace
 //     stream) and meridian doctor (probes TPROXY/BPF kernel features).
 //
-// 12. [K8s control plane] PARTIAL: etcd backend implemented
-//     (internal/control/store/etcd.go), K8s pod informer implemented
-//     (internal/control/k8s/informers.go, tested with fake clientset),
-//     Helm chart skeleton created (deploy/helm/meridian/).
-//     Remaining: MeridianPolicy CRD (needs controller-runtime or code-gen),
-//     TokenReview bootstrap (SVID issuance using projected SA tokens),
-//     K8s e2e demo test (Kind cluster or envtest), etcd integration test.
+// 12. [K8s control plane] RESOLVED: etcd backend (internal/control/store/etcd.go),
+//     K8s pod informer (internal/control/k8s/informers.go) and Helm chart
+//     (deploy/helm/meridian/) were followed by Phase 7, which landed the
+//     MeridianPolicy CRD + hand-written types and validating admission webhook
+//     (internal/control/k8s/crd.go, deploy/helm/meridian/crds/meridianpolicy.yaml),
+//     the dynamic-client PolicyWatcher informer (policy_informer.go), the
+//     production PodResolver + webhook TLS mount + Helm webhook manifest, the
+//     TokenReview bootstrap path (internal/control/ca/tokenreview.go,
+//     bootstrap_rpc.go, cmd/meridian-agent/token_bootstrap.go), the etcd
+//     integration test (test/integration/etcd_test.go) and the envtest K8s e2e
+//     demo (test/e2e/k8s_demo_test.go).
+//     See commits 5802fe4 (CRD/webhook/informer/TokenReview/BootstrapWithToken),
+//     6092b1f (prod PodResolver, webhook TLS, Helm webhook) and 2c57c82
+//     (agent-side BootstrapWithToken startup path).
+//     Note: --webhook-addr and the ADS listener both default to :9443 — move one
+//     when enabling webhook certs. Agent token bootstrap still dials the CA over
+//     an insecure channel (tracked TODO in token_bootstrap.go).
 //
 // 13. [Control-plane mTLS wiring] RESOLVED: cmd/meridian-control now accepts
 //     --tls-cert / --tls-key flags and wraps the gRPC server with
@@ -102,11 +116,11 @@ package integration
 //     - Agent kill mid-connection survival (needs two-netns full proxy test;
 //       the T1 seam variant covers pin re-open logic only).
 //
-// 15. [Workload API PEM protocol] UNCHANGED: workloadapi.socketServer custom PEM
-//     protocol cannot be consumed by go-spiffe X509Source. Full SPIFFE
-//     Workload API gRPC needs go-spiffe/v2 in go.mod (no protoc required —
-//     pre-compiled stubs ship with the module). Add to go.mod, replace
-//     socketServer with the gRPC impl when the dep is provisioned.
+// 15. [Workload API PEM protocol] RESOLVED: go-spiffe/v2 v2.7.0 is now a direct
+//     dependency and internal/agent/workloadapi/server.go implements the full
+//     SPIFFE Workload API gRPC server (FetchX509SVID / FetchX509Bundles streams,
+//     security header enforced), so stock go-spiffe X509Source clients can
+//     consume it. See also item 2.
 //
 // 16. [Binary wiring — RemoteSigner] cmd/meridian-agent SVID/proxy components
 //     start correctly when --standalone or --control-addr+--bootstrap-cert are

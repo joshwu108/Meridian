@@ -1,3 +1,9 @@
+// Pre-flight diagnostics for the Meridian data plane.
+//
+// `meridian doctor` answers one question: can this host run the agent's eBPF
+// data path? Every probe reads the host through the Env seam, so the decision
+// logic is pure and unit-testable (T1) on any OS without root; only HostEnv
+// touches the real kernel.
 package cli
 
 import (
@@ -12,126 +18,160 @@ import (
 	"time"
 )
 
-// DoctorResult holds the pass/fail result for one probe.
-type DoctorResult struct {
+// CheckStatus is the verdict of a single probe.
+type CheckStatus string
+
+const (
+	// StatusOK means the requirement is satisfied.
+	StatusOK CheckStatus = "OK"
+	// StatusWarn means the requirement is satisfied in a degraded or
+	// unverifiable way: the data path will probably work, but something
+	// deserves attention. Warnings do not fail `meridian doctor`.
+	StatusWarn CheckStatus = "WARN"
+	// StatusFail means the requirement is not satisfied and the data path
+	// cannot come up. Any failure fails `meridian doctor`.
+	StatusFail CheckStatus = "FAIL"
+)
+
+// CheckResult is one line of the doctor report.
+type CheckResult struct {
 	Name   string
-	Pass   bool
+	Status CheckStatus
 	Detail string
 }
 
-// Doctor runs all pre-flight probes and prints a report to w.
-// Returns an error if any CRITICAL probe fails.
-func Doctor(ctx context.Context, cfg Config, w io.Writer) error {
-	probes := []func(context.Context, Config) DoctorResult{
-		probeOS,
-		probeKernelVersion,
-		probeTPROXYModule,
-		probeIPTables,
-		probeControlPlane,
-		probeAgentAdmin,
-	}
+// Env is the seam between the checks and the host. Tests supply stubs; real
+// runs use HostEnv. All fields must be non-nil.
+type Env struct {
+	// GOOS is the host operating system (runtime.GOOS).
+	GOOS string
+	// KernelRelease returns the running kernel release (`uname -r`).
+	KernelRelease func() (string, error)
+	// ReadFile reads a file, typically under /proc or /sys.
+	ReadFile func(path string) ([]byte, error)
+	// Run executes a command and reports whether it succeeded.
+	Run func(ctx context.Context, name string, args ...string) error
+	// HTTPGet GETs url and returns the response status code.
+	HTTPGet func(url string) (int, error)
+}
 
-	anyFail := false
-	for _, p := range probes {
-		r := p(ctx, cfg)
-		icon := "✓"
-		if !r.Pass {
-			icon = "✗"
-			anyFail = true
+// probeTimeout bounds each external command and HTTP probe so doctor always
+// terminates promptly on a wedged host.
+const probeTimeout = 3 * time.Second
+
+// HostEnv returns an Env wired to the real host.
+func HostEnv() Env {
+	return Env{
+		GOOS: runtime.GOOS,
+		KernelRelease: func() (string, error) {
+			out, err := exec.Command("uname", "-r").Output()
+			if err != nil {
+				return "", fmt.Errorf("uname -r: %w", err)
+			}
+			return strings.TrimSpace(string(out)), nil
+		},
+		ReadFile: os.ReadFile,
+		Run: func(ctx context.Context, name string, args ...string) error {
+			ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+			defer cancel()
+			return exec.CommandContext(ctx, name, args...).Run()
+		},
+		HTTPGet: func(url string) (int, error) {
+			client := &http.Client{Timeout: probeTimeout}
+			resp, err := client.Get(url)
+			if err != nil {
+				return 0, err
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode, nil
+		},
+	}
+}
+
+// DoctorCheck runs the pre-flight probes against the real host, prints the
+// report to w, and returns a non-nil error if any check failed.
+func DoctorCheck(ctx context.Context, cfg Config, w io.Writer) error {
+	return DoctorCheckWithEnv(ctx, cfg, HostEnv(), w)
+}
+
+// DoctorCheckWithEnv is DoctorCheck against an explicit Env (the test seam).
+func DoctorCheckWithEnv(ctx context.Context, cfg Config, env Env, w io.Writer) error {
+	results := RunChecks(ctx, cfg, env)
+	if err := printReport(results, w); err != nil {
+		return err
+	}
+	return reportFailure(results)
+}
+
+// RunChecks runs every probe and returns the results in report order. It never
+// short-circuits: a broken host should get the full picture in one pass.
+func RunChecks(ctx context.Context, cfg Config, env Env) []CheckResult {
+	osResult := checkHostOS(env)
+
+	// The kernel probes are meaningless off Linux; report them as skipped
+	// rather than pretending to have an answer.
+	kernelChecks := []func() CheckResult{
+		func() CheckResult { return checkKernel(env) },
+		func() CheckResult { return checkBPFFS(env) },
+		func() CheckResult { return checkCgroupV2(env) },
+		func() CheckResult { return checkTPROXY(ctx, env) },
+		func() CheckResult { return checkCapabilities(env) },
+	}
+	skipped := []string{nameKernel, nameBPFFS, nameCgroupV2, nameTPROXY, nameCapabilities}
+
+	results := make([]CheckResult, 0, len(kernelChecks)+3)
+	results = append(results, osResult)
+	for i, check := range kernelChecks {
+		if env.GOOS != "linux" {
+			results = append(results, skip(skipped[i], env.GOOS))
+			continue
 		}
-		fmt.Fprintf(w, "  %s  %-40s %s\n", icon, r.Name, r.Detail)
+		results = append(results, check())
 	}
-	fmt.Fprintln(w)
-	if anyFail {
-		return fmt.Errorf("doctor: one or more probes failed")
-	}
-	return nil
+	return append(results,
+		checkReachable(env, "control plane reachable", cfg.ControlAddr+"/status"),
+		checkReachable(env, "agent admin reachable", cfg.AgentAddr+"/healthz"),
+	)
 }
 
-func probeOS(_ context.Context, _ Config) DoctorResult {
-	pass := runtime.GOOS == "linux"
-	detail := runtime.GOOS
-	if !pass {
-		detail += " (Meridian data plane requires Linux)"
-	}
-	return DoctorResult{"OS", pass, detail}
+// skip reports a probe that cannot run on this host.
+func skip(name, goos string) CheckResult {
+	return CheckResult{name, StatusWarn, "skipped: requires Linux (host is " + goos + ")"}
 }
 
-func probeKernelVersion(_ context.Context, _ Config) DoctorResult {
-	out, err := exec.Command("uname", "-r").Output()
-	if err != nil {
-		return DoctorResult{"Kernel version", false, fmt.Sprintf("uname -r: %v", err)}
+// printReport writes the human-readable report.
+func printReport(results []CheckResult, w io.Writer) error {
+	if _, err := fmt.Fprintf(w, "meridian doctor — data plane pre-flight\n\n"); err != nil {
+		return err
 	}
-	ver := strings.TrimSpace(string(out))
-	// Require >= 5.10 (minimum for TC BPF + TPROXY + SOCKMAP).
-	pass := kernelAtLeast(ver, 5, 10)
-	detail := ver
-	if !pass {
-		detail += " (need >= 5.10)"
-	}
-	return DoctorResult{"Kernel >= 5.10", pass, detail}
-}
-
-func probeTPROXYModule(_ context.Context, _ Config) DoctorResult {
-	// Check /proc/net/xt_TPROXY or try modprobe.
-	if _, err := os.Stat("/proc/net/xt_TPROXY"); err == nil {
-		return DoctorResult{"TPROXY module", true, "present (proc)"}
-	}
-	if out, err := exec.Command("modprobe", "--dry-run", "xt_TPROXY").CombinedOutput(); err == nil {
-		return DoctorResult{"TPROXY module", true, "loadable"}
-	} else {
-		_ = out
-	}
-	// Last resort: check if it is built-in.
-	if data, err := os.ReadFile("/lib/modules/" + kernelRelease() + "/modules.builtin"); err == nil {
-		if strings.Contains(string(data), "xt_TPROXY") {
-			return DoctorResult{"TPROXY module", true, "built-in"}
+	var ok, warn, fail int
+	for _, r := range results {
+		switch r.Status {
+		case StatusOK:
+			ok++
+		case StatusWarn:
+			warn++
+		default:
+			fail++
+		}
+		if _, err := fmt.Fprintf(w, "  %-7s %-34s %s\n", "["+string(r.Status)+"]", r.Name, r.Detail); err != nil {
+			return err
 		}
 	}
-	return DoctorResult{"TPROXY module", false, "not found (CONFIG_NETFILTER_XT_TARGET_TPROXY required)"}
+	_, err := fmt.Fprintf(w, "\n%d ok, %d warning(s), %d failure(s)\n", ok, warn, fail)
+	return err
 }
 
-func probeIPTables(_ context.Context, _ Config) DoctorResult {
-	if _, err := exec.LookPath("iptables"); err != nil {
-		return DoctorResult{"iptables", false, "not found in PATH"}
+// reportFailure returns an error if any check failed. Warnings are tolerated.
+func reportFailure(results []CheckResult) error {
+	var failed []string
+	for _, r := range results {
+		if r.Status == StatusFail {
+			failed = append(failed, r.Name)
+		}
 	}
-	out, err := exec.Command("iptables", "--version").Output()
-	if err != nil {
-		return DoctorResult{"iptables", false, fmt.Sprintf("%v", err)}
+	if len(failed) == 0 {
+		return nil
 	}
-	return DoctorResult{"iptables", true, strings.TrimSpace(string(out))}
-}
-
-func probeControlPlane(_ context.Context, cfg Config) DoctorResult {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(cfg.ControlAddr + "/status")
-	if err != nil {
-		return DoctorResult{"Control plane reachable", false, fmt.Sprintf("%v", err)}
-	}
-	resp.Body.Close()
-	return DoctorResult{"Control plane reachable", resp.StatusCode < 500,
-		fmt.Sprintf("HTTP %d at %s", resp.StatusCode, cfg.ControlAddr)}
-}
-
-func probeAgentAdmin(_ context.Context, cfg Config) DoctorResult {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(cfg.AgentAddr + "/healthz")
-	if err != nil {
-		return DoctorResult{"Agent admin reachable", false, fmt.Sprintf("%v", err)}
-	}
-	resp.Body.Close()
-	return DoctorResult{"Agent admin reachable", resp.StatusCode == 200,
-		fmt.Sprintf("HTTP %d at %s", resp.StatusCode, cfg.AgentAddr)}
-}
-
-func kernelRelease() string {
-	out, _ := exec.Command("uname", "-r").Output()
-	return strings.TrimSpace(string(out))
-}
-
-// kernelAtLeast reports whether verStr is >= major.minor.
-func kernelAtLeast(verStr string, major, minor int) bool {
-	var maj, min int
-	_, _ = fmt.Sscanf(verStr, "%d.%d", &maj, &min)
-	return maj > major || (maj == major && min >= minor)
+	return fmt.Errorf("doctor: %d check(s) failed: %s", len(failed), strings.Join(failed, ", "))
 }
