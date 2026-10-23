@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+#
+# meridian-control — control plane (REST API, ADS gRPC, admission webhook).
+#
+# Pure Go, no eBPF, no elevated capabilities. Runs as nonroot (uid 65532) with
+# a read-only root filesystem; all listen ports are > 1024 so no
+# NET_BIND_SERVICE is required.
+#
+# CAUTION: --ads-addr and --webhook-addr both default to :9443. When webhook
+# TLS is enabled, move one of them (see deploy/helm/meridian/templates).
+
+ARG GO_VERSION=1.27
+
+# --------------------------------------------------------------------------
+# builder — native build host, cross-compiles to TARGET* with CGO off.
+# --------------------------------------------------------------------------
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bookworm AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' \
+      -o /out/meridian-control ./cmd/meridian-control
+
+# --------------------------------------------------------------------------
+# final — distroless static, nonroot.
+# --------------------------------------------------------------------------
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /out/meridian-control /usr/local/bin/meridian-control
+
+# 8080 REST, 9443 ADS gRPC (and the webhook, unless relocated).
+EXPOSE 8080 9443
+
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/meridian-control"]

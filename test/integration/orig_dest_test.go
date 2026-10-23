@@ -85,8 +85,8 @@ package integration
 //     See commits 5802fe4 (CRD/webhook/informer/TokenReview/BootstrapWithToken),
 //     6092b1f (prod PodResolver, webhook TLS, Helm webhook) and 2c57c82
 //     (agent-side BootstrapWithToken startup path).
-//     Note: --webhook-addr and the ADS listener both default to :9443 — move one
-//     when enabling webhook certs. Agent token bootstrap still dials the CA over
+//     Note: --webhook-addr now defaults to :9444 so it no longer collides with
+//     the ADS listener on :9443. Agent token bootstrap still dials the CA over
 //     an insecure channel (tracked TODO in token_bootstrap.go).
 //
 // 13. [Control-plane mTLS wiring] RESOLVED: cmd/meridian-control now accepts

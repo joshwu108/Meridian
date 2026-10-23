@@ -8,16 +8,38 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "meridian.name" . }}-agent
+      {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "agent") | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "meridian.name" . }}-agent
-        {{- include "meridian.selectorLabels" . | nindent 8 }}
+        {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "agent") | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       hostNetwork: true
+      # With hostNetwork the kubelet downgrades ClusterFirst to Default, which
+      # gives the agent the NODE's resolv.conf. In-cluster service names then
+      # fail to resolve and the ADS client dies with "produced zero addresses".
+      dnsPolicy: ClusterFirstWithHostNet
       hostPID: {{ .Values.agent.hostPID }}
+      {{- if .Values.agent.mountBpffs }}
+      initContainers:
+        # Mount bpffs on the HOST (Bidirectional propagation) when absent.
+        # Idempotent: a node that already has /sys/fs/bpf as type bpf is a
+        # no-op. Needs its own image because the agent image is distroless and
+        # has no mount(8).
+        - name: mount-bpffs
+          image: {{ .Values.agent.bpffsMountImage }}
+          command:
+            - sh
+            - -c
+            - 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf'
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+              mountPropagation: Bidirectional
+      {{- end }}
       containers:
         - name: agent
           image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
@@ -30,12 +52,21 @@ spec:
                 - SYS_ADMIN
           args:
             - --pin-dir={{ .Values.agent.pinDir }}
+            {{- if .Values.agent.iface }}
+            - --iface={{ .Values.agent.iface }}
+            {{- else }}
             - --veth-prefix={{ .Values.agent.vethPrefix }}
+            {{- end }}
             - --workload-api-socket={{ .Values.agent.workloadAPISocket }}
             - --proxy-inbound-port={{ .Values.agent.proxyInboundPort }}
             - --proxy-outbound-port={{ .Values.agent.proxyOutboundPort }}
             - --admin-addr={{ .Values.agent.adminAddr }}
             - --control-addr=http://{{ include "meridian.fullname" . }}-control:{{ .Values.control.service.restPort }}
+            {{- if .Values.agent.adsAddr }}
+            - --ads-addr={{ .Values.agent.adsAddr }}
+            {{- else }}
+            - --ads-addr={{ include "meridian.fullname" . }}-control:{{ .Values.control.service.adsPort }}
+            {{- end }}
             {{- if .Values.agent.standalone }}
             - --standalone
             {{- end }}
@@ -45,6 +76,7 @@ spec:
           volumeMounts:
             - name: bpffs
               mountPath: /sys/fs/bpf
+              mountPropagation: Bidirectional
             - name: cgroupfs
               mountPath: /sys/fs/cgroup
             - name: workload-socket-dir

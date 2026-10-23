@@ -156,15 +156,14 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 		log.Printf("phase4: workload API socket: %s", opts.workloadAPISocket)
 	}
 
-	// TPROXY steering rules.
-	tproxyInst := tproxy.NewInstaller()
-	if err := tproxyInst.Install(ctx); err != nil {
-		log.Printf("phase4: TPROXY install failed (proxy redirect disabled): %v", err)
-	} else {
-		log.Printf("phase4: TPROXY rules installed (mark=0x%x table=%d)",
-			tproxy.TproxyMark, tproxy.TproxyTable)
-		defer func() { _ = tproxyInst.Uninstall(context.Background()) }()
-	}
+	// TPROXY steering rules. Deliberately NOT torn down here: startPhase4 is
+	// setup and returns to its caller, so any defer would uninstall the rules
+	// immediately. Per the tproxy package contract the rules outlive the
+	// process so in-flight connections survive a restart, and Install is
+	// idempotent so boot reconciles them.
+	// Return value intentionally ignored: a failed install is already logged
+	// inside, and the node proxy still runs with redirect disabled.
+	_ = installTPROXY(ctx, tproxy.NewInstaller())
 
 	certSource := workloadapi.NewCertSource(svidStore)
 
@@ -222,6 +221,21 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 	}
 
 	return spiffeRes, mgr, nil
+}
+
+// installTPROXY installs the transparent-proxy steering rules and reports
+// whether they are active. The rules are intentionally left in place for the
+// life of the host: the tproxy package contract keeps them across restarts so
+// in-flight connections survive, and Install is idempotent so a reboot
+// reconciles rather than recreates.
+func installTPROXY(ctx context.Context, inst tproxy.Installer) bool {
+	if err := inst.Install(ctx); err != nil {
+		log.Printf("phase4: TPROXY install failed (proxy redirect disabled): %v", err)
+		return false
+	}
+	log.Printf("phase4: TPROXY rules installed (mark=0x%x table=%d)",
+		tproxy.TproxyMark, tproxy.TproxyTable)
+	return true
 }
 
 // startADSClient dials the control plane's ADS gRPC endpoint and runs the

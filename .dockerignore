@@ -1,0 +1,44 @@
+# Build context for deploy/docker/Dockerfile.{agent,control}.
+#
+# IMPORTANT: bpf/*_bpfel.o must stay in the context — bpf2go //go:embed pulls
+# them into the agent binary at compile time. Do NOT add a blanket *.o rule.
+
+.git
+.github
+.gitignore
+
+# Build output
+bin/
+dist/
+vendor/
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Host-built binaries committed at the repo root (darwin/arm64; never shipped)
+/meridian-agent
+/meridian-control
+
+# Not needed to compile ./cmd/...
+test/
+scripts/
+docs/
+deploy/
+*.md
+
+# Lima / VM scratch
+.lima/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Secrets must never enter an image layer
+*.key
+*.pem
+*.local.yaml

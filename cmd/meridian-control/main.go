@@ -38,7 +38,7 @@ import (
 const (
 	defaultRESTAddr    = ":8080"
 	defaultADSAddr     = ":9443"
-	defaultWebhookAddr = ":9443"
+	defaultWebhookAddr = ":9444"
 	readTimeout        = 10 * time.Second
 	writeTimeout       = 30 * time.Second
 	idleTimeout        = 60 * time.Second
@@ -47,6 +47,7 @@ const (
 
 func main() {
 	restAddr := flag.String("listen", defaultRESTAddr, "REST API listen address")
+	// ADS gRPC and the admission webhook listen on separate ports (9443/9444) so both can run together.
 	adsAddr := flag.String("ads-addr", defaultADSAddr, "ADS gRPC listen address")
 	standalone := flag.Bool("standalone", true, "generate ephemeral CA (dev mode)")
 	caCertFile := flag.String("ca-cert", "", "intermediate CA certificate PEM file")
@@ -55,6 +56,7 @@ func main() {
 	tlsCertFile := flag.String("tls-cert", "", "ADS gRPC server certificate PEM")
 	tlsKeyFile := flag.String("tls-key", "", "ADS gRPC server private key PEM")
 	trustDomain := flag.String("trust-domain", "cluster.local", "SPIFFE trust domain")
+	// Offset from the ADS gRPC port (9443) to avoid a bind collision when webhook certs are set.
 	webhookAddr := flag.String("webhook-addr", defaultWebhookAddr, "admission webhook listen address")
 	webhookCert := flag.String("webhook-cert", "", "admission webhook TLS certificate PEM")
 	webhookKey := flag.String("webhook-key", "", "admission webhook TLS private key PEM")

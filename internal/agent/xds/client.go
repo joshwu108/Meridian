@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -32,11 +31,6 @@ import (
 // EDS carries identity (ADR-0008 §1). LDS/RDS are reserved (Phase-5 L7) and not
 // subscribed — the server keeps them empty.
 var subscribeTypes = []string{resourcev3.ClusterType, resourcev3.EndpointType}
-
-const (
-	reconnectBase   = 200 * time.Millisecond
-	reconnectJitter = 200 * time.Millisecond
-)
 
 // snapshot is the agent's view of desired state, accumulated across channels.
 type snapshot struct {
@@ -104,40 +98,49 @@ func NewClient(conn grpc.ClientConnInterface, writer datapath.Writer, opts ...Op
 // error it holds the last-applied kernel state and reconnects with jittered
 // backoff (last-known-good on control-plane loss).
 func (c *Client) Run(ctx context.Context) error {
+	attempt := 0
 	for {
-		err := c.runStream(ctx)
+		progressed, err := c.runStream(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		c.logf("ads-client: stream ended (%v); holding last-known-good, reconnecting", err)
+		attempt = reconnectAttemptAfter(attempt, progressed)
+		delay := reconnectDelay(attempt)
+		c.logf("ads-client: stream ended (%v); holding last-known-good, reconnecting in %v", err, delay)
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(reconnectBase + time.Duration(rand.Int63n(int64(reconnectJitter)))):
+		case <-time.After(delay):
 		}
+		attempt++
 	}
 }
 
-func (c *Client) runStream(ctx context.Context) error {
+// runStream opens one ADS stream and pumps it until it fails. The bool reports
+// whether the stream made progress (at least one response received), which
+// clears the reconnect backoff escalation in Run.
+func (c *Client) runStream(ctx context.Context) (bool, error) {
+	progressed := false
 	stream, err := c.ads.StreamAggregatedResources(ctx)
 	if err != nil {
-		return fmt.Errorf("open ADS stream: %w", err)
+		return progressed, fmt.Errorf("open ADS stream: %w", err)
 	}
 	for _, t := range subscribeTypes {
 		if err := stream.Send(&discoveryv3.DiscoveryRequest{TypeUrl: t}); err != nil {
-			return fmt.Errorf("subscribe %s: %w", t, err)
+			return progressed, fmt.Errorf("subscribe %s: %w", t, err)
 		}
 	}
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return nil
+				return progressed, nil
 			}
-			return fmt.Errorf("recv: %w", err)
+			return progressed, fmt.Errorf("recv: %w", err)
 		}
+		progressed = true
 		if err := c.handle(ctx, stream, resp); err != nil {
-			return err
+			return progressed, err
 		}
 	}
 }

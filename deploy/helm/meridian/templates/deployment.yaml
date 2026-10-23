@@ -9,12 +9,11 @@ spec:
   replicas: {{ .Values.control.replicas }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "meridian.name" . }}-control
+      {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "control") | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "meridian.name" . }}-control
-        {{- include "meridian.selectorLabels" . | nindent 8 }}
+        {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "control") | nindent 8 }}
     spec:
       containers:
         - name: control
@@ -27,13 +26,35 @@ spec:
             {{- if .Values.control.standalone }}
             - --standalone
             {{- end }}
+            {{- if .Values.webhook.enabled }}
+            - --webhook-addr={{ .Values.control.webhookAddr }}
+            - --webhook-cert={{ .Values.webhook.certDir }}/tls.crt
+            - --webhook-key={{ .Values.webhook.certDir }}/tls.key
+            {{- end }}
           ports:
             - name: rest
-              containerPort: 8080
+              containerPort: {{ .Values.control.listenAddr | splitList ":" | last | int }}
             - name: ads-grpc
-              containerPort: 9443
+              containerPort: {{ .Values.control.adsAddr | splitList ":" | last | int }}
+            {{- if .Values.webhook.enabled }}
+            - name: webhook
+              containerPort: {{ .Values.control.webhookAddr | splitList ":" | last | int }}
+            {{- end }}
+          {{- if .Values.webhook.enabled }}
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: {{ .Values.webhook.certDir }}
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.control.resources | nindent 12 }}
+      {{- if .Values.webhook.enabled }}
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: {{ include "meridian.webhookCertSecret" . }}
+            defaultMode: 0400
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -50,5 +71,10 @@ spec:
     - name: ads-grpc
       port: {{ .Values.control.service.adsPort }}
       targetPort: ads-grpc
+    {{- if .Values.webhook.enabled }}
+    - name: webhook
+      port: {{ .Values.control.service.webhookPort }}
+      targetPort: webhook
+    {{- end }}
   selector:
-    app.kubernetes.io/name: {{ include "meridian.name" . }}-control
+    {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "control") | nindent 4 }}

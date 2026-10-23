@@ -18,6 +18,15 @@ GO           ?= go
 BPFTOOL      ?= bpftool
 GOLANGCILINT ?= golangci-lint
 BPF_TARGET   ?= bpfel
+DOCKER       ?= docker
+
+# Container images. Built via deploy/docker/Dockerfile.{agent,control}; the
+# builder stage cross-compiles, so these targets work from a macOS host.
+DOCKER_PLATFORM ?= linux/amd64
+IMAGE_TAG       ?= dev
+AGENT_IMAGE     ?= meridian-agent:$(IMAGE_TAG)
+CONTROL_IMAGE   ?= meridian-control:$(IMAGE_TAG)
+DOCKER_DIR      := deploy/docker
 
 # Minimum toolchain versions (documented; checked by `make doctor`).
 CLANG_MIN_MAJOR := 15
@@ -100,6 +109,28 @@ build-agent: ## Build bin/meridian-agent
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/meridian-agent ./cmd/meridian-agent
 	@echo "Built: $(BIN_DIR)/meridian-agent"
+
+# ---------------------------------------------------------------------------
+# Container images
+# ---------------------------------------------------------------------------
+# No require_linux guard: the builder stage runs on the host platform and
+# cross-compiles with CGO_ENABLED=0, so this works from macOS.
+.PHONY: docker-build
+docker-build: docker-build-agent docker-build-control ## Build both container images (meridian-agent:dev, meridian-control:dev)
+
+.PHONY: docker-build-agent
+docker-build-agent: ## Build the meridian-agent image
+	$(DOCKER) build --platform $(DOCKER_PLATFORM) \
+		-f $(DOCKER_DIR)/Dockerfile.agent \
+		-t $(AGENT_IMAGE) .
+	@echo "Built image: $(AGENT_IMAGE) ($(DOCKER_PLATFORM))"
+
+.PHONY: docker-build-control
+docker-build-control: ## Build the meridian-control image
+	$(DOCKER) build --platform $(DOCKER_PLATFORM) \
+		-f $(DOCKER_DIR)/Dockerfile.control \
+		-t $(CONTROL_IMAGE) .
+	@echo "Built image: $(CONTROL_IMAGE) ($(DOCKER_PLATFORM))"
 
 # ---------------------------------------------------------------------------
 # Test tiers (T1 portable, T2/T3 privileged Linux)

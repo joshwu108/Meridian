@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+#
+# meridian-agent — per-node data-plane agent (eBPF).
+#
+# Runtime requirements (NOT satisfied by this image alone — they are pod spec):
+#   - CAP_BPF + CAP_NET_ADMIN (practically: securityContext.privileged: true on
+#     kernels < 5.8, or CAP_BPF/CAP_PERFMON/CAP_NET_ADMIN + privileged for the
+#     bpffs mount and tc qdisc manipulation)
+#   - hostNetwork: true           (TC programs attach to host-side veths)
+#   - hostPID: true               (cgroup v2 path resolution for SOCKMAP)
+#   - /sys/fs/bpf mounted rw (Bidirectional mountPropagation) for --pin-dir
+#   - /run/meridian emptyDir for the Workload API socket + bootstrap creds
+#
+# The eBPF objects are NOT copied in: bpf2go embeds bpf/*_bpfel.o into the Go
+# binary via //go:embed at compile time, so the committed .o files are consumed
+# in the builder stage and the final image needs nothing but the executable.
+
+ARG GO_VERSION=1.27
+
+# --------------------------------------------------------------------------
+# builder — runs natively on the build host and cross-compiles to TARGET*.
+# CGO is off (pure Go + netgo resolver), so no cross toolchain is needed.
+# --------------------------------------------------------------------------
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bookworm AS builder
+
+WORKDIR /src
+
+# Dependency layer: invalidated only when the module graph changes.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' \
+      -o /out/meridian-agent ./cmd/meridian-agent
+
+# --------------------------------------------------------------------------
+# final — distroless static. Stays root (uid 0): loading eBPF programs,
+# mounting bpffs and attaching tc qdiscs all need privilege, so a nonroot
+# variant would fail at startup.
+# --------------------------------------------------------------------------
+FROM gcr.io/distroless/static-debian12:latest
+
+COPY --from=builder /out/meridian-agent /usr/local/bin/meridian-agent
+
+# 15008 inbound mTLS, 15001 outbound CONNECT, 9902 admin HTTP.
+# Documentation only — the agent runs with hostNetwork.
+EXPOSE 15008 15001 9902
+
+USER 0:0
+ENTRYPOINT ["/usr/local/bin/meridian-agent"]

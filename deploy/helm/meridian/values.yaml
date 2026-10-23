@@ -10,12 +10,16 @@ control:
   replicas: 1
   listenAddr: ":8080"
   adsAddr: ":9443"
+  ## Admission webhook listens on 9444 — distinct from adsAddr (9443) so the
+  ## webhook and the ADS gRPC server can bind simultaneously.
+  webhookAddr: ":9444"
   trustDomain: "cluster.local"
   standalone: true
   service:
     type: ClusterIP
     restPort: 8080
     adsPort: 9443
+    webhookPort: 9444
   resources:
     requests:
       cpu: 100m
@@ -31,7 +35,32 @@ agent:
     tag: latest
     pullPolicy: IfNotPresent
   standalone: false
+  ## ADS gRPC address of the control plane. REQUIRED for the agent to receive
+  ## identities and compiled policy — with this empty the agent loads its eBPF
+  ## programs and enforces, but its identity/policy maps stay empty and every
+  ## flow is denied (fail-closed). Empty = ADS disabled.
+  adsAddr: ""
+  ## Host-side pod veth name prefix for automatic TC attach. The default "lxc"
+  ## is the Cilium convention; it matches NOTHING on a kind/kindnet node, where
+  ## host-side veths are named veth<hex>. See also `iface`.
+  ##
+  ## DANGER: a broad prefix attaches to EVERY matching pod veth as it appears.
+  ## Because enforcement is fail-closed, any pod whose identity is not yet in
+  ## identity_map has its traffic dropped — on a cluster with no seeded
+  ## identities this takes out CoreDNS and anything else on the node. Seed
+  ## identities/policy first, or scope the attach with `iface`.
   vethPrefix: "lxc"
+  ## Attach to exactly one named interface instead of a prefix watcher. Safer
+  ## than vethPrefix for demos and incremental rollout. Empty = disabled.
+  iface: ""
+  ## Mount bpffs at /sys/fs/bpf via a privileged initContainer when it is not
+  ## already a bpf mount. Required on nodes that do not pre-mount it (kind does
+  ## not); harmless and idempotent where it is already mounted. The agent pins
+  ## its maps under pinDir, which MUST be on a real bpffs — without this the
+  ## hostPath DirectoryOrCreate silently makes a plain directory and map
+  ## pinning fails.
+  mountBpffs: true
+  bpffsMountImage: "busybox:1.37"
   pinDir: "/sys/fs/bpf/meridian"
   workloadAPISocket: "/run/meridian/workload.sock"
   proxyInboundPort: 15008
@@ -55,6 +84,19 @@ agent:
 webhook:
   enabled: false
   caBundle: ""
+  ## Name of an existing kubernetes.io/tls Secret holding the webhook's serving
+  ## certificate, under the standard tls.crt / tls.key keys. REQUIRED when
+  ## enabled: true — rendering fails without it. Create it with cert-manager
+  ## (a Certificate whose secretName matches this) or by hand:
+  ##   kubectl create secret tls meridian-webhook-certs --cert=tls.crt --key=tls.key
+  certSecret: ""
+  ## Mount path for certSecret inside the control-plane container. The
+  ## --webhook-cert / --webhook-key flags are derived from this.
+  certDir: /etc/meridian/webhook-certs
+  ## Extra annotations for the ValidatingWebhookConfiguration. Use this for
+  ## cert-manager CA injection instead of setting caBundle by hand, e.g.
+  ##   cert-manager.io/inject-ca-from: <namespace>/<certificate-name>
+  annotations: {}
 
 ## RBAC for K8s pod/service informers
 rbac:

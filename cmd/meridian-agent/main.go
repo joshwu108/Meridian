@@ -31,10 +31,11 @@ import (
 
 func main() {
 	pinDir := flag.String("pin-dir", "/sys/fs/bpf/meridian", "bpffs directory for map pins")
-	iface := flag.String("iface", "", "interface to attach tc ingress program")
+	iface := flag.String("iface", "", "interface to attach tc ingress program (pod veth or real link; loopback is refused — see --allow-loopback-enforcement)")
 	policyFile := flag.String("policy-file", "", "optional static YAML policy snapshot to seed at startup")
 	cgroup := flag.String("cgroup", "", "cgroup v2 path to attach the SOCKMAP fast path (sock_ops + sk_msg); empty = disabled")
 	vethPrefix := flag.String("veth-prefix", "", "host-side pod veth name prefix for auto TC attach via RTNLGRP_LINK watcher (empty = disabled; e.g. 'mh-' or 'lxc')")
+	allowLoopbackEnforcement := flag.Bool("allow-loopback-enforcement", false, "permit attaching tc ingress to a loopback interface; unsafe unless the fail-open-unknown posture is seeded first (see --iface)")
 
 	// Node identity, proxy, and control-plane flags.
 	standalone := flag.Bool("standalone", false, "run with an embedded ephemeral CA (dev mode)")
@@ -63,12 +64,21 @@ func main() {
 		trustDomain:       *trustDomain,
 		standalone:        *standalone,
 	}
-	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, p4opts); err != nil {
+	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, *allowLoopbackEnforcement, p4opts); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr string, p4 phase4Options) error {
+func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr string, allowLoopbackEnforcement bool, p4 phase4Options) error {
+	// Refuse a loopback attach target before touching the kernel: the
+	// fail-closed posture would black-hole the agent's own control path.
+	if err := validateEnforcementIface(iface, allowLoopbackEnforcement, netIfaceFlags); err != nil {
+		return err
+	}
+	if allowLoopbackEnforcement && isLoopbackIface(iface, netIfaceFlags) {
+		log.Printf("WARNING: attaching enforcement to loopback interface %q under --allow-loopback-enforcement; loopback traffic will be dropped unless the fail-open-unknown posture is seeded in runtime_config_map", iface)
+	}
+
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock rlimit: %w", err)
 	}
