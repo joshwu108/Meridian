@@ -16,24 +16,47 @@ docker run --rm --privileged alpine ls -la /sys/kernel/btf/vmlinux
 ## Working values (kind, dev)
 
 ```console
-# 1. Build images for the node's architecture.
-docker build --platform linux/arm64 -f deploy/docker/Dockerfile.agent   -t meridian-agent:dev   .
-docker build --platform linux/arm64 -f deploy/docker/Dockerfile.control -t meridian-control:dev .
+# 1. Build images for the node's architecture. DOCKER_PLATFORM must match the
+#    kind node, not your laptop's default.
+make docker-build DOCKER_PLATFORM=linux/arm64
 
-# 2. Cluster, then load the images so no registry is involved.
+# 2. Cluster, then load the images so no registry is involved. The chart's
+#    default image.repository values are exactly these names.
 kind create cluster --name meridian-test
 kind load docker-image meridian-agent:dev meridian-control:dev --name meridian-test
 
-# 3. Install. Every --set below is REQUIRED on kind; see the notes.
+# 3. Install.
 helm install meridian ./deploy/helm/meridian \
   --namespace meridian-system --create-namespace \
-  --set agent.image.repository=meridian-agent     --set agent.image.tag=dev \
-  --set control.image.repository=meridian-control --set control.image.tag=dev \
   --set control.standalone=true \
   --set agent.standalone=true \
   --set webhook.enabled=false \
   --set agent.iface=<host-side veth of the pod to enforce>
 ```
+
+`make docker-push REGISTRY=ghcr.io/<you>` retags and pushes for a cluster
+that cannot be side-loaded; then override both `image.repository` values.
+
+### Driving it with MeridianPolicy
+
+The control plane watches `MeridianPolicy` whenever it has a cluster to talk
+to (in-cluster by default, `control.kubeconfig` otherwise), so CRDs compile
+into the store and ADS ships them to the agents. Identities come from the pod
+informer, which only registers pods carrying the SPIFFE annotation:
+
+```console
+kubectl annotate pod <pod> meridian.io/spiffe-id=spiffe://cluster.local/workload/<ns>/<name>
+```
+
+A policy's `sources` are matched against those annotations and its `selector`
+against pod namespace/labels, so **annotate both ends before applying the
+policy** — an unresolvable source is refused rather than treated as an empty
+allow, and the informer logs `skip: ... no registered identity`.
+
+Enforcement is fail-closed, so an agent that attaches before those identities
+exist drops traffic. Either annotate first, or start with
+`--set agent.policyFallopen=true` and turn it off once identities are in
+place. See **Fail-closed and the attach scope**.
 
 Why each override is needed:
 
