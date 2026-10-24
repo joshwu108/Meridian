@@ -4,8 +4,14 @@
 ## Control plane deployment
 control:
   image:
-    repository: ghcr.io/joshuawu/meridian-control
-    tag: latest
+    ## Placeholder. Meridian publishes no public images, so you MUST override
+    ## this with a repository your cluster can pull from:
+    ##   --set control.image.repository=<registry>/meridian-control
+    ## For a kind cluster, `make docker-build && kind load docker-image
+    ## meridian-control:dev` makes the bare default resolvable on the node —
+    ## pair it with pullPolicy: Never so the kubelet does not try the registry.
+    repository: meridian-control
+    tag: dev
     pullPolicy: IfNotPresent
   replicas: 1
   listenAddr: ":8080"
@@ -31,8 +37,10 @@ control:
 ## Agent DaemonSet
 agent:
   image:
-    repository: ghcr.io/joshuawu/meridian-agent
-    tag: latest
+    ## Placeholder — see control.image.repository. Override with:
+    ##   --set agent.image.repository=<registry>/meridian-agent
+    repository: meridian-agent
+    tag: dev
     pullPolicy: IfNotPresent
   standalone: false
   ## ADS gRPC address of the control plane. REQUIRED for the agent to receive
@@ -60,7 +68,16 @@ agent:
   ## hostPath DirectoryOrCreate silently makes a plain directory and map
   ## pinning fails.
   mountBpffs: true
-  bpffsMountImage: "busybox:1.37"
+  ## Remove a stale Workload API socket from the /run/meridian hostPath before
+  ## the agent starts. The socket outlives the pod (hostPath, not emptyDir), so
+  ## after an ungraceful stop the next agent fails to bind an address that is
+  ## already in use and crashloops. Only the socket is removed — the node
+  ## bootstrap credential next to it is deliberately preserved so token
+  ## bootstrap still reuses it across restarts.
+  cleanStaleSocket: true
+  ## Image for the mount-bpffs and clean-workload-socket initContainers. The
+  ## agent image is distroless and has neither mount(8) nor rm(1).
+  initImage: "busybox:1.37"
   pinDir: "/sys/fs/bpf/meridian"
   workloadAPISocket: "/run/meridian/workload.sock"
   proxyInboundPort: 15008

@@ -21,14 +21,15 @@ spec:
       # fail to resolve and the ADS client dies with "produced zero addresses".
       dnsPolicy: ClusterFirstWithHostNet
       hostPID: {{ .Values.agent.hostPID }}
-      {{- if .Values.agent.mountBpffs }}
+      {{- if or .Values.agent.mountBpffs .Values.agent.cleanStaleSocket }}
       initContainers:
+        {{- if .Values.agent.mountBpffs }}
         # Mount bpffs on the HOST (Bidirectional propagation) when absent.
         # Idempotent: a node that already has /sys/fs/bpf as type bpf is a
         # no-op. Needs its own image because the agent image is distroless and
         # has no mount(8).
         - name: mount-bpffs
-          image: {{ .Values.agent.bpffsMountImage }}
+          image: {{ .Values.agent.initImage }}
           command:
             - sh
             - -c
@@ -39,6 +40,23 @@ spec:
             - name: bpffs
               mountPath: /sys/fs/bpf
               mountPropagation: Bidirectional
+        {{- end }}
+        {{- if .Values.agent.cleanStaleSocket }}
+        # /run/meridian is a hostPath, so the Workload API socket survives the
+        # pod. An ungraceful stop leaves the inode behind and the next agent
+        # dies binding an already-in-use address. Remove ONLY the socket: the
+        # node bootstrap cert/key live in the same directory and are
+        # deliberately reused across restarts.
+        - name: clean-workload-socket
+          image: {{ .Values.agent.initImage }}
+          command:
+            - sh
+            - -c
+            - 'rm -f {{ .Values.agent.workloadAPISocket }}'
+          volumeMounts:
+            - name: workload-socket-dir
+              mountPath: /run/meridian
+        {{- end }}
       {{- end }}
       containers:
         - name: agent
