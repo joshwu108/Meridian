@@ -60,6 +60,7 @@ func main() {
 	webhookAddr := flag.String("webhook-addr", defaultWebhookAddr, "admission webhook listen address")
 	webhookCert := flag.String("webhook-cert", "", "admission webhook TLS certificate PEM")
 	webhookKey := flag.String("webhook-key", "", "admission webhook TLS private key PEM")
+	kubeconfig := flag.String("kubeconfig", "", "path to a kubeconfig for the pod and MeridianPolicy informers; empty = in-cluster config when running in a pod, informers disabled otherwise")
 	flag.Parse()
 
 	if err := run(runConfig{
@@ -75,6 +76,7 @@ func main() {
 		webhookAddr:     *webhookAddr,
 		webhookCertFile: *webhookCert,
 		webhookKeyFile:  *webhookKey,
+		kubeconfig:      *kubeconfig,
 	}); err != nil {
 		log.Fatalf("meridian-control: %v", err)
 	}
@@ -94,6 +96,10 @@ type runConfig struct {
 	webhookAddr     string
 	webhookCertFile string
 	webhookKeyFile  string
+
+	// kubeconfig selects the client config for the pod and MeridianPolicy
+	// informers. Empty falls back to in-cluster; see k8sEnabled.
+	kubeconfig string
 }
 
 func run(cfg runConfig) error {
@@ -124,6 +130,24 @@ func run(cfg runConfig) error {
 	// Shared store and identity registry.
 	st := store.NewMemory()
 	reg := identity.NewRegistry()
+
+	// Kubernetes watchers. Without these the MeridianPolicy CRD is inert:
+	// objects are admitted and persisted by the apiserver, but nothing
+	// compiles them into the store, so ADS never ships them to any agent and
+	// policy works only through the REST API.
+	if k8sEnabled(cfg.kubeconfig, osLookupEnv) {
+		restCfg, err := kubeRESTConfig(cfg.kubeconfig)
+		if err != nil {
+			return fmt.Errorf("kubernetes watchers: %w", err)
+		}
+		if err := startK8sWatchers(ctx, restCfg, reg, st, log.Printf); err != nil {
+			return fmt.Errorf("kubernetes watchers: %w", err)
+		}
+		log.Printf("meridian-control: pod + meridianpolicy informers started")
+	} else {
+		log.Printf("meridian-control: kubernetes informers disabled " +
+			"(no --kubeconfig and not running in-cluster); MeridianPolicy objects will be ignored")
+	}
 
 	// REST server with CA issuance.
 	restSrv := rest.NewServer(st, reg).WithCA(auth)

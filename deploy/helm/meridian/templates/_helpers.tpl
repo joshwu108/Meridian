@@ -57,3 +57,12 @@ producing a Deployment that crash-loops on a missing volume.
 {{- end -}}
 {{- .Values.webhook.certSecret -}}
 {{- end }}
+
+{{/*
+ServiceAccount the control-plane Deployment runs as. Defaults to
+<fullname>-control; override with control.serviceAccount.name to bind an
+externally managed account (then set control.serviceAccount.create=false).
+*/}}
+{{- define "meridian.controlServiceAccountName" -}}
+{{- default (printf "%s-control" (include "meridian.fullname" .)) .Values.control.serviceAccount.name -}}
+{{- end }}

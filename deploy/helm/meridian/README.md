@@ -167,6 +167,22 @@ Flow events print `verdict=` as the **numeric** `enum flow_verdict`
   not pre-mount bpffs, and the `hostPath: DirectoryOrCreate` quietly created a
   plain directory instead, which cannot hold map pins. The agent image is
   distroless and has no `mount(8)`, hence the separate `busybox` initContainer.
+- **`MeridianPolicy` now reaches the agents.** `cmd/meridian-control` never
+  started `PolicyWatcher`, so CRDs were admitted, validated and stored by the
+  apiserver and then ignored: ADS only ever shipped what the REST API had been
+  told. The control plane now takes `--kubeconfig` (empty = in-cluster) and
+  starts the pod and MeridianPolicy informers whenever it has a cluster to
+  talk to. Both are needed — the policy compiler resolves a CRD's SPIFFE
+  sources and namespace/label selector through an `IdentityResolver` backed by
+  the pod informer's cache, so starting the policy informer alone would skip
+  every object with "no registered identity".
+- **Control-plane RBAC and ServiceAccount** (`control.rbac.enabled`,
+  `control.serviceAccount`, both on by default). The Deployment previously ran
+  as `default` with no permissions, so the informers above would have failed
+  their list/watch with `Forbidden`. The ClusterRole is read-only: `get`,
+  `list`, `watch` on `pods` and `meridian.io/meridianpolicies`.
+- `agent.policyFallopen` to choose the startup enforcement posture; see
+  **Fail-closed and the attach scope**.
 - `agent.cleanStaleSocket` initContainer (default on) removes a leftover
   `/run/meridian/workload.sock` before the agent starts. The socket lives on a
   `hostPath` and outlives the pod, so after an ungraceful stop the next agent
@@ -179,23 +195,21 @@ Flow events print `verdict=` as the **numeric** `enum flow_verdict`
 
 ## Known gaps (not fixed here)
 
-1. **`MeridianPolicy` is inert** — `PolicyWatcher` is unwired; see above. The
-   CRD, its schema and its webhook all work, which makes this easy to mistake
-   for a working path.
-2. **No agent metrics endpoint.** `values.yaml` sets `agent.metricsPort: 9901`
+1. **No agent metrics endpoint.** `values.yaml` sets `agent.metricsPort: 9901`
    and the DaemonSet declares a `metrics` containerPort, but
    `cmd/meridian-agent` contains no reference to `9901`, no `--metrics-addr`
    flag and no Prometheus handler. The node listens only on `9902` (admin,
    `127.0.0.1`), `15001` and `15008`. `docs/subsystems/06-observability.md`
    specifies `:9901`, so the chart advertises a port nothing serves.
-3. **TPROXY/proxy redirect cannot work in this image.**
+2. **TPROXY/proxy redirect cannot work in this image.**
    `phase4: TPROXY install failed ...: iptables: executable file not found in
    $PATH` — the distroless agent image has no `iptables`, so the L7/redirect
    path is unavailable. L4 TC enforcement is unaffected.
-4. **Misleading diagnostic.** With `--control-addr` set but no
+3. **Misleading diagnostic.** With `--control-addr` set but no
    `--token-path`/`--bootstrap-cert`, `phase4_linux.go` falls to its `else` and
    logs `neither --standalone nor --control-addr given` — `--control-addr`
    *was* given; what is missing is a bootstrap credential.
-5. **Agent RBAC is unused but broad**; the control plane has none. The agent
-   ClusterRole grants `pods`/`services`/`endpoints` watch and `tokenreviews`
-   create, but the agent is driven entirely by ADS in this configuration.
+4. **Agent RBAC is unused but broad.** The agent ClusterRole grants
+   `pods`/`services`/`endpoints` watch and `tokenreviews` create, but the
+   agent is driven entirely by ADS in this configuration. (The control plane
+   now has its own ServiceAccount and ClusterRole — see below.)

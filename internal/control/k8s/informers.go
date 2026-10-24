@@ -17,12 +17,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
+	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/joshuawu/meridian/internal/control/identity"
 	"github.com/joshuawu/meridian/pkg/wire"
 )
+
+// podResyncInterval is the pod informer's full-resync period. The policy
+// informer uses a matching interval (policyResyncInterval).
+const podResyncInterval = 30 * time.Second
 
 // PodStore is the subset of control.Store needed by the pod informer.
 type PodStore interface {
@@ -38,22 +44,50 @@ type Watcher struct {
 	registry *identity.Registry
 	store    PodStore
 	logf     func(string, ...any)
+
+	// factory is built in NewWatcher rather than in Run so PodLister is
+	// usable before the loop starts: PodResolver has to be handed to the
+	// policy informer at construction time, and both informers then come
+	// from this one factory and share a single pod watch and cache.
+	// Constructing it starts no goroutines and opens no connections —
+	// factory.Start in Run does that.
+	factory informers.SharedInformerFactory
+	pods    informersv1.PodInformer
 }
 
 // NewWatcher returns a Watcher backed by client.
 func NewWatcher(client kubernetes.Interface, registry *identity.Registry, store PodStore) *Watcher {
+	factory := informers.NewSharedInformerFactory(client, podResyncInterval)
 	return &Watcher{
 		client:   client,
 		registry: registry,
 		store:    store,
 		logf:     log.Printf,
+		factory:  factory,
+		pods:     factory.Core().V1().Pods(),
 	}
+}
+
+// PodLister returns the shared pod informer's lister. Reads only serve from
+// cache, so results are empty until Run has synced.
+func (w *Watcher) PodLister() listersv1.PodLister {
+	return w.pods.Lister()
+}
+
+// PodIdentity reports the identity this watcher registered for pod, matching
+// the registry key onPodAdd allocates under (the pod name). It is the
+// PodIdentityFunc to pair with PodLister when building a PodResolver.
+func (w *Watcher) PodIdentity(pod *corev1.Pod) (wire.IdentityID, bool) {
+	if pod == nil {
+		return wire.IdentityUnknown, false
+	}
+	return w.registry.LookupByName(pod.Name)
 }
 
 // Run starts the Pod informer and blocks until ctx is cancelled.
 func (w *Watcher) Run(ctx context.Context) error {
-	factory := informers.NewSharedInformerFactory(w.client, 30*time.Second)
-	podInformer := factory.Core().V1().Pods().Informer()
+	factory := w.factory
+	podInformer := w.pods.Informer()
 
 	_, err := podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj any) { w.onPodAdd(ctx, obj) },

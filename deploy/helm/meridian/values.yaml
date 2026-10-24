@@ -21,6 +21,24 @@ control:
   webhookAddr: ":9444"
   trustDomain: "cluster.local"
   standalone: true
+  ## ServiceAccount the control-plane Deployment runs as. It needs its own
+  ## (rather than "default") because the informers below require RBAC.
+  serviceAccount:
+    create: true
+    ## Empty = "<release>-meridian-control".
+    name: ""
+  ## RBAC for the control plane's pod and MeridianPolicy informers: read-only
+  ## watches on pods and meridianpolicies. Without it the informers start and
+  ## then fail their list/watch with Forbidden, so MeridianPolicy objects are
+  ## never compiled and policy works only through the REST API.
+  rbac:
+    enabled: true
+    ## API group of the MeridianPolicy CRD; matches crds/meridianpolicy.yaml.
+    policyAPIGroup: meridian.io
+  ## Path to a kubeconfig for the informers. Leave empty in-cluster: the
+  ## control plane then uses its ServiceAccount. Set it only when running the
+  ## binary outside the cluster against a remote apiserver.
+  kubeconfig: ""
   service:
     type: ClusterIP
     restPort: 8080

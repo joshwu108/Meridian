@@ -15,6 +15,7 @@ spec:
       labels:
         {{- include "meridian.componentSelectorLabels" (dict "root" . "component" "control") | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "meridian.controlServiceAccountName" . }}
       containers:
         - name: control
           image: "{{ .Values.control.image.repository }}:{{ .Values.control.image.tag }}"
@@ -23,6 +24,9 @@ spec:
             - --listen={{ .Values.control.listenAddr }}
             - --ads-addr={{ .Values.control.adsAddr }}
             - --trust-domain={{ .Values.control.trustDomain }}
+            {{- if .Values.control.kubeconfig }}
+            - --kubeconfig={{ .Values.control.kubeconfig }}
+            {{- end }}
             {{- if .Values.control.standalone }}
             - --standalone
             {{- end }}
