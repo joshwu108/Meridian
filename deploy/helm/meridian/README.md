@@ -55,17 +55,25 @@ with no seeded identities the agent drops all pod traffic on the node.
 
 That is not hypothetical. With `agent.vethPrefix=veth` (the correct prefix for
 kindnet) and empty maps, both CoreDNS replicas went `1/1 -> 0/1` within
-seconds, with flow events showing `verdict=1` on CoreDNS → kube-apiserver. The
-agent has **no flag to start in a fail-open posture** —
-`MERIDIAN_CFG_FALLOPEN_UNKNOWN` exists in `bpf/include/meridian_consts.h` and
-is honoured by `tc_ingress.c`, but nothing in `cmd/meridian-agent` ever seeds
-it, so a safe first-boot is not reachable from the chart.
+seconds, with flow events showing `verdict=1` on CoreDNS → kube-apiserver.
 
-Two consequences:
+`agent.policyFallopen=true` (agent flag `--policy-fallopen`) is the escape
+hatch for that first boot. It sets `MERIDIAN_CFG_FALLOPEN_UNKNOWN` in
+`runtime_config_map`, which `tc_ingress.c` and `tc_egress.c` read per packet,
+so a flow with an unknown identity is allowed instead of dropped. The agent
+writes the posture **before** it attaches anything — the supervisor attaches
+inside `Startup()`, so a later write would still leave a drop window — and the
+word is written on every boot, so clearing the value turns the posture back
+off across a restart rather than inheriting the surviving pin.
+
+Three consequences:
 
 - For a demo or incremental rollout use `agent.iface=<one veth>`.
-- Before using `agent.vethPrefix` on a real cluster, seed identities for
-  everything on the node **first**, or expect an outage window.
+- Before using `agent.vethPrefix` on a real cluster, either seed identities for
+  everything on the node **first** or start with
+  `agent.policyFallopen=true`, then turn it off once identities are in place.
+- `policyFallopen=true` is not a production posture: while it is set, anything
+  Meridian does not recognise is permitted.
 
 Also note the TC filters **outlive the pod**: after the agent DaemonSet was
 rolled, `tc filter show dev <veth> ingress` still listed the BPF filter on six

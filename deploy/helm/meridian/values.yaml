@@ -68,6 +68,15 @@ agent:
   ## hostPath DirectoryOrCreate silently makes a plain directory and map
   ## pinning fails.
   mountBpffs: true
+  ## ALLOW flows whose identity is not in identity_map (the eBPF
+  ## MERIDIAN_CFG_FALLOPEN_UNKNOWN bit), instead of dropping them.
+  ##
+  ## false (default) is fail-closed and is the correct production posture, but
+  ## it means an agent that attaches before ADS has populated identity_map
+  ## drops EVERY flow on the attached interface — on a broad `vethPrefix` that
+  ## includes CoreDNS, which takes the node's DNS down. Set true for a first
+  ## rollout or a demo, then seed identities and turn it back off.
+  policyFallopen: false
   ## Remove a stale Workload API socket from the /run/meridian hostPath before
   ## the agent starts. The socket outlives the pod (hostPath, not emptyDir), so
   ## after an ungraceful stop the next agent fails to bind an address that is

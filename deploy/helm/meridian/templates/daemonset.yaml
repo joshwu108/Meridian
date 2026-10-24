@@ -85,6 +85,9 @@ spec:
             {{- else }}
             - --ads-addr={{ include "meridian.fullname" . }}-control:{{ .Values.control.service.adsPort }}
             {{- end }}
+            {{- if .Values.agent.policyFallopen }}
+            - --policy-fallopen
+            {{- end }}
             {{- if .Values.agent.standalone }}
             - --standalone
             {{- end }}

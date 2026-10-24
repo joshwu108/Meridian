@@ -36,6 +36,7 @@ func main() {
 	cgroup := flag.String("cgroup", "", "cgroup v2 path to attach the SOCKMAP fast path (sock_ops + sk_msg); empty = disabled")
 	vethPrefix := flag.String("veth-prefix", "", "host-side pod veth name prefix for auto TC attach via RTNLGRP_LINK watcher (empty = disabled; e.g. 'mh-' or 'lxc')")
 	allowLoopbackEnforcement := flag.Bool("allow-loopback-enforcement", false, "permit attaching tc ingress to a loopback interface; unsafe unless the fail-open-unknown posture is seeded first (see --iface)")
+	policyFallOpen := flag.Bool("policy-fallopen", false, "ALLOW flows whose source or destination identity is absent from identity_map (MERIDIAN_CFG_FALLOPEN_UNKNOWN). Default false = fail closed: with an empty identity_map every flow on an attached interface is dropped, CoreDNS included")
 
 	// Node identity, proxy, and control-plane flags.
 	standalone := flag.Bool("standalone", false, "run with an embedded ephemeral CA (dev mode)")
@@ -64,12 +65,12 @@ func main() {
 		trustDomain:       *trustDomain,
 		standalone:        *standalone,
 	}
-	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, *allowLoopbackEnforcement, p4opts); err != nil {
+	if err := run(*pinDir, *iface, *policyFile, *cgroup, *vethPrefix, *adminAddr, *adsAddr, *allowLoopbackEnforcement, *policyFallOpen, p4opts); err != nil {
 		log.Fatalf("meridian-agent: %v", err)
 	}
 }
 
-func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr string, allowLoopbackEnforcement bool, p4 phase4Options) error {
+func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr string, allowLoopbackEnforcement, policyFallOpen bool, p4 phase4Options) error {
 	// Refuse a loopback attach target before touching the kernel: the
 	// fail-closed posture would black-hole the agent's own control path.
 	if err := validateEnforcementIface(iface, allowLoopbackEnforcement, netIfaceFlags); err != nil {
@@ -102,6 +103,15 @@ func run(pinDir, iface, policyFile, cgroup, vethPrefix, adminAddr, adsAddr strin
 			log.Printf("linkwatch: %s %s: %v", op, ifName, err)
 		}
 	}
+
+	// Seed the enforcement posture BEFORE the supervisor runs. Startup()
+	// attaches the TC program to --iface inside its own body, so anything
+	// written afterwards races live traffic against an identity_map that ADS
+	// has not populated yet. See seedFallOpenPosture.
+	if err := seedFallOpenPosture(pinDir, policyFallOpen); err != nil {
+		return err
+	}
+	log.Print(fallOpenLogLine(policyFallOpen))
 
 	startupRunner := supervisor.NewPolicyStartupRunner(opts)
 	startupRuntime, err := startupRunner.Startup(ctx)
