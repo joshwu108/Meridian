@@ -42,7 +42,7 @@ Why each override is needed:
 | `agent.image.repository`, `control.image.repository` | No longer required on kind: the defaults are now the bare `meridian-agent:dev` / `meridian-control:dev` that `kind load docker-image` puts on the node. They are **placeholders**, not published images — Meridian publishes none — so any cluster that actually pulls must override both to a reachable repository. (They previously defaulted to the private `ghcr.io/joshuawu/meridian-*`, which left both pods in `ImagePullBackOff` with `403 Forbidden`.) |
 | `--namespace meridian-system --create-namespace` | The chart has no namespace of its own, so it installs into whatever is current — usually `default`. `kubectl get pods -n meridian-system` then shows nothing. |
 | `control.standalone=true` | No CA. It is already the chart and binary default; harmless to state. |
-| `agent.standalone=true` | The agent logs `phase4: neither --standalone nor --control-addr given; proxy mTLS and SVID rotation disabled` and runs without an SVID. See the note on that message below — it is misleading. |
+| `agent.standalone=true` | The agent runs without an SVID and logs why. With neither flag the message is still `neither --standalone nor --control-addr given`; with `--control-addr` but no credential it now names the address and the missing `--token-path` / `--bootstrap-cert`, instead of claiming `--control-addr` was never passed. |
 | `webhook.enabled=false` | Rendering fails without `webhook.certSecret`. |
 | `agent.iface` | See **Fail-closed and the attach scope** — this is the important one. |
 
@@ -188,6 +188,10 @@ Flow events print `verdict=` as the **numeric** `enum flow_verdict`
   `hostPath` and outlives the pod, so after an ungraceful stop the next agent
   died with `bind: address already in use`. Only the socket is removed — the
   node bootstrap cert/key sit in the same directory and are reused by design.
+- **Clearer credential diagnostic.** `phase4_linux.go` logged `neither
+  --standalone nor --control-addr given` even when `--control-addr` *was*
+  given and only the bootstrap credential was missing, which sent people
+  looking at the wrong flag. The message now distinguishes the two.
 - `agent.image.repository` / `control.image.repository` now default to bare
   placeholder names rather than a private `ghcr.io` repository.
 - `agent.iface` for single-interface attach, and a danger note on
@@ -205,11 +209,7 @@ Flow events print `verdict=` as the **numeric** `enum flow_verdict`
    `phase4: TPROXY install failed ...: iptables: executable file not found in
    $PATH` — the distroless agent image has no `iptables`, so the L7/redirect
    path is unavailable. L4 TC enforcement is unaffected.
-3. **Misleading diagnostic.** With `--control-addr` set but no
-   `--token-path`/`--bootstrap-cert`, `phase4_linux.go` falls to its `else` and
-   logs `neither --standalone nor --control-addr given` — `--control-addr`
-   *was* given; what is missing is a bootstrap credential.
-4. **Agent RBAC is unused but broad.** The agent ClusterRole grants
+3. **Agent RBAC is unused but broad.** The agent ClusterRole grants
    `pods`/`services`/`endpoints` watch and `tokenreviews` create, but the
    agent is driven entirely by ADS in this configuration. (The control plane
    now has its own ServiceAccount and ClusterRole — see below.)

@@ -140,8 +140,8 @@ func startPhase4(ctx context.Context, opts phase4Options) (*proxy.MapSpiffeIDRes
 			}
 		}()
 	} else {
-		log.Printf("phase4: neither --standalone nor --control-addr given; " +
-			"proxy mTLS and SVID rotation disabled")
+		log.Printf("phase4: %s; proxy mTLS and SVID rotation disabled",
+			credentialGapReason(opts.standalone, opts.controlAddr, opts.bootstrapCert, opts.tokenPath))
 		return nil, nil, nil
 	}
 
