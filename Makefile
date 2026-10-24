@@ -22,10 +22,16 @@ DOCKER       ?= docker
 
 # Container images. Built via deploy/docker/Dockerfile.{agent,control}; the
 # builder stage cross-compiles, so these targets work from a macOS host.
+#
+# REGISTRY is empty by default so `make docker-build` produces bare local tags
+# (meridian-agent:dev) — exactly the names `kind load docker-image` expects.
+# Set it to push somewhere: `make docker-push REGISTRY=ghcr.io/you`.
 DOCKER_PLATFORM ?= linux/amd64
 IMAGE_TAG       ?= dev
-AGENT_IMAGE     ?= meridian-agent:$(IMAGE_TAG)
-CONTROL_IMAGE   ?= meridian-control:$(IMAGE_TAG)
+REGISTRY        ?=
+IMAGE_PREFIX    := $(if $(REGISTRY),$(REGISTRY)/,)
+AGENT_IMAGE     ?= $(IMAGE_PREFIX)meridian-agent:$(IMAGE_TAG)
+CONTROL_IMAGE   ?= $(IMAGE_PREFIX)meridian-control:$(IMAGE_TAG)
 DOCKER_DIR      := deploy/docker
 
 # Minimum toolchain versions (documented; checked by `make doctor`).
@@ -131,6 +137,30 @@ docker-build-control: ## Build the meridian-control image
 		-f $(DOCKER_DIR)/Dockerfile.control \
 		-t $(CONTROL_IMAGE) .
 	@echo "Built image: $(CONTROL_IMAGE) ($(DOCKER_PLATFORM))"
+
+# Pushing requires a registry-qualified tag: the bare local names used by
+# `kind load` have no remote to push to, so refuse rather than fail obscurely
+# against docker.io/library.
+.PHONY: docker-push
+docker-push: docker-push-agent docker-push-control ## Push both images (needs REGISTRY=...)
+
+.PHONY: docker-push-agent
+docker-push-agent: require-registry ## Push the meridian-agent image
+	$(DOCKER) push $(AGENT_IMAGE)
+	@echo "Pushed image: $(AGENT_IMAGE)"
+
+.PHONY: docker-push-control
+docker-push-control: require-registry ## Push the meridian-control image
+	$(DOCKER) push $(CONTROL_IMAGE)
+	@echo "Pushed image: $(CONTROL_IMAGE)"
+
+.PHONY: require-registry
+require-registry:
+	@if [ -z "$(REGISTRY)" ]; then \
+		echo "error: REGISTRY is empty; images are tagged for local/kind use only." >&2; \
+		echo "       Retag and push with: make docker-build docker-push REGISTRY=ghcr.io/<you>" >&2; \
+		exit 1; \
+	fi
 
 # ---------------------------------------------------------------------------
 # Test tiers (T1 portable, T2/T3 privileged Linux)
